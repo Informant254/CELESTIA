@@ -1,0 +1,30 @@
+FROM python:3.11-slim
+
+# Install Chrome + deps for Selenium headless
+RUN apt-get update && apt-get install -y \
+    wget gnupg unzip curl xvfb \
+    libglib2.0-0 libnss3 libgdk-pixbuf2.0-0 libgtk-3-0 libx11-xcb1 libxss1 \
+    libasound2 libxtst6 libxrandr2 libxcomposite1 libxcursor1 libxdamage1 \
+    libxi6 libxfixes3 fonts-liberation libappindicator3-1 libatk-bridge2.0-0 \
+    libdrm2 libgbm1 \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - \
+    && echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list \
+    && apt-get update && apt-get install -y google-chrome-stable \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY bot.py .
+COPY .env.example .env
+
+# session persist + qr
+VOLUME ["/app/session"]
+EXPOSE 3000
+
+ENV PORT=3000
+ENV SESSION_DIR=/app/session
+ENV QR_PATH=/app/qr.png
+
+CMD ["python", "bot.py"]

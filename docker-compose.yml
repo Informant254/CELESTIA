@@ -1,0 +1,26 @@
+version: '3.8'
+services:
+  celestia:
+    build: .
+    container_name: celestia
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./auth_info_baileys:/app/auth_info_baileys
+      - ./session:/app/session
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: unless-stopped
+
+  # Optional: keep python bot as sidecar (disable if not needed)
+  # python-bot:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.python
+  #   container_name: python-wabot
+  #   volumes:
+  #     - ./session:/app/session
+  #   restart: unless-stopped

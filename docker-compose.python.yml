@@ -1,0 +1,14 @@
+version: '3.8'
+services:
+  wabot:
+    build: .
+    container_name: wabot
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./session:/app/session   # persist login so no QR every restart
+      - ./qr.png:/app/qr.png
+    env_file:
+      - .env
+    restart: unless-stopped
+    shm_size: 2gb
