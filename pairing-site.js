@@ -1,5 +1,5 @@
-/**
- * pairing-site.js — CELESTIA public pairing station 🌐
+﻿/**
+ * pairing-site.js â€” CELESTIA public pairing station ðŸŒ
  *
  * Run alongside the main bot (or standalone):
  *   node pairing-site.js
@@ -33,8 +33,8 @@ const PAIRING_DIR = path.join(__dirname, 'pairing_sessions');
 if (!fs.existsSync(PAIRING_DIR)) fs.mkdirSync(PAIRING_DIR, { recursive: true });
 
 const silentLogger = {
-  info: () => {}, warn: () => {}, error: () => {}, debug: () => {},
-  child: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }),
+  info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {},
+  child: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {} }),
 };
 
 const activeSockets = new Map(); // phone -> sock
@@ -48,6 +48,27 @@ async function getSocket(phone) {
 }
 
 async function startPairingSession(phone) {
+  // retry loop: sockets flap during pairing attempts; never give up on flap
+  const MAX_TRIES = 4;
+  let lastErr = 'unknown';
+
+  for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+    try {
+      const result = await startPairingAttempt(phone, attempt);
+      if (result) return result;
+      // linked=true resolves via status polling; code attempt returns session
+    } catch (e) {
+      lastErr = e?.message || 'unknown';
+      // clean any partial state before retry
+      const sessionDir = path.join(PAIRING_DIR, crypto.createHash('sha256').update(phone).digest('hex').slice(0, 16));
+      try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+      await new Promise(r => setTimeout(r, 2500 * attempt));
+    }
+  }
+  throw new Error(lastErr);
+}
+
+async function startPairingAttempt(phone, attemptNo) {
   const sessionDir = path.join(PAIRING_DIR, crypto.createHash('sha256').update(phone).digest('hex').slice(0, 16));
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
   const { version } = await fetchLatestBaileysVersion();
@@ -64,25 +85,42 @@ async function startPairingSession(phone) {
 
   const session = { sock, ready: false, code: null, linked: false, sessionDir, saveCreds };
   sock.ev.on('creds.update', saveCreds);
+  activeSockets.set(phone, session);
 
   return new Promise((resolve, reject) => {
+    let settled = false;
+    let codeAsked = false;
+    const finishOk = () => { if (!settled) { settled = true; resolve(session); } };
+    const finishErr = (msg) => { if (!settled) { settled = true; try { sock.end(undefined); } catch {} reject(new Error(msg)); } };
+
+    const timer = setTimeout(() => {
+      if (!session.ready) finishErr('timeout waiting for code â€” WhatsApp may be rate-limiting this number; wait 10 min and try again');
+    }, 30000);
+
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect } = update;
-      if (connection === 'connecting') {
-        setTimeout(async () => {
-          try {
-            const code = await sock.requestPairingCode(phone);
-            session.code = code;
-            session.ready = true;
-            resolve(session);
-          } catch (e) {
-            reject(new Error('code request rejected: ' + (e?.message || 'unknown')));
-          }
-        }, 3500);
+
+      if (connection === 'connecting' || connection === 'connected') {
+        // request the code once per socket, after a short settle
+        if (!codeAsked) {
+          codeAsked = true;
+          setTimeout(async () => {
+            try {
+              const code = await sock.requestPairingCode(phone);
+              session.code = code;
+              session.ready = true;
+              clearTimeout(timer);
+              finishOk();
+            } catch (e) {
+              clearTimeout(timer);
+              finishErr('code request failed: ' + (e?.message || 'unknown'));
+            }
+          }, 4000);
+        }
       }
+
       if (connection === 'open') {
         session.linked = true;
-        // read creds → session string
         try {
           const credsPath = path.join(sessionDir, 'creds.json');
           if (fs.existsSync(credsPath)) {
@@ -90,19 +128,23 @@ async function startPairingSession(phone) {
           }
         } catch {}
       }
+
       if (connection === 'close') {
         const status = lastDisconnect?.error?.output?.statusCode;
-        if (!session.ready) reject(new Error('connection closed (status ' + status + ')'));
+        // if we already have a code, the flap doesn't matter â€” keep session
+        if (session.ready) return;
+        // 401/428 while un-registered is normal during pairing attempts â€”
+        // treat as retryable, not fatal
+        clearTimeout(timer);
+        finishErr('socket closed (status ' + status + ') â€” retrying');
       }
     });
-    activeSockets.set(phone, session);
-    setTimeout(() => { if (!session.ready) reject(new Error('timeout')); }, 25000);
   });
 }
 
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // API
-// ─────────────────────────────────────────
+// â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const RATE = new Map();
 app.use(express.json());
@@ -137,7 +179,7 @@ app.post('/api/pair', async (req, res) => {
 app.post('/api/status', async (req, res) => {
   const phone = String(req.body.phone || '').replace(/\D/g, '');
   const session = activeSockets.get(phone);
-  if (!session) return res.status(404).json({ error: 'no session — start again' });
+  if (!session) return res.status(404).json({ error: 'no session â€” start again' });
   if (session.linked && session.sessionString) {
     // cleanup session dir after handing string
     return res.json({ ok: true, linked: true, sessionString: session.sessionString });
@@ -148,5 +190,6 @@ app.post('/api/status', async (req, res) => {
 app.get('/health', (req, res) => res.json({ ok: true, service: 'celestia-pairing' }));
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🌐 CELESTIA pairing station on http://0.0.0.0:${PORT}`);
+  console.log(`ðŸŒ CELESTIA pairing station on http://0.0.0.0:${PORT}`);
 });
+

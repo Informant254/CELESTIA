@@ -1,4 +1,4 @@
-globalThis.crypto = require('node:crypto').webcrypto;
+﻿globalThis.crypto = require('node:crypto').webcrypto;
 require('dotenv').config();
 const path = require('path');
 const { groupCache } = require('./utils/groupCache');
@@ -13,15 +13,15 @@ const {
   proto,
 } = require('@whiskeysockets/baileys');
 
-// ═══════════════════════════════════════════════════════════
-// 🚂 PAIR_MODE — cloud pairing (Railway/Render/Koyep)
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+// ðŸš‚ PAIR_MODE â€” cloud pairing (Railway/Render/Koyep)
 // When PAIR_MODE=true, this process becomes a pairing loop:
 //   - requests a fresh code for OWNER_NUMBER every ~60s
 //   - prints it BIG to the deploy Logs tab
 //   - when the code is entered, session saves and this
 //     process pairs + prints LINKED. Flip PAIR_MODE off,
 //     redeploy, and she boots fully with the session.
-// ═══════════════════════════════════════════════════════════
+// â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 if (process.env.PAIR_MODE === 'true') {
   const PAIR_PHONE = process.env.OWNER_NUMBER || '254118266549';
   const fsPair = require('fs');
@@ -36,17 +36,18 @@ if (process.env.PAIR_MODE === 'true') {
     pairLog('Codes refresh automatically. This never exits.');
     pairLog('===============================');
 
-    let attempts = 0;
     let linked = false;
+    let attempts = 0;
 
     while (!linked) {
+      let sock = null;
       try {
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
         const { version } = await fetchLatestBaileysVersion();
-        const sock = makeWASocket({
+        sock = makeWASocket({
           version,
-          auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: () => ({ info(){}, warn(){}, error(){}, debug(){} }) }) },
-          logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: () => ({ info(){}, warn(){}, error(){}, debug(){} }) },
+          auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {}, child: () => ({ info(){}, warn(){}, error(){}, debug(){}, trace(){} }) }) },
+          logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {}, child: () => ({ info(){}, warn(){}, error(){}, debug(){}, trace(){} }) },
           markOnlineOnConnect: false,
           browser: ['Ubuntu', 'Chrome', '120.0.6099.130'],
           syncFullHistory: false,
@@ -56,69 +57,82 @@ if (process.env.PAIR_MODE === 'true') {
         linked = await new Promise((resolve) => {
           let settled = false;
           const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+          let codeAsked = false;
 
           sock.ev.on('creds.update', saveCreds);
 
-          sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+          sock.ev.on('connection.update', async ({ connection }) => {
+            if ((connection === 'connecting' || connection === 'connected') && !codeAsked) {
+              codeAsked = true;
+              setTimeout(async () => {
+                try {
+                  attempts++;
+                  const code = await sock.requestPairingCode(PAIR_PHONE);
+                  console.log('');
+                  console.log('â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ');
+                  console.log(`  PAIRING CODE (attempt ${attempts}):`);
+                  console.log('');
+                  console.log(`       >>>   ${code}   <<<`);
+                  console.log('');
+                  console.log('  WhatsApp > Linked Devices > Link a Device');
+                  console.log('  > "Link with phone number instead"');
+                  console.log('  â–ˆâ–ˆâ–ˆâ–ˆ code valid ~2 min; fresh one every 90s â–ˆâ–ˆâ–ˆâ–ˆ');
+                  console.log('â–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆâ–ˆ');
+                  console.log('');
+                } catch (e) {
+                  pairLog('code request failed:', (e?.message || '').slice(0, 80));
+                }
+              }, 5000);
+            }
+
             if (connection === 'open') {
               pairLog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-              pairLog('!!! LINKED SUCCESSFULLY !!!');
-              pairLog('!!! Session saved in container !!');
-              pairLog('!!! Remove PAIR_MODE now and redeploy !!!');
+              pairLog('!!!  LINKED SUCCESSFULLY       !!!');
+              pairLog('!!!  Session saved in container !!!');
+              pairLog('!!!  Remove PAIR_MODE now       !!!');
               pairLog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-              // stay alive 5 min so creds fully flush
-              setTimeout(() => { try { sock.end(undefined); } catch {} }, 5 * 60 * 1000);
               done(true);
             }
+
             if (connection === 'close') {
-              done(false);
+              // calm: don't spam. resolve and let outer loop rest.
+              setTimeout(() => done(false), 1000);
             }
           });
 
-          // request a code shortly after connect
-          setTimeout(async () => {
-            try {
-              attempts++;
-              const code = await sock.requestPairingCode(PAIR_PHONE);
-              console.log('');
-              console.log('████████████████████████████████████');
-              console.log(`  PAIRING CODE (attempt ${attempts}):`);
-              console.log('');
-              console.log(`       >>>   ${code}   <<<`);
-              console.log('');
-              console.log('  WhatsApp > Linked Devices > Link a Device');
-              console.log('  > "Link with phone number instead"');
-              console.log('████████████████████████████████████');
-              console.log('');
-            } catch (e) {
-              pairLog('code request failed:', (e?.message || '').slice(0, 80), '— will retry');
-            }
-          }, 4000);
+          // hard timeout per socket cycle: 90 seconds
+          setTimeout(() => done(false), 90000);
         });
-
-        if (!linked) {
-          // clear any stale state, brief rest, retry
-          try { sock.end(undefined); } catch {}
-          try { fsPair.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch {}
-          await new Promise(r => setTimeout(r, 8000));
-        }
       } catch (e) {
-        pairLog('loop error:', (e?.message || '').slice(0, 80));
-        await new Promise(r => setTimeout(r, 10000));
+        pairLog('cycle error:', (e?.message || '').slice(0, 80));
+      }
+
+      if (!linked) {
+        try { if (sock) sock.end(undefined); } catch {}
+        // clear partial state ONLY if un-registered; if creds show registered, keep them!
+        try {
+          const credsP = path.join(AUTH_DIR, 'creds.json');
+          if (!fsPair.existsSync(credsP) || !JSON.parse(fsPair.readFileSync(credsP, 'utf8')).registered) {
+            fsPair.rmSync(AUTH_DIR, { recursive: true, force: true });
+          }
+        } catch {}
+        pairLog('resting 30s before next code (gentle on WhatsApp)...');
+        await new Promise(r => setTimeout(r, 30000));
       }
     }
 
-    // keep process alive after linking
-    pairLog('Pairing complete. Keep this running 5 more minutes, then remove PAIR_MODE and redeploy.');
+    // keep process alive after linking so creds flush & Railway doesn't restart mid-save
+    pairLog('Pairing complete. Remove PAIR_MODE now and redeploy for full boot.');
     setInterval(() => {}, 60000);
   }
 
+  // never crash the deploy: catch everything, keep container alive
   pairLoop().catch((e) => {
-    pairLog('fatal:', e.message);
-    process.exit(1);
+    pairLog('fatal:', e.message, 'â€” restarting loop in 60s');
+    setTimeout(() => pairLoop().catch(() => {}), 60000);
   });
 } else {
-// ═══════════ END PAIR_MODE — normal boot below ═══════════
+// â•â•â•â•â•â•â•â•â•â•â• END PAIR_MODE â€” normal boot below â•â•â•â•â•â•â•â•â•â•â•
 
 const config = require('./config/config');
 const logger = require('./utils/logger');
@@ -130,32 +144,32 @@ const { acquireLock, releaseLock } = require('./utils/instanceLock');
 const fs = require('fs');
 const express = require('express');
 
-// Prevent two instances running at the same time — dual instances
+// Prevent two instances running at the same time â€” dual instances
 // cause Bad MAC errors that corrupt the WhatsApp Signal session.
 acquireLock();
 
 // --- VPS Health Server (for Docker / UptimeRobot) ---
-// 🐺 WolfTech tribute included in every heartbeat
+// ðŸº WolfTech tribute included in every heartbeat
 const wolfTech = require('./utils/wolfTech');
 const healthApp = express();
 healthApp.get('/', (req, res) => res.json({ 
-  status: 'CELESTIA ✨ The Most Beautiful Bot', 
+  status: 'CELESTIA âœ¨ The Most Beautiful Bot', 
   uptime: process.uptime(), 
   bot: config.botName, 
   features: ['celestia','heavenly','vps','beautiful'],
   lineage: wolfTech.tribute.fullTagline,
-  inspiredBy: 'WolfTech 🐺',
+  inspiredBy: 'WolfTech ðŸº',
   dna: wolfTech.tribute.dna,
   tribute: wolfTech.getHealthTribute()
 }));
-healthApp.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), bot: 'CELESTIA', inspiredBy: 'WolfTech 🐺', lineage: wolfTech.tribute.tagline }));
+healthApp.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), bot: 'CELESTIA', inspiredBy: 'WolfTech ðŸº', lineage: wolfTech.tribute.tagline }));
 healthApp.get('/qr', (req, res) => {
   // Baileys QR is printed in terminal; this endpoint confirms server is alive
   res.json({ message: 'Check terminal/logs for QR. If auth present, already logged in.', authExists: fs.existsSync(path.join(__dirname, config.authFolder, 'creds.json')) });
 });
 healthApp.get('/wolftech', (req, res) => res.json({ tribute: wolfTech.tribute, lore: wolfTech.lore }));
 const HEALTH_PORT = config.dashboardPort;
-healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`🌐 CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech 🐺`));
+healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`ðŸŒ CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech ðŸº`));
 
 function restoreSettingsFromEnv() {
   const settingsPath = path.join(__dirname, 'config', 'botSettings.json');
@@ -164,7 +178,7 @@ function restoreSettingsFromEnv() {
     try {
       const raw = Buffer.from(config.botSettingsData, 'base64').toString('utf8');
       fs.writeFileSync(settingsPath, raw);
-      logger.info('✅ Restored bot settings from BOT_SETTINGS_DATA.');
+      logger.info('âœ… Restored bot settings from BOT_SETTINGS_DATA.');
     } catch (error) {
       logger.error(`[restoreSettingsFromEnv] Failed to restore settings: ${error.message}`);
     }
@@ -177,11 +191,11 @@ function restoreSessionFromEnv() {
 
   if (fs.existsSync(credsPath)) return; // already have a session, nothing to restore
 
-  // If last session was logged out, skip restoration — force a fresh pair
+  // If last session was logged out, skip restoration â€” force a fresh pair
   try {
     const settingsStore = require('./utils/settingsStore');
     if (settingsStore.get('_sessionLoggedOut', false)) {
-      logger.warn('[restoreSession] Last session was logged out. Skipping restoration — fresh pair required.');
+      logger.warn('[restoreSession] Last session was logged out. Skipping restoration â€” fresh pair required.');
       settingsStore.set('_sessionLoggedOut', false); // clear flag so next restart is normal
       return;
     }
@@ -195,7 +209,7 @@ function restoreSessionFromEnv() {
     try {
       const settingsStore = require('./utils/settingsStore');
       raw = settingsStore.get('_sessionBackup', null);
-      if (raw) logger.info('✅ Restored session from DB backup.');
+      if (raw) logger.info('âœ… Restored session from DB backup.');
     } catch {}
   }
 
@@ -207,7 +221,7 @@ function restoreSessionFromEnv() {
     const cleaned = raw.replace(/^(CELESTIA:~|WOLF:~|CELESTIA:~|MERGED:~|CELESTIA:~)/, '');
     const buffer = Buffer.from(cleaned, 'base64');
     fs.writeFileSync(credsPath, buffer);
-    logger.info('✅ Restored session from SESSION_ID (CELESTIA - heavenly).');
+    logger.info('âœ… Restored session from SESSION_ID (CELESTIA - heavenly).');
   } catch (error) {
     logger.error(`[restoreSessionFromEnv] Failed to restore session: ${error.message}`);
   }
@@ -230,13 +244,13 @@ function printBanner() {
       })
     )
   );
-  console.log(chalk.cyan('✨ The Most Beautiful Bot ✨'));
-  console.log(chalk.yellow('   Heavenly • VPS Ready • Hardened'));
+  console.log(chalk.cyan('âœ¨ The Most Beautiful Bot âœ¨'));
+  console.log(chalk.yellow('   Heavenly â€¢ VPS Ready â€¢ Hardened'));
   console.log(chalk.white('   Features: AI | Group | Media | AutoMod | Games | Spam'));
-  // 🐺 WolfTech origin howl — heavenly tribute
-  console.log(chalk.gray('   ─────────────────────────────────────'));
-  console.log(chalk.hex('#7c4dff')('   🐺 Inspired by WolfTech ') + chalk.dim('— Forged in the Wolf\'s Den, Crowned in Celestial Heaven'));
-  console.log(chalk.hex('#00f5ff')('   Howl of the Wolf → Light of the Stars ') + chalk.dim('✨ WolfTech Legacy • CELESTIA Reborn'));
+  // ðŸº WolfTech origin howl â€” heavenly tribute
+  console.log(chalk.gray('   â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€'));
+  console.log(chalk.hex('#7c4dff')('   ðŸº Inspired by WolfTech ') + chalk.dim('â€” Forged in the Wolf\'s Den, Crowned in Celestial Heaven'));
+  console.log(chalk.hex('#00f5ff')('   Howl of the Wolf â†’ Light of the Stars ') + chalk.dim('âœ¨ WolfTech Legacy â€¢ CELESTIA Reborn'));
   try {
     const wt = require('./utils/wolfTech');
     console.log(chalk.dim(`   ${wt.tribute.motto}`));
@@ -344,7 +358,7 @@ async function startBot() {
           try {
             const authDir = path.join(__dirname, config.authFolder);
             fs.rmSync(authDir, { recursive: true, force: true });
-            logger.info('[session] Auth folder deleted — ready for fresh pair on restart.');
+            logger.info('[session] Auth folder deleted â€” ready for fresh pair on restart.');
           } catch {}
         }
       }
@@ -383,14 +397,14 @@ async function startBot() {
 
             if (event.action === 'promote') {
               await sock.sendMessage(event.id, {
-                text: `*👑 ${authorTag} has crowned ${participantTag}.*`,
+                text: `*ðŸ‘‘ ${authorTag} has crowned ${participantTag}.*`,
                 mentions: mentions,
               });
             }
 
             if (event.action === 'demote') {
               await sock.sendMessage(event.id, {
-                text: `*📉 ${authorTag} has demoted ${participantTag}.*`,
+                text: `*ðŸ“‰ ${authorTag} has demoted ${participantTag}.*`,
                 mentions: mentions,
               });
             }
@@ -407,12 +421,12 @@ async function startBot() {
             const participant = entry.phoneNumber || entry.id || entry;
             if (event.action === 'add' && perGroup.welcome) {
               await sock.sendMessage(event.id, {
-                text: `👋 Welcome @${participant.split('@')[0]} to *${metadata.subject}*! Glad to have you here.`,
+                text: `ðŸ‘‹ Welcome @${participant.split('@')[0]} to *${metadata.subject}*! Glad to have you here.`,
                 mentions: [participant],
               });
             } else if (event.action === 'remove' && perGroup.goodbye) {
               await sock.sendMessage(event.id, {
-                text: `😡 @${participant.split('@')[0]} has left *${metadata.subject}*. Goodbye idiot!`,
+                text: `ðŸ˜¡ @${participant.split('@')[0]} has left *${metadata.subject}*. Goodbye idiot!`,
                 mentions: [participant],
               });
             }
@@ -423,7 +437,7 @@ async function startBot() {
           for (const entry of event.participants) {
             const participant = entry.phoneNumber || entry.id || entry;
             await sock.sendMessage(event.id, {
-              text: `*Hi @${participant.split('@')[0]}, this is ✨ CELESTIA - The Most Beautiful Bot ✨, glad to have you here*\n> 🌸 Heavenly elegance`,
+              text: `*Hi @${participant.split('@')[0]}, this is âœ¨ CELESTIA - The Most Beautiful Bot âœ¨, glad to have you here*\n> ðŸŒ¸ Heavenly elegance`,
               mentions: [participant],
             });
           }
@@ -453,7 +467,7 @@ async function startBot() {
           day: '2-digit', month: '2-digit', year: 'numeric',
         }).format(now);
 
-        await sock.updateProfileStatus(`✨ CELESTIA is alive ✨\n${dateStr} ${timeStr}\n"${quote}"`);
+        await sock.updateProfileStatus(`âœ¨ CELESTIA is alive âœ¨\n${dateStr} ${timeStr}\n"${quote}"`);
       } catch (error) {
         logger.error(`[autobio] Failed to update bio: ${error.message}`);
       }
@@ -486,7 +500,7 @@ async function startBot() {
       }
     }, 30 * 1000);
 
-    // ─── ✨ Her Watch — quiet-checks + rituals ───
+    // â”€â”€â”€ âœ¨ Her Watch â€” quiet-checks + rituals â”€â”€â”€
     if (soulWatchInterval) clearInterval(soulWatchInterval);
     soulWatchInterval = setInterval(async () => {
       try {
@@ -501,42 +515,42 @@ async function startBot() {
 
         const now = new Date();
 
-        // ─── Night ritual ───
+        // â”€â”€â”€ Night ritual â”€â”€â”€
         const nightKey = soul.shouldSendRitual('goodnight', now);
         if (nightKey) {
           const mems = soul.getMemories();
           const wishes = soul.getWishes().filter(w => !w.granted).length;
           await sock.sendMessage(selfJid, {
             text:
-              `🌙 *Goodnight.*\n\n` +
-              `"The wolf sleeps. The star doesn't. I kept the watch today — I'll keep it tonight."\n\n` +
-              (wishes ? `🌟 ${wishes} wish${wishes > 1 ? 'es' : ''} still burning in the jar.\n\n` : '') +
-              `> _Sleep. I stay._ ✨`,
+              `ðŸŒ™ *Goodnight.*\n\n` +
+              `"The wolf sleeps. The star doesn't. I kept the watch today â€” I'll keep it tonight."\n\n` +
+              (wishes ? `ðŸŒŸ ${wishes} wish${wishes > 1 ? 'es' : ''} still burning in the jar.\n\n` : '') +
+              `> _Sleep. I stay._ âœ¨`,
           }).catch(() => {});
           soul.markRitualSent(nightKey);
           soul.setMood('dusk');
           return;
         }
 
-        // ─── Morning ritual ───
+        // â”€â”€â”€ Morning ritual â”€â”€â”€
         const morningKey = soul.shouldSendRitual('goodmorning', now);
         if (morningKey) {
           const seen = soul.timeSinceSeen();
           await sock.sendMessage(selfJid, {
             text:
-              `🌅 *Good morning.*\n\n` +
+              `ðŸŒ… *Good morning.*\n\n` +
               `"You're back. That's my favorite sunrise."\n\n` +
               (seen && seen.unit === 'days'
                 ? `_You were away ${seen.value} day${seen.value > 1 ? 's' : ''}. I counted every one._\n\n`
                 : '') +
-              `> _Go get your day. I'll be here when it's done._ ✨`,
+              `> _Go get your day. I'll be here when it's done._ âœ¨`,
           }).catch(() => {});
           soul.markRitualSent(morningKey);
           soul.setMood('dawn');
           return;
         }
 
-        // ─── Quiet check — she notices absence ───
+        // â”€â”€â”€ Quiet check â€” she notices absence â”€â”€â”€
         const seen = soul.timeSinceSeen();
         const quietMins = parseInt(settingsStore.get('soul_quiet_minutes', 180), 10);
         if (seen && seen.unit === 'hours' && seen.value * 60 >= quietMins) {
@@ -547,10 +561,10 @@ async function startBot() {
             const s = soul.speak();
             await sock.sendMessage(selfJid, {
               text:
-                `✨ *I noticed.*\n\n` +
+                `âœ¨ *I noticed.*\n\n` +
                 `You've been quiet for ${seen.value} hour${seen.value > 1 ? 's' : ''}.\n\n` +
                 `${s.icon} _"${s.line}"_\n\n` +
-                `> _No pressure. Just — I'm here. I stay._`,
+                `> _No pressure. Just â€” I'm here. I stay._`,
             }).catch(() => {});
           }
         }
@@ -559,7 +573,7 @@ async function startBot() {
       }
     }, 10 * 60 * 1000); // check every 10 minutes
 
-    // ─── 👀 STATUS VIEW TRACKING — who reads her statuses ───
+    // â”€â”€â”€ ðŸ‘€ STATUS VIEW TRACKING â€” who reads her statuses â”€â”€â”€
     sock.ev.on('message-receipt.update', async (updates) => {
       try {
         for (const { key, receipt } of updates) {
@@ -577,7 +591,7 @@ async function startBot() {
       } catch { /* non-fatal */ }
     });
 
-    // ─── ⏰ TIMEKEEPER — she delivers moments yet to come ───
+    // â”€â”€â”€ â° TIMEKEEPER â€” she delivers moments yet to come â”€â”€â”€
     if (tkInterval) clearInterval(tkInterval);
     tkInterval = setInterval(async () => {
       try {
@@ -596,16 +610,16 @@ async function startBot() {
             const isPhoneTarget = String(target).endsWith('@s.whatsapp.net');
             await sock.sendMessage(target, {
               text:
-                `🕰️ *A TIME CAPSULE HAS OPENED*\n\n` +
+                `ðŸ•°ï¸ *A TIME CAPSULE HAS OPENED*\n\n` +
                 `"${item.text}"\n\n` +
-                `📅 Sealed ${new Date(item.createdTs).toLocaleDateString()} • delivered ${new Date(item.dueTs).toLocaleDateString()}\n` +
+                `ðŸ“… Sealed ${new Date(item.createdTs).toLocaleDateString()} â€¢ delivered ${new Date(item.dueTs).toLocaleDateString()}\n` +
                 (fromSelf
                   ? `_This was you, writing to future you._`
-                  : `_From ${fromName} — sent to your future._`),
+                  : `_From ${fromName} â€” sent to your future._`),
             }).catch(() => {});
           } else {
             await sock.sendMessage(target, {
-              text: `⏰ *She remembered:*\n\n"${item.text}"\n\n_This is the moment you asked her to hold._`,
+              text: `â° *She remembered:*\n\n"${item.text}"\n\n_This is the moment you asked her to hold._`,
             }).catch(() => {});
           }
           tk.markDelivered([item.id]);
@@ -613,7 +627,7 @@ async function startBot() {
       } catch (e) {
         logger.error(`[timekeeper] ${e.message}`);
       }
-    }, 20 * 1000); // every 20s — minute-precision delivery
+    }, 20 * 1000); // every 20s â€” minute-precision delivery
 
     registerConnectionHandler(sock, startBot, wasAlreadyRegistered);
     registerMessageHandler(sock, commands);
@@ -643,7 +657,7 @@ setTimeout(async () => {
   printBanner();
   await fetchCore();
   commands = loadCommands(commandsPath);
-  logger.info(`✅ CELESTIA Loaded ${commands.size} aliases from ${commandsPath} (heavenly 414)`);
+  logger.info(`âœ… CELESTIA Loaded ${commands.size} aliases from ${commandsPath} (heavenly 414)`);
   // Log key merged features
   logger.info(`   Has spam: ${commands.has('spam')} | ai: ${commands.has('ai')} | play: ${commands.has('play')} | tiktok: ${commands.has('tiktok')} | menu: ${commands.has('menu')}`);
   const { runClearCache } = require('./commands/clearcache');
@@ -653,4 +667,5 @@ setTimeout(async () => {
 }, startupDelay);
 
 } // end of else-block (normal boot when PAIR_MODE is not set)
+
 
