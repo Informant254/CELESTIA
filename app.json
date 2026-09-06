@@ -1,0 +1,83 @@
+{
+  "name": "CELESTIA",
+  "description": "CELESTIA - The Most Beautiful WhatsApp Bot | Heavenly Automation | VPS Hostable | Baileys | Inspired by WolfTech",
+  "keywords": [
+    "whatsapp",
+    "baileys",
+    "bot",
+    "celestia",
+    "wolftech",
+    "nodejs"
+  ],
+  "website": "https://github.com/Informant254/CELESTIA",
+  "repository": "https://github.com/Informant254/CELESTIA",
+  "logo": "https://raw.githubusercontent.com/Informant254/CELESTIA/main/assets/logo.png",
+  "success_url": "/health",
+  "scripts": {},
+  "env": {
+    "SESSION_ID": {
+      "description": "WhatsApp session string (CELESTIA:~... format). Get it from the pairing site or the bot's first-link DM backup. Treat like a password.",
+      "generator": "secret",
+      "required": true
+    },
+    "OWNER_NUMBER": {
+      "description": "Owner WhatsApp number, digits only with country code, no + (e.g. 2547XXXXXXXX). Only this number gets owner powers.",
+      "value": "",
+      "required": true
+    },
+    "BOT_NAME": {
+      "description": "Display name for the bot.",
+      "value": "CELESTIA",
+      "required": false
+    },
+    "BOT_PREFIX": {
+      "description": "Command prefix character.",
+      "value": ".",
+      "required": false
+    },
+    "TIMEZONE": {
+      "description": "IANA timezone for schedules, herald briefing and rituals.",
+      "value": "Africa/Nairobi",
+      "required": false
+    },
+    "PAIR_MODE": {
+      "description": "Set to 'true' for cloud pairing: the app prints a pairing code in the logs instead of booting the bot. Link it, then flip back to 'false' and redeploy.",
+      "value": "false",
+      "required": false
+    },
+    "OPENAI_API_KEY": {
+      "description": "Optional. Powers AI features (.ai, roast engine AI path).",
+      "generator": "secret",
+      "required": false
+    },
+    "GEMINI_API_KEY": {
+      "description": "Optional. Powers AI features via Gemini.",
+      "generator": "secret",
+      "required": false
+    },
+    "BOT_SETTINGS_DATA": {
+      "description": "Optional. Base64 bot-settings backup (restored on boot).",
+      "generator": "secret",
+      "required": false
+    },
+    "DASHBOARD_API_KEY": {
+      "description": "Optional. Shared secret for the dashboard x-api-key header.",
+      "generator": "secret",
+      "required": false
+    },
+    "LOG_LEVEL": {
+      "description": "Log verbosity: silent, error, warn, info, debug.",
+      "value": "info",
+      "required": false
+    }
+  },
+  "formation": {
+    "web": {
+      "quantity": 1,
+      "size": "basic"
+    }
+  },
+  "image": "heroku/nodejs",
+  "stack": "heroku-24",
+  "addons": []
+}
