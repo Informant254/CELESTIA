@@ -126,9 +126,16 @@ if (process.env.PAIR_MODE === 'true') {
     setInterval(() => {}, 60000);
   }
 
+  // health server INSIDE pair mode: panels (Railway/nodeX/Pterodactyl)
+  // probe /health — without this the deploy looks dead to them.
+  const healthPair = require('express')();
+  healthPair.get('/', (req, res) => res.json({ service: 'celestia-pairing-mode', ok: true }));
+  healthPair.get('/health', (req, res) => res.json({ ok: true, mode: 'pairing' }));
+  healthPair.listen(process.env.PORT || 3000, '0.0.0.0', () => pairLog('health server up on /health'));
+
   // never crash the deploy: catch everything, keep container alive
   pairLoop().catch((e) => {
-    pairLog('fatal:', e.message, 'â€” restarting loop in 60s');
+    pairLog('fatal:', e.message, '— restarting loop in 60s');
     setTimeout(() => pairLoop().catch(() => {}), 60000);
   });
 } else {
