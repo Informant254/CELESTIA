@@ -2,6 +2,14 @@
   <img src="assets/logo.png" width="420" alt="CELESTIA Logo"/>
 </p>
 
+<p align="center">
+  <a href="https://heroku.com/deploy?template=https://github.com/Informant254/CELESTIA"><img src="https://img.shields.io/badge/Deploy-Heroku-430098?style=for-the-badge&logo=heroku&logoColor=white" alt="Deploy to Heroku"/></a>
+  <a href="https://railway.app/new/template?template=https://github.com/Informant254/CELESTIA"><img src="https://img.shields.io/badge/Deploy-Railway-0B0D0E?style=for-the-badge&logo=railway&logoColor=white" alt="Deploy on Railway"/></a>
+  <a href="https://render.com/deploy?repo=https://github.com/Informant254/CELESTIA"><img src="https://img.shields.io/badge/Deploy-Render-0a0f1f?style=for-the-badge&logo=render&logoColor=46E3B7" alt="Deploy to Render"/></a>
+  <a href="https://app.koyeb.com/deploy?type=git&repository=github.com/Informant254/CELESTIA&branch=main&builder=dockerfile&name=celestia"><img src="https://img.shields.io/badge/Deploy-Koyeb-121212?style=for-the-badge&logo=koyeb&logoColor=white" alt="Deploy to Koyeb"/></a>
+  <a href="https://replit.com/github/Informant254/CELESTIA"><img src="https://img.shields.io/badge/Run_on-Replit-F26207?style=for-the-badge&logo=replit&logoColor=white" alt="Run on Replit"/></a>
+</p>
+
 <h1 align="center">✨ CELESTIA ✨</h1>
 <p align="center"><b>The Most Beautiful WhatsApp Bot</b><br>
 <i>Heavenly • VPS Hostable • Hardened • 414 Commands</i></p>
