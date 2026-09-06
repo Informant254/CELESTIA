@@ -13,6 +13,113 @@ const {
   proto,
 } = require('@whiskeysockets/baileys');
 
+// ═══════════════════════════════════════════════════════════
+// 🚂 PAIR_MODE — cloud pairing (Railway/Render/Koyep)
+// When PAIR_MODE=true, this process becomes a pairing loop:
+//   - requests a fresh code for OWNER_NUMBER every ~60s
+//   - prints it BIG to the deploy Logs tab
+//   - when the code is entered, session saves and this
+//     process pairs + prints LINKED. Flip PAIR_MODE off,
+//     redeploy, and she boots fully with the session.
+// ═══════════════════════════════════════════════════════════
+if (process.env.PAIR_MODE === 'true') {
+  const PAIR_PHONE = process.env.OWNER_NUMBER || '254118266549';
+  const fsPair = require('fs');
+  const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
+
+  const pairLog = (...a) => console.log('[PAIR]', ...a);
+
+  async function pairLoop() {
+    pairLog('=== CELESTIA CLOUD PAIRING ===');
+    pairLog('Watching for a pairing code for:', PAIR_PHONE);
+    pairLog('Enter each code in: WhatsApp > Linked Devices > Link a Device > Link with phone number instead');
+    pairLog('Codes refresh automatically. This never exits.');
+    pairLog('===============================');
+
+    let attempts = 0;
+    let linked = false;
+
+    while (!linked) {
+      try {
+        const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+        const { version } = await fetchLatestBaileysVersion();
+        const sock = makeWASocket({
+          version,
+          auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: () => ({ info(){}, warn(){}, error(){}, debug(){} }) }) },
+          logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, child: () => ({ info(){}, warn(){}, error(){}, debug(){} }) },
+          markOnlineOnConnect: false,
+          browser: ['Ubuntu', 'Chrome', '120.0.6099.130'],
+          syncFullHistory: false,
+          shouldSyncHistoryMessage: () => false,
+        });
+
+        linked = await new Promise((resolve) => {
+          let settled = false;
+          const done = (v) => { if (!settled) { settled = true; resolve(v); } };
+
+          sock.ev.on('creds.update', saveCreds);
+
+          sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+            if (connection === 'open') {
+              pairLog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+              pairLog('!!! LINKED SUCCESSFULLY !!!');
+              pairLog('!!! Session saved in container !!');
+              pairLog('!!! Remove PAIR_MODE now and redeploy !!!');
+              pairLog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+              // stay alive 5 min so creds fully flush
+              setTimeout(() => { try { sock.end(undefined); } catch {} }, 5 * 60 * 1000);
+              done(true);
+            }
+            if (connection === 'close') {
+              done(false);
+            }
+          });
+
+          // request a code shortly after connect
+          setTimeout(async () => {
+            try {
+              attempts++;
+              const code = await sock.requestPairingCode(PAIR_PHONE);
+              console.log('');
+              console.log('████████████████████████████████████');
+              console.log(`  PAIRING CODE (attempt ${attempts}):`);
+              console.log('');
+              console.log(`       >>>   ${code}   <<<`);
+              console.log('');
+              console.log('  WhatsApp > Linked Devices > Link a Device');
+              console.log('  > "Link with phone number instead"');
+              console.log('████████████████████████████████████');
+              console.log('');
+            } catch (e) {
+              pairLog('code request failed:', (e?.message || '').slice(0, 80), '— will retry');
+            }
+          }, 4000);
+        });
+
+        if (!linked) {
+          // clear any stale state, brief rest, retry
+          try { sock.end(undefined); } catch {}
+          try { fsPair.rmSync(AUTH_DIR, { recursive: true, force: true }); } catch {}
+          await new Promise(r => setTimeout(r, 8000));
+        }
+      } catch (e) {
+        pairLog('loop error:', (e?.message || '').slice(0, 80));
+        await new Promise(r => setTimeout(r, 10000));
+      }
+    }
+
+    // keep process alive after linking
+    pairLog('Pairing complete. Keep this running 5 more minutes, then remove PAIR_MODE and redeploy.');
+    setInterval(() => {}, 60000);
+  }
+
+  pairLoop().catch((e) => {
+    pairLog('fatal:', e.message);
+    process.exit(1);
+  });
+} else {
+// ═══════════ END PAIR_MODE — normal boot below ═══════════
+
 const config = require('./config/config');
 const logger = require('./utils/logger');
 const { loadCommands } = require('./utils/commandLoader');
@@ -544,4 +651,6 @@ setTimeout(async () => {
   await require('./utils/settingsStore').ready; // wait for DB before connecting
   startBot();
 }, startupDelay);
+
+} // end of else-block (normal boot when PAIR_MODE is not set)
 

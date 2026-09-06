@@ -26,7 +26,9 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const app = express();
-const PORT = process.env.PAIRING_PORT || 3001;
+// Railway/Render inject PORT; use it when present (single-service deployments).
+// Local/Docker: PAIRING_PORT keeps the station separate from the bot.
+const PORT = process.env.PAIRING_PORT || process.env.PORT || 3001;
 const PAIRING_DIR = path.join(__dirname, 'pairing_sessions');
 if (!fs.existsSync(PAIRING_DIR)) fs.mkdirSync(PAIRING_DIR, { recursive: true });
 
