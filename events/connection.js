@@ -50,8 +50,11 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
     } else {
       // Always send the startup message, whether this is a fresh pairing
       // or a reconnect using an existing session.
+      // 🐺 WolfTech lineage included — heavenly tribute
+      let wolfFooter = '🐺 WolfTech howled → ✨ CELESTIA answered';
+      try { wolfFooter = require('../utils/wolfTech').getRandomFooter(); } catch {}
       await sock.sendMessage(selfJid, {
-        text: '✨ *CELESTIA has started running* ✨\n💫 The Most Beautiful Bot | VPS Ready • Hardened • Heavenly\nType .menu for heavenly commands',
+        text: `✨ *CELESTIA has started running* ✨\n💫 The Most Beautiful Bot | VPS Ready • Hardened • Heavenly\n🐺 *Inspired by WolfTech* — _Forged in the Wolf's Den, Crowned in Celestial Heaven_\n> _${wolfFooter}_\n\nType *.menu* for heavenly commands • *.wolftech* for the origin howl`,
       }).catch((err) => logger.error('Failed to send startup message:', err));
 
       if (!wasAlreadyRegistered) {

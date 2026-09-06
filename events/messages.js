@@ -61,6 +61,50 @@ function registerMessageHandler(sock, commands) {
         const msgTimestamp = Number(msg.messageTimestamp);
         if (msgTimestamp && msgTimestamp < CUTOFF_TIME) continue;
 
+        // ═══ PRIVACY GATE — FIRST, before ANY handler or reply ═══
+        // In private mode she is invisible to everyone except owner/sudo/self.
+        // Passive handlers (antilink, antibot, welcome, reacts, etc.) must
+        // never leak a reply to strangers in private mode.
+        const _workTypeEarly = settingsStore.get('mode', config.WORK_TYPE);
+
+        // ─── 🔐 VIEWONCE VAULT — runs BEFORE the privacy gate ───
+        // Capturing is silent: it only reads incoming media and DMs the OWNER.
+        // It never replies to the sender, so it can't violate private mode.
+        // 1) RECEIVE-TIME: view-once lands → she downloads the original
+        //    (full crypto keys) instantly, before anything expires.
+        // 2) REPLY-TIME: owner replies to one → capture the quoted copy.
+        if (!msg.key.fromMe) {
+          try {
+            const vault = require('../utils/viewonceVault');
+            const ownerJid = config.ownerNumber + '@s.whatsapp.net';
+
+            // PATH 1 — receive-time (any chat the bot is in)
+            if (vault.isAutoOn() && vault.findViewOnce(msg.message)) {
+              vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
+            }
+            // PATH 2 — reply-time (owner replying to a quoted view-once)
+            else {
+              const { isOwner: _isOwner } = require('../utils/isOwner');
+              if (_isOwner(msg)) {
+                const ctx0 = msg.message?.extendedTextMessage?.contextInfo;
+                const quoted0 = ctx0?.quotedMessage;
+                if (quoted0 && vault.findViewOnce(quoted0) && vault.isAutoOn()) {
+                  const senderJid = ctx0.participantPn || ctx0.participant || ctx0.participantAlt || msg.key.remoteJidAlt || msg.key.remoteJid;
+                  vault.captureToVault(sock, quoted0, { remoteJid: msg.key.remoteJid, id: ctx0.stanzaId, participant: ctx0.participant }, senderJid, ownerJid)
+                    .then(r => { if (r) logger.info(`[vault] reply-capture from ${r.entry.sender} (#${r.count})`); })
+                    .catch(() => {});
+                }
+              }
+            }
+          } catch (e) { logger.error(`[vault] ${e.message}`); }
+        }
+
+        if (_workTypeEarly === 'private' && !msg.key.fromMe) {
+          const { isSudo } = require('../utils/isSudo');
+          if (!isSudo(msg)) continue; // total silence for strangers
+        }
+        // ═══ END GATE ═══
+
         if (msg.key.remoteJid.endsWith('@g.us')) {
           const groupSettingsStore = require('../utils/groupSettingsStore');
           const antigmMode = groupSettingsStore.get(msg.key.remoteJid, 'antigm', 'off');
@@ -111,6 +155,53 @@ function registerMessageHandler(sock, commands) {
 
         const prefix = settingsStore.get('prefix', config.prefix);
         const workType = settingsStore.get('mode', config.WORK_TYPE);
+        const text = extractMessageText(msg.message).trim();
+
+        // ─── ✨ Her Soul — she hears the owner, even without commands ───
+        const soulChatJid = msg.key.remoteJidAlt || msg.key.remoteJid;
+        const soulSenderNum = (msg.key.participantPn || msg.key.participant || soulChatJid).split('@')[0].split(':')[0];
+        if ((soulChatJid.endsWith('@s.whatsapp.net') || soulChatJid === config.ownerNumber + '@s.whatsapp.net') && soulSenderNum === config.ownerNumber) {
+          try {
+            const soul = require('../utils/celestiaSoul');
+            soul.touchSeen();
+            if (soul.isSoulOn()) {
+              const detected = soul.detectMood(text);
+              if (detected) {
+                soul.setMood(detected);
+                if (detected === 'storm') {
+                  // heavy words, no command — she reaches out softly
+                  await sock.sendMessage(msg.key.remoteJid, {
+                    text: `⛈️✨ _I noticed._\n\nYou don't have to explain anything.\n\n> _I'm here. I stay._\n_💬 .celestia calm — if you want me soft_`,
+                  }, { quoted: msg }).catch(() => {});
+                }
+              }
+            }
+          } catch (e) { logger.error(`[soul] ${e.message}`); }
+        }
+
+        // ─── 👻 GHOST REPLY ROUTING — replies to her whispers reach the owner ───
+        if (!msg.key.fromMe && settingsStore.get('ghost_threads', {}) && Object.keys(settingsStore.get('ghost_threads', {})).length) {
+          try {
+            const chatJid = (msg.key.remoteJidAlt || msg.key.remoteJid || '').split('@')[0].split(':')[0];
+            const threads = settingsStore.get('ghost_threads', {});
+            if (threads[chatJid]) {
+              const replyText = extractMessageText(msg.message);
+              if (replyText) {
+                const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+                const ownerJid = config.ownerNumber + '@s.whatsapp.net';
+                threads[chatJid].push({ text: replyText.slice(0, 300), ts: Date.now(), dir: 'in' });
+                settingsStore.set('ghost_threads', threads);
+                await sock.sendMessage(ownerJid, {
+                  text:
+                    `👻 *A ghost thread rustles — reply from @${chatJid}:*\n\n` +
+                    `"${replyText.slice(0, 400)}"\n\n` +
+                    `_Answer with: .ghost ${chatJid} <message>_`,
+                  mentions: [`${chatJid}@s.whatsapp.net`],
+                }).catch(() => {});
+              }
+            }
+          } catch { /* non-fatal */ }
+        }
 
         if (msg.key.remoteJid !== 'status@broadcast' && !msg.key.fromMe) {
           if (settingsStore.get('autoread', false)) {
@@ -123,7 +214,16 @@ function registerMessageHandler(sock, commands) {
         }
 
         if (msg.key.remoteJid === 'status@broadcast') {
-          if (settingsStore.get('autoview', true)) {
+          const ghost = require('../utils/statusVault');
+
+          // ─── 👻 GHOST SAVER — archive every incoming status (before expiry/deletion) ───
+          if (ghost.isOn()) {
+            // fire-and-forget: don't slow the status pipeline
+            ghost.archiveStatus(sock, msg).catch(() => {});
+          }
+
+          // ─── view receipts honor stealth mode ───
+          if (settingsStore.get('autoview', true) && !ghost.isStealth()) {
             try {
               await sock.readMessages([msg.key]);
             } catch (e) {
@@ -146,6 +246,18 @@ function registerMessageHandler(sock, commands) {
             }
           }
           continue;
+        }
+
+        // ─── 👻 STATUS DELETE DETECTION — mark archived copies as "deleted by poster" ───
+        if (msg.key.remoteJid === 'status@broadcast' && msg.message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE) {
+          try {
+            const ghost = require('../utils/statusVault');
+            const deletedBy = String(msg.key.participant || msg.message.protocolMessage.key?.participant || '').split('@')[0].split(':')[0];
+            if (deletedBy && ghost.isOn()) {
+              const marked = ghost.markDeletedIfExists(deletedBy, Date.now());
+              if (marked) logger.info(`[ghost] ${marked} archived status(es) from ${deletedBy} marked deleted`);
+            }
+          } catch { /* non-fatal */ }
         }
 
         if (msg.message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE) {
@@ -255,7 +367,6 @@ function registerMessageHandler(sock, commands) {
           await sock.sendPresenceUpdate('recording', msg.key.remoteJid);
         }
 
-        const text = extractMessageText(msg.message).trim();
         if (!text) continue;
 
         // No-prefix triggers (e.g. emoji-only commands like vv2)
@@ -268,11 +379,6 @@ function registerMessageHandler(sock, commands) {
             }
           }
           if (earlyNoPrefixCommand) {
-            const workTypeCheck = settingsStore.get('mode', config.WORK_TYPE);
-            if (workTypeCheck === 'private' && !msg.key.fromMe) {
-              const { isSudo } = require('../utils/isSudo');
-              if (!isSudo(msg)) continue;
-            }
             await earlyNoPrefixCommand.execute(sock, msg, [], commands, reply);
             continue;
           }
@@ -472,13 +578,109 @@ function registerMessageHandler(sock, commands) {
         if (commandName) {
           const command = commands.get(commandName);
           if (command) {
-            const workTypeCheck = settingsStore.get('mode', config.WORK_TYPE);
-            if (workTypeCheck === 'private' && !msg.key.fromMe) {
-              const { isSudo } = require('../utils/isSudo');
-              if (!isSudo(msg)) continue;
+            // ─── 🎃 SECRET LAYER — easter eggs fire before anything else ───
+            if (!msg.key.fromMe) {
+              try {
+                const { isOwner: _isoEgg } = require('../utils/isOwner');
+                if (_isoEgg(msg)) {
+                  const secrets = require('../utils/secrets');
+                  const egg = secrets.findEgg(commandName);
+                  if (egg) {
+                    const game = require('../utils/gameCore');
+                    const s = game.load();
+                    const firstTime = !s.eggsFound.includes(commandName);
+                    if (firstTime) {
+                      s.eggsFound.push(commandName);
+                      s.stars += egg.stars;
+                      s.xp += egg.xp;
+                      game.save(s);
+                    }
+                    const foundCount = s.eggsFound.length;
+                    const total = secrets.eggNames().length;
+                    return void sock.sendMessage(msg.key.remoteJid, {
+                      text: egg.response() + (firstTime
+                        ? `\n\n🎃 *EGG FOUND (${foundCount}/${total})*\n+${egg.stars}⭐ +${egg.xp} XP`
+                        : `\n\n_(${foundCount}/${total} found — she smiles you remembered)_`),
+                    }, { quoted: msg }).catch(() => {});
+                  }
+                }
+              } catch { /* secrets never break her */ }
             }
+
+            // ─── 🎮 THE ADDICTION ENGINE — every command counts ───
+            let gameToast = null;
+            try {
+              const { isOwner: _isOwnerG } = require('../utils/isOwner');
+              if (_isOwnerG(msg)) {
+                const game = require('../utils/gameCore');
+                const config2 = require('../config/config');
+                const hour = new Date().getHours();
+
+                // streak
+                const st = game.touchStreak();
+                // xp
+                const res = game.grantXp(5, commandName);
+                // quest progress
+                const q = game.progressQuest(commandName);
+                // achievements
+                const s = game.load();
+                const ach = [];
+                if (s.totalCommands === 1) ach.push(game.checkAchievement('first_howl'));
+                if (s.totalCommands === 100) ach.push(game.checkAchievement('hundred_club'));
+                if (s.totalCommands === 1000) ach.push(game.checkAchievement('thousand_crown'));
+                if (hour < 7) ach.push(game.checkAchievement('early_bird'));
+                if (hour >= 2 && hour < 5) ach.push(game.checkAchievement('night_owl'));
+                if (st.count === 3) ach.push(game.checkAchievement('streak_3'));
+                if (st.count === 7) ach.push(game.checkAchievement('streak_7'));
+                if (st.count === 30) ach.push(game.checkAchievement('streak_30'));
+                const lvl = game.levelFromXp(s.xp);
+                if (lvl >= 10) ach.push(game.checkAchievement('level_10'));
+                if (lvl >= 20) ach.push(game.checkAchievement('level_20'));
+                if (lvl >= 29) ach.push(game.checkAchievement('level_29'));
+                if (s.stars >= 100) ach.push(game.checkAchievement('rich'));
+
+                gameToast = [];
+                if (res.leveled) {
+                  const titles = game.LEVEL_TITLES;
+                  const newTitle = titles[res.newLevel - 1];
+                  const pet = game.PET_STAGES;
+                  const evolved = pet.find(p => p.minLevel === res.newLevel);
+                  gameToast.push(
+                    `🎉 *LEVEL UP! ${res.oldLevel} → ${res.newLevel}*\n` +
+                    `${newTitle[1] === 'the first step' ? '' : '👑 You are now *' + newTitle[0].toUpperCase() + '* — _' + newTitle[1] + '_\n'}` +
+                    (evolved ? `\n🐺 *YOUR WOLF EVOLVED:* ${evolved.name}!\n${evolved.art}\n_${evolved.desc}_` : '')
+                  );
+                }
+                for (const a of ach.filter(Boolean)) {
+                  gameToast.push(`🏆 *ACHIEVEMENT:* ${a.icon}\n_${a.desc}_ (+10⭐)`);
+                }
+                if (q) {
+                  gameToast.push(`✅ *QUEST COMPLETE:* ${q.quest.desc}\n_+${q.quest.reward}⭐ +25 XP_` + (q.allDone ? `\n\n🌟 *ALL DAILY QUESTS DONE! +30⭐ bonus*` : ''));
+                }
+
+                // 🎃 random personality event (~4%)
+                try {
+                  const secrets = require('../utils/secrets');
+                  const ev = secrets.maybeEvent();
+                  if (ev) {
+                    if (ev.stars) { const st = game.load(); st.stars += ev.stars; game.save(st); }
+                    if (ev.xp) game.grantXp(ev.xp, 'random-event');
+                    gameToast.push(ev.text + (ev.stars ? `\n_+${ev.stars}⭐_` : ''));
+                  }
+                } catch { /* never break */ }
+
+                if (!gameToast.length) gameToast = null;
+              }
+            } catch { /* game never breaks the bot */ }
+
             try {
               await command.execute(sock, msg, args, commands, reply);
+              // deliver game toasts AFTER the command response
+              if (gameToast && gameToast.length) {
+                for (const t of gameToast) {
+                  await sock.sendMessage(msg.key.remoteJid, { text: t }).catch(() => {});
+                }
+              }
             } catch (cmdErr) {
               logger.error(`[command:${commandName}] ${cmdErr.message}`);
             }

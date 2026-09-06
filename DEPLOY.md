@@ -1,4 +1,7 @@
-# CELESTIA - DEPLOY GUIDE ✨
+# CELESTIA - DEPLOY GUIDE ✨🐺
+
+> 🐺 *Inspired by WolfTech* — Forged in the Wolf's Den, Crowned in Celestial Heaven
+> Howl of the Wolf → Light of the Stars — `utils/wolfTech.js` | `GET /wolftech`
 
 ## Option A: Direct VPS (Ubuntu) - Docker (Recommended)
 

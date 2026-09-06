@@ -1,21 +1,52 @@
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 const lockFile = path.join(__dirname, '../auth_info_baileys/.instance.lock');
-function isOurProcess(pid) {
+const IS_WINDOWS = process.platform === 'win32';
+
+function isProcessAlive(pid) {
   try {
     process.kill(pid, 0); // throws if dead
-  } catch {
-    return false; // dead process — stale lock
+    return true;
+  } catch (e) {
+    // On Windows, process.kill(0) can fail with EPERM for processes owned by
+    // others — that means it IS alive, we just can't signal it.
+    return e.code === 'EPERM';
+  }
+}
+
+// Returns the command line of a PID, or null if unreadable.
+// Cross-platform: /proc/<pid>/cmdline on Linux, WMIC/tasklist on Windows.
+function getCmdline(pid) {
+  if (IS_WINDOWS) {
+    try {
+      // PowerShell gets full command line reliably on Win10/11.
+      const out = execSync(
+        `powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter 'ProcessId=${pid}').CommandLine"`,
+        { timeout: 5000, encoding: 'utf8', windowsHide: true }
+      );
+      return (out || '').trim();
+    } catch {
+      return null;
+    }
   }
   try {
-    const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8')
-      .replace(/\0/g, ' ')
-      .trim();
-    // Must be node AND running index.js — rules out Pterodactyl daemon (PID 27)
-    return /\bnode\b/i.test(cmdline) && cmdline.includes('index.js');
+    return fs.readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ').trim();
   } catch {
-    return false; // /proc unreadable — treat as not ours
+    return null;
   }
+}
+
+function isOurProcess(pid) {
+  if (!isProcessAlive(pid)) return false; // dead process — stale lock
+  const cmdline = getCmdline(pid);
+  if (!cmdline) {
+    // Alive but cmdline unreadable — safest to assume it's a real instance
+    // (the "can't verify" case). Better one false exit than two live bots.
+    return true;
+  }
+  // Must be node AND running index.js — rules out Pterodactyl daemon (PID 27)
+  return /\bnode(\.exe)?\b/i.test(cmdline) && /index\.js/.test(cmdline);
 }
 function acquireLock() {
   fs.mkdirSync(path.dirname(lockFile), { recursive: true });

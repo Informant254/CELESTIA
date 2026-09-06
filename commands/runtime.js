@@ -10,7 +10,7 @@ function formatUptime(seconds) {
 
 module.exports = {
   name: 'runtime',
-  aliases: ['stats'],
+  aliases: [],
   description: 'Check bot runtime with rich card',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;

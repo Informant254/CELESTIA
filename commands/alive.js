@@ -8,20 +8,25 @@ module.exports = {
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
 
+    const wolfTech = require('../utils/wolfTech');
     const caption = `
 ╔══════════════════════╗
-      👾 *CELESTIA* 👾
+      ✨ *CELESTIA* ✨
 ╚══════════════════════╝
 
-😈 *I'M ALIVE MATE!* 😡
+😈 *I'M ALIVE MATE!* 🐺💫
 
 ☠️ *WE ARE LEGION*
 ☠️ *WE DO NOT FORGIVE*
 ☠️ *WE DO NOT FORGET*
-🔥*EXPECT US ALWAYS* 🔥
+🔥 *EXPECT US ALWAYS* 🔥
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+🐺 *WolfTech howled → ✨ CELESTIA answered*
+🌙 *${wolfTech.tribute.fullTagline}*
+━━━━━━━━━━━━━━━━━━━━━━━
 💀 *Ready for your next command...*
+> _${wolfTech.getRandomFooter()}_
 ━━━━━━━━━━━━━━━━━━━━━━━
 `.trim();
 

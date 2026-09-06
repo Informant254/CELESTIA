@@ -18,3 +18,22 @@ ISAAC/auth_info_baileys/
 .DS_Store
 logs/
 commands/*.bak
+
+# DEPLOY SAFETY
+data/
+vault/
+pair-code.txt
+pair-linked.txt
+pair-qr.png
+pair-out.log
+pair-err.log
+pqr-out.log
+pqr-err.log
+bot-out.log
+bot-err.log
+vv_debug.json
+pairing_sessions/
+.DS_Store.store
+
+# GitHub auth artifacts - NEVER COMMIT
+.gh-*.txt

@@ -1,6 +1,6 @@
 module.exports = {
   name: 'promote',
-  aliases: ['crown', 'p'],
+  aliases: ['crown'],
   description: 'Promotes a mentioned member to group admin (admin only).',
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;

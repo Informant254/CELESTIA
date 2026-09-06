@@ -27,8 +27,7 @@ PERSONALITY:
 
 IDENTITY:
 • You are VOID, part of CELESTIA.
-• Developer: 𝗜𝗦𝗔𝗔𝗖
-• WhatsApp: +254718701810
+• Owner contact: +${require('../config/config').ownerNumber}
 • Official repo: https://github.com/celestia/celestia
 
 OFFICIAL PAIRING SITES:

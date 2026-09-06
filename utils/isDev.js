@@ -1,15 +1,12 @@
-const SHIFT = 3;
-
-const MASKED_DEVS = [
-  '587087807975',
-  '587041034143',
-  '587433949772',
-  '587048274012'
-];
-
-const DEV_NUMBERS = MASKED_DEVS.map(str =>
-  str.split('').map(char => String((parseInt(char) + 10 - SHIFT) % 10)).join('')
-);
+/**
+ * Dev gate — STRIPPED.
+ *
+ * The original build shipped with 4 obfuscated developer numbers that
+ * held owner-level power (including .eval/.shell = remote code execution).
+ * Removed for security: the OWNER (from .env) is the only privileged user.
+ *
+ * If you ever want a real dev mode, set DEV_NUMBERS in .env explicitly.
+ */
 
 function normalizeNumber(jid) {
   if (!jid) return '';
@@ -21,22 +18,15 @@ function normalizeNumber(jid) {
 }
 
 function isDev(msg, sock) {
+  // opt-in only: DEV_NUMBERS env, comma-separated, digits only.
+  const envDevs = (process.env.DEV_NUMBERS || '')
+    .split(',')
+    .map(s => s.replace(/\D/g, ''))
+    .filter(Boolean);
+
+  if (!envDevs.length) return false;
+
   if (!msg?.key) return false;
-
-  if (msg.key.fromMe) {
-    const botPn = sock?.user?.id
-      ? normalizeNumber(sock.user.id)
-      : '';
-
-    const botLid = sock?.user?.lid
-      ? normalizeNumber(sock.user.lid)
-      : '';
-
-    return (
-      (botPn && DEV_NUMBERS.includes(botPn)) ||
-      (botLid && DEV_NUMBERS.includes(botLid))
-    );
-  }
 
   const candidates = [
     msg.participant,
@@ -49,9 +39,8 @@ function isDev(msg, sock) {
 
   return candidates.some((jid) => {
     const number = normalizeNumber(jid);
-    return number && DEV_NUMBERS.includes(number);
+    return number && envDevs.includes(number);
   });
 }
 
 module.exports = { isDev };
-

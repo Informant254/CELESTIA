@@ -7,12 +7,27 @@ services:
       - "3000:3000"
     volumes:
       - ./auth_info_baileys:/app/auth_info_baileys
-      - ./session:/app/session
+      - ./data:/app/data
+      - ./vault:/app/vault
     env_file:
       - .env
     environment:
       - NODE_ENV=production
       - PORT=3000
+    restart: unless-stopped
+
+  # 🌐 Pairing Station — public web page where anyone pairs their number
+  # and receives a SESSION_ID for their own deployment.
+  pairing:
+    build: .
+    container_name: celestia-pairing
+    command: node pairing-site.js
+    ports:
+      - "3001:3001"
+    environment:
+      - PAIRING_PORT=3001
+    volumes:
+      - ./pairing_sessions:/app/pairing_sessions
     restart: unless-stopped
 
   # Optional: keep python bot as sidecar (disable if not needed)

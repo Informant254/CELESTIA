@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CELESTIA — Pairing Station</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+    background: radial-gradient(ellipse at 50% 30%, #111a38 0%, #0a0f24 45%, #030510 100%);
+    color: #cfeaff; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .card {
+    max-width: 460px; width: 92%; background: rgba(10, 15, 30, 0.85);
+    border: 1px solid rgba(0, 229, 255, 0.25); border-radius: 24px;
+    padding: 40px 32px; text-align: center; box-shadow: 0 0 60px rgba(122, 82, 255, 0.15);
+  }
+  .wolf { font-size: 52px; margin-bottom: 8px; }
+  h1 {
+    font-size: 34px; letter-spacing: 10px; font-weight: 800; margin-bottom: 4px;
+    background: linear-gradient(90deg, #00e5ff, #7a52ff, #ff2e93);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: #8ea6c8; font-size: 13px; letter-spacing: 4px; margin-bottom: 30px; text-transform: uppercase; }
+  .poem { color: #5d7194; font-style: italic; font-size: 13px; margin-bottom: 32px; }
+  input[type=tel] {
+    width: 100%; padding: 16px; font-size: 20px; text-align: center; letter-spacing: 2px;
+    background: rgba(0,0,0,0.4); color: #fff; border: 1px solid #22365e;
+    border-radius: 14px; outline: none; margin-bottom: 14px;
+  }
+  input[type=tel]:focus { border-color: #00e5ff; box-shadow: 0 0 20px rgba(0,229,255,0.25); }
+  button {
+    width: 100%; padding: 16px; font-size: 16px; font-weight: 700; letter-spacing: 3px;
+    background: linear-gradient(90deg, #00e5ff, #7a52ff); color: #030510;
+    border: none; border-radius: 14px; cursor: pointer; text-transform: uppercase;
+    transition: transform .15s, box-shadow .15s;
+  }
+  button:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,229,255,0.35); }
+  button:disabled { opacity: 0.5; cursor: wait; }
+  .code {
+    font-size: 44px; font-weight: 800; letter-spacing: 12px; color: #00e5ff;
+    margin: 24px 0; padding: 18px; border: 2px dashed rgba(0,229,255,0.4);
+    border-radius: 14px; background: rgba(0,229,255,0.05);
+    text-shadow: 0 0 25px rgba(0,229,255,0.5); cursor: pointer;
+  }
+  .steps { text-align: left; font-size: 13px; color: #8ea6c8; line-height: 1.9; margin: 20px 0; }
+  .steps b { color: #cfeaff; }
+  .session {
+    font-size: 10px; word-break: break-all; text-align: left; color: #7dffa8;
+    background: rgba(0,40,20,0.4); border: 1px solid #2a5; padding: 14px;
+    border-radius: 10px; margin: 16px 0; font-family: monospace; cursor: pointer;
+  }
+  .err { color: #ff2e93; font-size: 13px; margin: 10px 0; }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #00e5ff;
+    border-top: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -4px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .hint { font-size: 11px; color: #4a5a78; margin-top: 24px; line-height: 1.7; }
+  a { color: #00e5ff; }
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="wolf">🐺</div>
+  <h1>CELESTIA</h1>
+  <div class="sub">Pairing Station</div>
+  <div class="poem">✦ Howl of the Wolf → Light of the Stars ✦</div>
+
+  <div id="stage-input">
+    <input type="tel" id="phone" placeholder="254 712 345 678" autocomplete="tel">
+    <div style="font-size:11px;color:#5d7194;margin-bottom:14px">full international format, digits only</div>
+    <button onclick="requestCode()">GET PAIRING CODE</button>
+    <div class="err" id="err"></div>
+    <div class="hint">
+      Inspired by <b>WolfTech</b> · Built as <b>CELESTIA</b><br>
+      290+ commands · 27 realms · a wolf that remembers
+    </div>
+  </div>
+
+  <div id="stage-code" style="display:none">
+    <div style="font-size:12px;color:#8ea6c8;margin-bottom:6px">YOUR PAIRING CODE</div>
+    <div class="code" id="code" onclick="copyCode()">— — — —</div>
+    <div style="font-size:11px;color:#5d7194;margin-bottom:18px">tap the code to copy</div>
+    <div class="steps">
+      <b>1.</b> Open WhatsApp on your phone<br>
+      <b>2.</b> Settings → <b>Linked Devices</b> → Link a Device<br>
+      <b>3.</b> Tap <b>"Link with phone number instead"</b><br>
+      <b>4.</b> Enter the code above
+    </div>
+    <button onclick="checkStatus()"><span class="spinner"></span>&nbsp; I'VE ENTERED IT — CHECK</button>
+    <div class="err" id="err2"></div>
+  </div>
+
+  <div id="stage-done" style="display:none">
+    <div style="font-size:40px;margin-bottom:12px">✅</div>
+    <div style="font-size:18px;font-weight:700;color:#7dffa8;margin-bottom:6px">LINKED SUCCESSFULLY</div>
+    <div style="font-size:12px;color:#8ea6c8;margin-bottom:16px">Your session string (tap to copy):</div>
+    <div class="session" id="session" onclick="copySession()">…</div>
+    <div class="steps">
+      <b>Deploying yourself?</b><br>
+      Paste this string into your <code>SESSION_ID</code> environment variable —
+      she'll wake up as YOUR bot, with YOUR number as owner.<br><br>
+      <b>Or just start chatting:</b> send <code>.menu</code> to her on WhatsApp.
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+async function requestCode() {
+  const phone = $('phone').value.replace(/\D/g, '');
+  $('err').textContent = '';
+  if (phone.length < 8) { $('err').textContent = 'Number looks too short — include country code.'; return; }
+  document.querySelector('#stage-input button').disabled = true;
+  document.querySelector('#stage-input button').innerHTML = '<span class="spinner"></span>&nbsp; REQUESTING…';
+  try {
+    const r = await fetch('/api/pair', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'request failed');
+    $('code').textContent = d.code;
+    $('stage-input').style.display = 'none';
+    $('stage-code').style.display = 'block';
+    // auto-poll for link
+    pollLink(phone);
+  } catch (e) {
+    $('err').textContent = e.message;
+    document.querySelector('#stage-input button').disabled = false;
+    document.querySelector('#stage-input button').textContent = 'GET PAIRING CODE';
+  }
+}
+
+async function checkStatus() { /* manual check also handled by poll */ }
+
+let pollCount = 0;
+async function pollLink(phone) {
+  pollCount++;
+  if (pollCount > 60) return; // ~3 min of polling
+  try {
+    const r = await fetch('/api/status', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone })
+    });
+    const d = await r.json();
+    if (d.linked && d.sessionString) {
+      $('stage-code').style.display = 'none';
+      $('session').textContent = d.sessionString;
+      $('stage-done').style.display = 'block';
+      return;
+    }
+  } catch {}
+  setTimeout(() => pollLink(phone), 3000);
+}
+
+function copyCode() {
+  navigator.clipboard.writeText($('code').textContent);
+  flash($('code'), 'COPIED ✓');
+}
+function copySession() {
+  navigator.clipboard.writeText($('session').textContent);
+  flash($('session'), 'session copied ✓');
+}
+function flash(el, msg) {
+  const old = el.textContent;
+  el.textContent = msg;
+  setTimeout(() => el.textContent = old, 900);
+}
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 module.exports = {
   name: 'toimg',
-  aliases: ['photo', 'toimage'],
+  aliases: ['toimage'],
   description: 'Convert a sticker to an image. Reply to a sticker with .toimg',
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;

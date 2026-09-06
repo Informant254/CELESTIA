@@ -11,6 +11,11 @@
   <img src="https://img.shields.io/badge/Commands-414-7c4dff?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/VPS-Ready-00f5ff?style=for-the-badge"/>
   <img src="https://img.shields.io/badge/Baileys-7.x-0a0f1f?style=for-the-badge"/>
+  <img src="https://img.shields.io/badge/Inspired%20by-WolfTech%20🐺-0a0f1f?style=for-the-badge&logo=wolf&logoColor=00f5ff"/>
+</p>
+
+<p align="center">
+  <i>🐺 Howl of the Wolf → ✨ Light of the Stars — WolfTech howled, CELESTIA ascended.</i>
 </p>
 
 ---
@@ -20,6 +25,30 @@
 **CELESTIA** is **The Most Beautiful WhatsApp Bot** ✨ - heavenly, VPS-hostable, hardened. 414 elegant commands, safe group tools, AI, media, automation. Built for beauty and power.
 
 > *Heavenly elegance, beautiful power.*
+> *Forged in the Wolf's Den, Crowned in Celestial Heaven.*
+
+---
+
+### 🐺 Inspired by WolfTech — The Origin Howl
+
+**CELESTIA didn't start from silence. She started from a howl.**
+
+> Before heaven, there was the hunt. **WolfTech** prowled the dark — raw, feral, unstoppable code. It taught us to build bots that *don't kneel, don't break, don't sleep.*
+> **CELESTIA** looked up and turned that hunt into *light*. 414 celestial commands, heavenly VPS armor, hardened grace. Same fang, new crown.
+
+```
+🐺 WOLFTECH gave the fang.
+✨ CELESTIA gave the crown.
+🌙 Together → Legend.
+```
+
+**Lineage:** `WolfTech (feral power) → CELESTIA (heavenly evolution)` — not a copy, *an ascension*.
+
+- **WolfTech DNA:** hunt logic, spam engine, group ferocity, never-die session
+- **Celestia Soul:** neon heaven aesthetic, 414 polished commands, VPS hardening, Baileys 7 elegance
+- **Tribute:** Every `.ping`, `.alive`, `.menu` whispers the wolf. Try `.wolftech` to hear the full howl.
+
+> *The Wolf hunts. The Star guides. Together, unstoppable.* — `utils/wolfTech.js`
 
 ---
 
@@ -92,4 +121,19 @@ Update `BOT_NAME=CELESTIA` in `.env`, logo in `assets/logo.svg`. PM2: `pm2 start
 
 ---
 
-<p align="center"><i>CELESTIA • The Most Beautiful Bot • Made heavenly</i></p>
+### 🐺💫 Lineage
+
+| Era | Entity | Essence |
+|-----|--------|---------|
+| 🌑 | **WolfTech** | The Hunt — feral, raw, unbreakable |
+| 🌸 | **CELESTIA** | The Heaven — elegant, hardened, celestial |
+
+> **Credit:** Inspired by **WolfTech 🐺** — the pack that showed us how to run. CELESTIA is the star that showed us where to run *to*.
+
+---
+
+<p align="center">
+  <b>CELESTIA ✨ The Most Beautiful Bot</b><br>
+  <i>Howl of the Wolf → Light of the Stars</i><br>
+  <sub>🐺 Inspired by <b>WolfTech</b> • ✨ Forged as <b>CELESTIA</b> • Made heavenly</sub>
+</p>

@@ -1,7 +1,7 @@
 {
   "name": "celestia-bot",
   "version": "2.0.0",
-  "description": "CELESTIA - The Most Beautiful WhatsApp Bot | Heavenly Automation | VPS Hostable | Baileys",
+  "description": "CELESTIA - The Most Beautiful WhatsApp Bot | Heavenly Automation | VPS Hostable | Baileys | 🐺 Inspired by WolfTech → ✨ Celestia Reborn",
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
@@ -15,9 +15,13 @@
     "celestia",
     "beautiful",
     "heavenly",
-    "vps"
+    "vps",
+    "wolftech",
+    "inspired-by-wolftech"
   ],
-  "author": "merged",
+  "author": "CELESTIA (Inspired by WolfTech 🐺)",
+  "contributors": ["WolfTech 🐺 — Original Howl / Inspiration", "CELESTIA ✨ — Heavenly Evolution"],
+  "homepage": "https://github.com/yourname/celestia#inspired-by-wolftech",
   "license": "MIT",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",

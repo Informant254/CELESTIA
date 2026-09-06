@@ -1,10 +1,10 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
+const config = require('../config/config');
 
-// Hardcoded owner/developer numbers — protected from being blocked
+// Protected from being blocked: live owner from config — never stale
 const OWNER_NUMBERS = [
-  '254718701810@s.whatsapp.net',
-  '254754574642@s.whatsapp.net',
+  config.ownerNumber + '@s.whatsapp.net',
 ];
 
 module.exports = {

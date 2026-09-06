@@ -1,6 +1,12 @@
 const runtimeSettings = require('./runtimeSettings');
 
+const wolfTechInfo = (() => { try { return require('../utils/wolfTech').tribute; } catch { return { origin: 'WolfTech', tagline: 'Howl of the Wolf → Light of the Stars' }; }})();
+
 module.exports = {
+  // 🐺 WolfTech tribute — lineage metadata (visible via / and /health)
+  wolfTech: wolfTechInfo,
+  tribute: `Inspired by ${wolfTechInfo.origin} 🐺 — ${wolfTechInfo.tagline}`,
+
   // The character (or string) that must precede every command. Can be
   // changed at runtime with .prefix — that change is persisted and wins
   // over BOT_PREFIX below on the next restart.
@@ -10,7 +16,7 @@ module.exports = {
   // ("private"). Changed at runtime with .mode, persisted the same way.
   WORK_TYPE: runtimeSettings.get('mode', 'public'),
 
-  ownerNumber: process.env.OWNER_NUMBER || '254754574642', // digits only, with country code, no +
+  ownerNumber: process.env.OWNER_NUMBER || '254118266549', // digits only, with country code, no +
 
   // Display name for the bot, used in messages like the !menu command.
   botName: process.env.BOT_NAME || 'CELESTIA',

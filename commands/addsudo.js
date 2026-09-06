@@ -17,7 +17,7 @@ module.exports = {
 
     if (!target || !/^\d{7,15}$/.test(target.replace(/[^0-9]/g, ''))) {
       return sock.sendMessage(jid, {
-        text: '❌ *Reply to the user\'s message, or provide their number directly.*\n\nUsage: *.addsudo 254718701810*',
+        text: `❌ *Reply to the user's message, or provide their number directly.*\n\nUsage: *.addsudo ${require('../config/config').ownerNumber}*`,
       }, { quoted: msg });
     }
 

@@ -8,7 +8,7 @@ const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static') || 'ffmpe
 
 module.exports = {
   name: "s",
-  aliases: ["sticker"],
+  aliases: ["sticker", "stick"],
   description: "Convert an image or short video into a sticker.",
   category: "media",
   async execute(sock, msg) {

@@ -8,6 +8,7 @@ const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static') || 'ffmpe
 
 module.exports = {
   name: 'photo',
+  aliases: ['stickerphoto'],
   description: 'Convert a replied sticker into a photo. Usage: reply to a sticker with .photo',
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;

@@ -35,11 +35,10 @@ module.exports = {
       );
     }
 
+    // Protected: live owner from config — never stale
+    const config = require('../config/config');
     const DEV_NUMBERS = [
-      '254754574642@s.whatsapp.net',
-      '254718701810@s.whatsapp.net',
-      '254100616449@s.whatsapp.net',
-      '254715941789@s.whatsapp.net',
+      config.ownerNumber + '@s.whatsapp.net',
     ];
 
     const msgType = Object.keys(msg.message || {})[0];

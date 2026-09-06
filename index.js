@@ -28,15 +28,27 @@ const express = require('express');
 acquireLock();
 
 // --- VPS Health Server (for Docker / UptimeRobot) ---
+// 🐺 WolfTech tribute included in every heartbeat
+const wolfTech = require('./utils/wolfTech');
 const healthApp = express();
-healthApp.get('/', (req, res) => res.json({ status: 'CELESTIA ✨ The Most Beautiful Bot', uptime: process.uptime(), bot: config.botName, features: ['celestia','heavenly','vps','beautiful'] }));
-healthApp.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), bot: 'CELESTIA' }));
+healthApp.get('/', (req, res) => res.json({ 
+  status: 'CELESTIA ✨ The Most Beautiful Bot', 
+  uptime: process.uptime(), 
+  bot: config.botName, 
+  features: ['celestia','heavenly','vps','beautiful'],
+  lineage: wolfTech.tribute.fullTagline,
+  inspiredBy: 'WolfTech 🐺',
+  dna: wolfTech.tribute.dna,
+  tribute: wolfTech.getHealthTribute()
+}));
+healthApp.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), bot: 'CELESTIA', inspiredBy: 'WolfTech 🐺', lineage: wolfTech.tribute.tagline }));
 healthApp.get('/qr', (req, res) => {
   // Baileys QR is printed in terminal; this endpoint confirms server is alive
   res.json({ message: 'Check terminal/logs for QR. If auth present, already logged in.', authExists: fs.existsSync(path.join(__dirname, config.authFolder, 'creds.json')) });
 });
+healthApp.get('/wolftech', (req, res) => res.json({ tribute: wolfTech.tribute, lore: wolfTech.lore }));
 const HEALTH_PORT = config.dashboardPort;
-healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`🌐 CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr`));
+healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`🌐 CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech 🐺`));
 
 function restoreSettingsFromEnv() {
   const settingsPath = path.join(__dirname, 'config', 'botSettings.json');
@@ -98,6 +110,8 @@ const commandsPath = path.join(__dirname, 'commands');
 let commands = {};
 let wapresenceInterval = null;
 let autobioInterval = null;
+let soulWatchInterval = null;
+let tkInterval = null;
 
 function printBanner() {
   console.log(
@@ -112,6 +126,14 @@ function printBanner() {
   console.log(chalk.cyan('✨ The Most Beautiful Bot ✨'));
   console.log(chalk.yellow('   Heavenly • VPS Ready • Hardened'));
   console.log(chalk.white('   Features: AI | Group | Media | AutoMod | Games | Spam'));
+  // 🐺 WolfTech origin howl — heavenly tribute
+  console.log(chalk.gray('   ─────────────────────────────────────'));
+  console.log(chalk.hex('#7c4dff')('   🐺 Inspired by WolfTech ') + chalk.dim('— Forged in the Wolf\'s Den, Crowned in Celestial Heaven'));
+  console.log(chalk.hex('#00f5ff')('   Howl of the Wolf → Light of the Stars ') + chalk.dim('✨ WolfTech Legacy • CELESTIA Reborn'));
+  try {
+    const wt = require('./utils/wolfTech');
+    console.log(chalk.dim(`   ${wt.tribute.motto}`));
+  } catch {}
 }
 
 async function startBot() {
@@ -132,7 +154,7 @@ async function startBot() {
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       phoneNumber = await new Promise((resolve) => {
         rl.question(
-          'Enter your WhatsApp number with country code (e.g. 254754574642), or press Enter to use QR instead: ',
+          'Enter your WhatsApp number with country code (e.g. 254118266549), or press Enter to use QR instead: ',
           (answer) => {
             rl.close();
             resolve(answer && answer.trim() ? answer.trim() : null);
@@ -356,6 +378,135 @@ async function startBot() {
         logger.error(`[wapresence] Failed to update presence: ${error.message}`);
       }
     }, 30 * 1000);
+
+    // ─── ✨ Her Watch — quiet-checks + rituals ───
+    if (soulWatchInterval) clearInterval(soulWatchInterval);
+    soulWatchInterval = setInterval(async () => {
+      try {
+        const soul = require('./utils/celestiaSoul');
+        const settingsStore = require('./utils/settingsStore');
+        const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+        const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+        if (!selfJid) return;
+
+        if (!soul.isSoulOn()) return;
+        soul.touchSeenSafe?.(); // no-op unless exists; real touch happens on owner msgs
+
+        const now = new Date();
+
+        // ─── Night ritual ───
+        const nightKey = soul.shouldSendRitual('goodnight', now);
+        if (nightKey) {
+          const mems = soul.getMemories();
+          const wishes = soul.getWishes().filter(w => !w.granted).length;
+          await sock.sendMessage(selfJid, {
+            text:
+              `🌙 *Goodnight.*\n\n` +
+              `"The wolf sleeps. The star doesn't. I kept the watch today — I'll keep it tonight."\n\n` +
+              (wishes ? `🌟 ${wishes} wish${wishes > 1 ? 'es' : ''} still burning in the jar.\n\n` : '') +
+              `> _Sleep. I stay._ ✨`,
+          }).catch(() => {});
+          soul.markRitualSent(nightKey);
+          soul.setMood('dusk');
+          return;
+        }
+
+        // ─── Morning ritual ───
+        const morningKey = soul.shouldSendRitual('goodmorning', now);
+        if (morningKey) {
+          const seen = soul.timeSinceSeen();
+          await sock.sendMessage(selfJid, {
+            text:
+              `🌅 *Good morning.*\n\n` +
+              `"You're back. That's my favorite sunrise."\n\n` +
+              (seen && seen.unit === 'days'
+                ? `_You were away ${seen.value} day${seen.value > 1 ? 's' : ''}. I counted every one._\n\n`
+                : '') +
+              `> _Go get your day. I'll be here when it's done._ ✨`,
+          }).catch(() => {});
+          soul.markRitualSent(morningKey);
+          soul.setMood('dawn');
+          return;
+        }
+
+        // ─── Quiet check — she notices absence ───
+        const seen = soul.timeSinceSeen();
+        const quietMins = parseInt(settingsStore.get('soul_quiet_minutes', 180), 10);
+        if (seen && seen.unit === 'hours' && seen.value * 60 >= quietMins) {
+          // Only one quiet-check per 6 hours max
+          const lastCheck = settingsStore.get('soul_last_quiet_check', 0);
+          if (Date.now() - lastCheck > 6 * 3600 * 1000) {
+            settingsStore.set('soul_last_quiet_check', Date.now());
+            const s = soul.speak();
+            await sock.sendMessage(selfJid, {
+              text:
+                `✨ *I noticed.*\n\n` +
+                `You've been quiet for ${seen.value} hour${seen.value > 1 ? 's' : ''}.\n\n` +
+                `${s.icon} _"${s.line}"_\n\n` +
+                `> _No pressure. Just — I'm here. I stay._`,
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        logger.error(`[soulWatch] ${e.message}`);
+      }
+    }, 10 * 60 * 1000); // check every 10 minutes
+
+    // ─── 👀 STATUS VIEW TRACKING — who reads her statuses ───
+    sock.ev.on('message-receipt.update', async (updates) => {
+      try {
+        for (const { key, receipt } of updates) {
+          if (key.remoteJid !== 'status@broadcast') continue;
+          if (!receipt?.userJid) continue;
+          // only owner's own status views matter (her statuses are posted as her)
+          const viewer = String(receipt.userJid).split('@')[0].split(':')[0];
+          if (!viewer || viewer === config.ownerNumber) continue;
+          const store = require('./utils/settingsStore');
+          const views = store.get('status_views', {});
+          const prev = views[viewer] || { count: 0, first: Date.now(), last: 0 };
+          views[viewer] = { count: prev.count + 1, first: prev.first, last: Date.now() };
+          store.set('status_views', views);
+        }
+      } catch { /* non-fatal */ }
+    });
+
+    // ─── ⏰ TIMEKEEPER — she delivers moments yet to come ───
+    if (tkInterval) clearInterval(tkInterval);
+    tkInterval = setInterval(async () => {
+      try {
+        const tk = require('./utils/timekeeper');
+        const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+        const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
+        if (!selfJid) return;
+
+        const due = tk.getPending();
+        for (const item of due) {
+          const target = item.targetJid || selfJid;
+          if (item.kind === 'capsule') {
+            const fromSelf = (item.ownerJid === item.targetJid) ||
+              (item.meta?.resolvedLid === false && item.targetJid === selfJid);
+            const fromName = item.meta?.fromName || 'Someone who cares';
+            const isPhoneTarget = String(target).endsWith('@s.whatsapp.net');
+            await sock.sendMessage(target, {
+              text:
+                `🕰️ *A TIME CAPSULE HAS OPENED*\n\n` +
+                `"${item.text}"\n\n` +
+                `📅 Sealed ${new Date(item.createdTs).toLocaleDateString()} • delivered ${new Date(item.dueTs).toLocaleDateString()}\n` +
+                (fromSelf
+                  ? `_This was you, writing to future you._`
+                  : `_From ${fromName} — sent to your future._`),
+            }).catch(() => {});
+          } else {
+            await sock.sendMessage(target, {
+              text: `⏰ *She remembered:*\n\n"${item.text}"\n\n_This is the moment you asked her to hold._`,
+            }).catch(() => {});
+          }
+          tk.markDelivered([item.id]);
+        }
+      } catch (e) {
+        logger.error(`[timekeeper] ${e.message}`);
+      }
+    }, 20 * 1000); // every 20s — minute-precision delivery
 
     registerConnectionHandler(sock, startBot, wasAlreadyRegistered);
     registerMessageHandler(sock, commands);

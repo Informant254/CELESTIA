@@ -1,12 +1,13 @@
+const config = require('../config/config');
+
 module.exports = {
   name: 'owner',
   description: "Shows the bot owner's contact info.",
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
 
-    // ── Customize these details ────────────────────────────────────────────
-    const ownerName = 'ᴾᴬᴾᴾᴵ ᴵˢᴬᴬᶜ';
-    const ownerNumber = '254718701810'; // digits only, with country code, no +
+    const ownerName = 'CELESTIA Owner';
+    const ownerNumber = config.ownerNumber; // live from .env — never stale
 
     const vcard =
       'BEGIN:VCARD\n' +
@@ -23,10 +24,8 @@ module.exports = {
 📱 *Contact:* +${ownerNumber}
 ╰──────────────────╯`.trim();
 
-    // Send the info text first
     await sock.sendMessage(jid, { text: infoText }, { quoted: msg });
 
-    // Then send the saveable contact card
     await sock.sendMessage(jid, {
       contacts: {
         displayName: ownerName,

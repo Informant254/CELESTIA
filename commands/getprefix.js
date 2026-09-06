@@ -4,7 +4,7 @@ const { isDev } = require('../utils/isDev');
 
 module.exports = {
   name: 'getprefix',
-  aliases: ['getp', 'prefix'],
+  aliases: ['getp'],
   description: 'Shows the current bot prefix.',
   noprefix: ['getprefix', 'getp', 'prefix'],
 

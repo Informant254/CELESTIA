@@ -2,20 +2,31 @@ const settingsStore = require('../utils/settingsStore');
 const { isOwner } = require('../utils/isOwner');
 
 module.exports = {
-    name: 'menutype',
-    description: 'Set the menu display style. Usage: .menutype list|button',
-    async execute(sock, msg, args) {
-        if (!isOwner(msg)) return;
+  name: 'menutype',
+  description: 'Compatibility bridge → use .menutheme for the full 4-face picker',
+  async execute(sock, msg, args) {
+    if (!isOwner(msg)) return;
 
-        const choice = args[0]?.toLowerCase();
+    const choice = (args[0] || '').toLowerCase();
 
-        if (choice === 'list' || choice === 'button') {
-            settingsStore.set('menutype', choice);
-            return await sock.sendMessage(msg.key.remoteJid, { text: `📋 *Menu Type:* set to *${choice}*` });
-        }
+    // Bridge old settings to the new theme system
+    if (choice === 'button') {
+      settingsStore.set('menu_native', true);
+      return await sock.sendMessage(msg.key.remoteJid, {
+        text: '📱 Native tappable menus *ON* (old menutype=button bridged).\n🎨 Faces live in `.menutheme` — 4 styles: Star Map • Neon • Zen • Grimoire',
+      });
+    }
+    if (choice === 'list') {
+      settingsStore.set('menu_native', false);
+      return await sock.sendMessage(msg.key.remoteJid, {
+        text: '📱 Text menus (old menutype=list bridged).\n🎨 Faces live in `.menutheme` — 4 styles: Star Map • Neon • Zen • Grimoire',
+      });
+    }
 
-        await sock.sendMessage(msg.key.remoteJid, {
-            text: `📋 *Current Menu Type:* ${settingsStore.get('menutype', 'list')}\n\n💡 Use \`.menutype list\` or \`.menutype button\` to change it.`
-        });
-    },
+    const native = settingsStore.get('menu_native', false);
+    const theme = settingsStore.get('menu_theme', 'constellation');
+    await sock.sendMessage(msg.key.remoteJid, {
+      text: `📋 Menu config:\n• Face: *${theme}*\n• Native tappable: *${native ? 'ON' : 'off'}*\n\n💡 \`.menutheme\` — the full 4-face picker\n💡 \`.menutheme native on/off\` — tappable realms`,
+    });
+  },
 };

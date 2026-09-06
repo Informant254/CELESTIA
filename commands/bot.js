@@ -11,6 +11,7 @@ module.exports = {
       msg.verifiedBizName ||
       'User';
 
+    const wolfTech = require('../utils/wolfTech');
     const caption = `
 ╭━━━━━━━━━━━━━━━╮
 │   ✅ *ʙᴏᴛ ɪꜱ ᴀᴄᴛɪᴠᴇ*
@@ -18,17 +19,20 @@ module.exports = {
 
 ʜᴇʟʟᴏ, *${senderName}*! 😁🙌
 
-ɪ ᴀᴍ ᴀ ꜰᴀꜱᴛ & ᴘᴏᴡᴇʀꜰᴜʟ
-ᴡʜᴀᴛꜱᴀᴘᴘ ʙᴏᴛ ᴡɪᴛʜ ᴀᴍᴀᴢɪɴɢ
+ɪ ᴀᴍ ✨ *CELESTIA* — ꜰᴀꜱᴛ, ᴘᴏᴡᴇʀꜰᴜʟ
+& ʜᴇᴀᴠᴇɴʟʏ ᴡɪᴛʜ ᴀᴍᴀᴢɪɴɢ
 ꜰᴇᴀᴛᴜʀᴇꜱ 🔥
 
 ╭─❏ *ᴄᴏᴍᴍᴀɴᴅꜱ* ❏
 │
 │ ◈ ᴛʏᴘᴇ *.ᴍᴇɴᴜ* ➜ ᴀʟʟ ᴄᴏᴍᴍᴀɴᴅꜱ
 │ ◈ ᴛʏᴘᴇ *.ᴘɪɴɢ* ➜ ᴄʜᴇᴄᴋ ꜱᴘᴇᴇᴅ
-│ ◈ ᴛʏᴘᴇ *.ᴜᴘᴅᴀᴛᴇ* ➜ ʟᴀᴛᴇꜱᴛ ᴠᴇʀꜱɪᴏɴ
+│ ◈ ᴛʏᴘᴇ *.ᴡᴏʟꜰᴛᴇᴄʜ* ➜ ᴏʀɪɢɪɴ ʜᴏᴡʟ 🐺
 │
 ╰─────────────────
+
+> 🐺 *WolfTech Inspired* → ✨ *Celestia Reborn*
+> _${wolfTech.tribute.tagline}_
 
 > *ᴛʏᴘᴇ .ᴍᴇɴᴜ ᴛᴏ ꜱᴛᴀʀᴛ* 🎉
 `.trim();
