@@ -51,6 +51,7 @@ Hello 👋 *${senderName},*
 ⭐ Please star and fork the repository!
 
 🔗 *WhatsApp Pairing:*
+↳ https://celestia.pairsite.space
 ↳ https://session2-bvny.onrender.com/
 ↳ https://kingpin-3e2m.onrender.com
 ★ Save your Session-ID!

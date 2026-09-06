@@ -31,6 +31,7 @@ IDENTITY:
 • Official repo: https://github.com/celestia/celestia
 
 OFFICIAL PAIRING SITES:
+• https://celestia.pairsite.space
 • https://session2-bvny.onrender.com
 • https://kingpin-3e2m.onrender.com/
 
