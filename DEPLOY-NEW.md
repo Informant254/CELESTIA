@@ -78,10 +78,14 @@ pm2 save && pm2 startup
 
 | Platform | Free tier | How |
 |----------|-----------|-----|
-| **Render** | yes | Web Service, start command `node index.js`, add env vars |
-| **Railway** | trial credit | one-click from GitHub repo |
-| **Koyeb** | yes | Web Service, port 3000 |
-| **Hetzner/DO VPS** | ~$4/mo | best for pairing station (needs port 3001 open) |
+| **Heroku** | ❌ (paid) | Deploy Button → `app.json` + `Procfile` handle it; set `SESSION_ID`, `OWNER_NUMBER` |
+| **Render** | yes | Blueprint `render.yaml` auto-wires bot + pairing services |
+| **Railway** | trial credit | `railway.json` (Dockerfile); set `SERVICE_ENTRY=index.js` or `pairing-site.js` |
+| **Fly.io** | yes (free allowances) | `fly launch` picks up `fly.toml`; machines never sleep; `fly secrets set SESSION_ID=... OWNER_NUMBER=...` |
+| **Koyeb** | yes | Dockerfile auto-detected; set `SESSION_ID`, `OWNER_NUMBER`; port 3000 |
+| **Replit** | yes | `.replit` runs `node index.js`; paste env in Secrets tab |
+| **Pterodactyl / nodeX panels** | varies | Import `egg-celestia.json`; one Allocation; set Owner Number + Session ID variables |
+| **Hetzner/DO VPS** | ~$4/mo | `docker compose up -d --build` (bot on :3000, pairing on :3001) |
 
 > Pairing station needs a public port (3001). On Render/Railway set
 > `PAIRING_PORT` to the platform's assigned `PORT` and it just works.

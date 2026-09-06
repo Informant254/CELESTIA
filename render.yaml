@@ -1,0 +1,38 @@
+# Render Blueprint — one-click deploy of bot + pairing station.
+# Render injects $PORT automatically; she reads it (config.dashboardPort).
+services:
+  - type: web
+    name: celestia
+    runtime: node
+    buildCommand: npm install --production --ignore-scripts
+    startCommand: node index.js
+    healthCheckPath: /health
+    envVars:
+      - key: SESSION_ID
+        sync: false
+      - key: OWNER_NUMBER
+        sync: false
+      - key: BOT_NAME
+        value: CELESTIA
+      - key: BOT_PREFIX
+        value: .
+      - key: TIMEZONE
+        value: Africa/Nairobi
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: DASHBOARD_API_KEY
+        generateValue: true
+      - key: LOG_LEVEL
+        value: info
+  # Optional second service: public pairing page for fresh SESSION_IDs.
+  - type: web
+    name: celestia-pairing
+    runtime: node
+    buildCommand: npm install --production --ignore-scripts
+    startCommand: node pairing-site.js
+    healthCheckPath: /health
+    envVars:
+      - key: PAIRING_PORT
+        sync: false

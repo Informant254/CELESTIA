@@ -1,0 +1,95 @@
+{
+  "_comment": "CELESTIA — Pterodactyl egg. Import via Admin > Nests > Import Egg. Needs one Allocation (port 3000).",
+  "meta": {
+    "version": "PTDL_v2",
+    "update_url": null
+  },
+  "exported_at": "2026-09-06T00:00:00+03:00",
+  "name": "CELESTIA",
+  "author": "CELESTIA (Inspired by WolfTech)",
+  "description": "CELESTIA - The Most Beautiful WhatsApp Bot | Baileys | Inspired by WolfTech. Set OWNER_NUMBER + SESSION_ID, start, scan QR once.",
+  "features": null,
+  "docker_images": {
+    "Node.js 20": "ghcr.io/pterodactyl/yolks:nodejs_20"
+  },
+  "file_denylist": [],
+  "startup": "node index.js",
+  "config": {
+    "files": "{}",
+    "startup": "{\"done\": \"CELESTIA Loaded\"}",
+    "logs": "{}",
+    "stop": "^C"
+  },
+  "scripts": {
+    "installation": {
+      "script": "#!/bin/ash\napk add --no-cache git python3 make g++ sqlite-dev 2>/dev/null || apt-get update && apt-get install -y git python3 make g++ libsqlite3-dev\nnpm install --production --ignore-scripts || npm install --production",
+      "container": "node:20-slim",
+      "entrypoint": "bash"
+    }
+  },
+  "variables": [
+    {
+      "name": "Owner Number",
+      "description": "Owner WhatsApp number, digits only with country code, no +.",
+      "env_variable": "OWNER_NUMBER",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:20"
+    },
+    {
+      "name": "Session ID",
+      "description": "CELESTIA:~... session backup. Empty on first run (scan QR), then paste the backup the bot DMs you.",
+      "env_variable": "SESSION_ID",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string"
+    },
+    {
+      "name": "Bot Name",
+      "description": "Display name for the bot.",
+      "env_variable": "BOT_NAME",
+      "default_value": "CELESTIA",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:40"
+    },
+    {
+      "name": "Bot Prefix",
+      "description": "Command prefix character.",
+      "env_variable": "BOT_PREFIX",
+      "default_value": ".",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:5"
+    },
+    {
+      "name": "Timezone",
+      "description": "IANA timezone for schedules and rituals.",
+      "env_variable": "TIMEZONE",
+      "default_value": "Africa/Nairobi",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:40"
+    },
+    {
+      "name": "OpenAI API Key",
+      "description": "Optional. Powers AI features.",
+      "env_variable": "OPENAI_API_KEY",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string"
+    },
+    {
+      "name": "Gemini API Key",
+      "description": "Optional. Powers AI features via Gemini.",
+      "env_variable": "GEMINI_API_KEY",
+      "default_value": "",
+      "user_viewable": false,
+      "user_editable": true,
+      "rules": "nullable|string"
+    }
+  ]
+}

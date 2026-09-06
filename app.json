@@ -77,7 +77,11 @@
       "size": "basic"
     }
   },
-  "image": "heroku/nodejs",
+  "buildpacks": [
+    {
+      "url": "heroku/nodejs"
+    }
+  ],
   "stack": "heroku-24",
   "addons": []
 }

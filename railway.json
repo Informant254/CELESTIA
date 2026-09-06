@@ -5,7 +5,7 @@
     "dockerfilePath": "Dockerfile"
   },
   "deploy": {
-    "startCommand": "node $SERVICE_ENTRY || node pairing-site.js",
+    "startCommand": "node ${SERVICE_ENTRY:-index.js}",
     "healthcheckPath": "/health",
     "healthcheckTimeout": 300,
     "restartPolicyType": "ALWAYS",
