@@ -12,8 +12,7 @@ COPY package.json package-lock.json* ./
 RUN npm install --production --ignore-scripts || npm install --production
 
 COPY . .
-# Exclude cloned repos from image context if needed, but we have them
-EXPOSE 3000
+# EXPOSE 3000 — Railway injects PORT env automatically; she reads it
 ENV NODE_ENV=production
-ENV PORT=3000
+# Bot on $PORT; pairing station (optional second service) on PAIRING_PORT
 CMD ["node", "index.js"]
