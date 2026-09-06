@@ -45,7 +45,7 @@ function getLastSeen(sock, jid) {
 
 module.exports = {
   name: 'ison',
-  description: 'Check if a phone number is on WhatsApp and view their info. Usage: .ison 254712345678',
+  description: 'Check if a phone number is on WhatsApp and view their info. Usage: .ison 2547XXXXXXXX',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     const number = args[0]?.replace(/[^0-9]/g, '');

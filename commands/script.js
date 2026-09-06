@@ -16,7 +16,7 @@ module.exports = {
     const senderName = msg.pushName || msg.verifiedBizName || 'User';
     const imagePath = path.join(__dirname, '../assets/script.jpg');
 
-    const repoOwner = 'kingplayboi';
+    const repoOwner = 'Informant254';
     const repoName = 'CELESTIA';
 
     try {

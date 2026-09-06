@@ -8,6 +8,11 @@
   <a href="https://render.com/deploy?repo=https://github.com/Informant254/CELESTIA"><img src="https://img.shields.io/badge/Deploy-Render-0a0f1f?style=for-the-badge&logo=render&logoColor=46E3B7" alt="Deploy to Render"/></a>
   <a href="https://app.koyeb.com/deploy?type=git&repository=github.com/Informant254/CELESTIA&branch=main&builder=dockerfile&name=celestia"><img src="https://img.shields.io/badge/Deploy-Koyeb-121212?style=for-the-badge&logo=koyeb&logoColor=white" alt="Deploy to Koyeb"/></a>
   <a href="https://replit.com/github/Informant254/CELESTIA"><img src="https://img.shields.io/badge/Run_on-Replit-F26207?style=for-the-badge&logo=replit&logoColor=white" alt="Run on Replit"/></a>
+  <a href="https://celestia.pairsite.space"><img src="https://img.shields.io/badge/Pair_Now-celestia.pairsite.space-7c4dff?style=for-the-badge&logo=whatsapp&logoColor=white" alt="Pair on celestia.pairsite.space"/></a>
+</p>
+
+<p align="center">
+  🔗 <b>Pair your number:</b> <a href="https://celestia.pairsite.space">celestia.pairsite.space</a> — get your code, link in seconds, paste the session into <code>SESSION_ID</code>.
 </p>
 
 <h1 align="center">✨ CELESTIA ✨</h1>

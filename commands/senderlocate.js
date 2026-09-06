@@ -58,7 +58,7 @@ module.exports = {
     if (!targetNumber) {
       return reply(
         '📍 *Sender Locate*\n\n' +
-        'Reply to any message with *.senderlocate* — or *.senderlocate 254712345678*\n\n' +
+        'Reply to any message with *.senderlocate* — or *.senderlocate 2547XXXXXXXX*\n\n' +
         '_What she finds: country from the number\'s dialing code (flag, capital, map), plus the exact spot if they shared a location pin._\n' +
         '_WhatsApp never transmits a phone\'s GPS with normal messages — anyone claiming otherwise is selling spyware._'
       );

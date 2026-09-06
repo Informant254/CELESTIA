@@ -5,6 +5,8 @@ module.exports = {
 
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
+    const config = require('../config/config');
+    const ownerMpesa = '0' + String(config.ownerNumber).replace(/\D/g, '').slice(3);
 
     const text = `
 ╭━━〔 ❤️ SUPPORT CELESTIA BOT 〕━━⬣
@@ -13,11 +15,8 @@ Thank you for using *CELESTIA BOT*!
 
 If you'd like to support the project and help keep it growing, you can donate using any of the methods below.
 
-🌍 Online Donations
-https://ko-fi.com/kingplayboi
-
 🇰🇪 M-Pesa
-📱 Number: 0718701810
+📱 Number: ${ownerMpesa}
 👤 Name: CELESTIA
 
 💡 Your support helps with:
@@ -26,8 +25,8 @@ https://ko-fi.com/kingplayboi
 • Bug fixes and maintenance
 • Keeping CELESTIA BOT free for everyone
 
-🔗 GitHub
-https://github.com/celestia/celestia
+🔗 GitHub — star & fork:
+https://github.com/Informant254/CELESTIA
 
 Thank you for supporting the project! 🚀
 

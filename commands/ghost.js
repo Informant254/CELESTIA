@@ -65,14 +65,14 @@ module.exports = {
       textStart = 1;
     } else if (args.length >= 2 && args[0].startsWith('@')) {
       // "@user message" typed without actual mention formatting
-      return reply('👻 Tag a real @mention, reply to their message, or use their number:\n`.ghost 254712345678 hey, this is a ghost...`');
+      return reply('👻 Tag a real @mention, reply to their message, or use their number:\n`.ghost 2547XXXXXXXX hey, this is a ghost...`');
     }
 
     if (!targetJid) {
       return reply(
         '👻 *THE GHOST WHISPER*\n\n' +
         'She delivers it. Her number shows. You don\'t.\n\n' +
-        '• `.ghost 254712345678 <message>`\n' +
+        '• `.ghost 2547XXXXXXXX <message>`\n' +
         '• reply to their message with `.ghost <message>`\n' +
         '• `.ghost @user <message>`\n' +
         '• `.ghost inbox` — replies forward back to you\n\n' +
@@ -90,7 +90,7 @@ module.exports = {
     }
 
     const text = args.slice(textStart).join(' ').trim();
-    if (!text) return reply('👻 Say something: `.ghost 254712345678 the stars say hi`');
+    if (!text) return reply('👻 Say something: `.ghost 2547XXXXXXXX the stars say hi`');
 
     // ─── the delivery ───
     const envelope =

@@ -6,7 +6,7 @@ const root = path.join(__dirname, '..');
 const gitDir = path.join(root, '.git');
 
 // Public repo — no auth needed to read commits.
-const GITHUB_OWNER = 'kingplayboi';
+const GITHUB_OWNER = 'Informant254';
 const GITHUB_REPO = 'CELESTIA';
 const GITHUB_BRANCH = 'main';
 

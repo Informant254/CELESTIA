@@ -61,7 +61,7 @@ pm2 logs celestia
 ## Env Required
 ```
 BOT_NAME=CELESTIA
-OWNER_NUMBER=254754574642
+OWNER_NUMBER=254118266549
 SESSION_ID=CELESTIA:~... (after first QR scan, bot DMs you backup)
 PORT=3000
 OPENAI_API_KEY=... (optional for .ai)
