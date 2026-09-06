@@ -16,7 +16,13 @@ module.exports = {
   // ("private"). Changed at runtime with .mode, persisted the same way.
   WORK_TYPE: runtimeSettings.get('mode', 'public'),
 
+  // Owner number. ONE-VAR DEPLOY: if OWNER_NUMBER isn't set, we discover it
+  // automatically from the session — the number that linked IS the owner.
+  // (utils/sessionOwner resolves it the moment the socket connects.)
   ownerNumber: process.env.OWNER_NUMBER || '254118266549', // digits only, with country code, no +
+
+  // ONE-VAR DEPLOY flag: set when owner was auto-discovered from session
+  autoOwner: !process.env.OWNER_NUMBER,
 
   // Display name for the bot, used in messages like the !menu command.
   botName: process.env.BOT_NAME || 'CELESTIA',

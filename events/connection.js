@@ -30,6 +30,11 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
   logger.info('✅ Connected to WhatsApp successfully!');
 
   try {
+    // 🐺 ONE-VAR DEPLOY: the number that linked the session IS the owner
+    require('../utils/sessionOwner').adoptOwnerFromSession(sock);
+  } catch { /* non-fatal */ }
+
+  try {
     const { groupCache } = require('../utils/groupCache');
     try {
       const allGroups = await sock.groupFetchAllParticipating();
