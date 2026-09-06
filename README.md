@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.svg" width="420" alt="CELESTIA Logo"/>
+  <img src="assets/logo.png" width="420" alt="CELESTIA Logo"/>
 </p>
 
 <h1 align="center">✨ CELESTIA ✨</h1>
@@ -54,7 +54,7 @@
 
 ### 🖼️ Logo
 
-`assets/logo.svg` - 1024×1024, neon gradient `#00f5ff → #7c4dff → #ff2e93`, geometric wolf, heavenly glow. Use for profile pic, banner, README.
+`assets/logo.png` - 1024×1024 official CELESTIA face (celestial goddess emblem, blue/cyan/violet/silver on black). `assets/banner.png` (1200×675 wide) and `assets/script.jpg` (menu banner) are rendered from the same art. Source: `celestia-logo.png`. Canonical prompt: `assets/LOGO-PROMPT.md`. Use for profile pic, banner, README.
 
 ---
 
@@ -62,7 +62,7 @@
 
 ```
 CELESTIA/
-├── assets/logo.svg         # heavenly logo (1024×1024)
+├── assets/logo.png         # official face (1024×1024, from celestia-logo.png)
 ├── index.js                # CELESTIA main (Baileys, health server)
 ├── commands/               # 198 files → 414 aliases
 │   ├── spam.js             # .spam 10 hello (hardened)
