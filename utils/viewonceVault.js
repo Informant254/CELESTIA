@@ -14,9 +14,13 @@
  * ephemeral-wrapped view-once, audio view-once.
  */
 
-const { downloadMediaMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const settingsStore = require('./settingsStore');
 const logger = require('./logger');
+const fs = require('fs');
+const path = require('path');
+
+const VAULT_DIR = path.join(__dirname, '../vault');
 
 const VAULT_KEY = 'vv_vault';
 const AUTO_KEY = 'vv_auto'; // default ON
@@ -106,8 +110,6 @@ async function captureOriginal(sock, msg, ownerJid) {
     // download the ORIGINAL — has full mediaKey/directPath
     const buffer = await downloadMediaMessage(msg, 'buffer', {});
 
-    const fs = require('fs');
-    const path = require('path');
     if (!fs.existsSync(VAULT_DIR)) fs.mkdirSync(VAULT_DIR, { recursive: true });
     const ext = { image: 'jpg', video: 'mp4', audio: 'ogg', sticker: 'webp' }[found.type];
     const fileName = `vault_${Date.now()}.${ext}`;
@@ -138,10 +140,6 @@ async function captureOriginal(sock, msg, ownerJid) {
 // ─────────────────────────────────────────
 // CAPTURE — reply-quoted (fallback, works when media still fresh)
 // ─────────────────────────────────────────
-
-const fs = require('fs');
-const path = require('path');
-const VAULT_DIR = path.join(__dirname, '../vault');
 
 async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid, ownerJid) {
   try {
@@ -188,13 +186,6 @@ async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
     fs.readFileSync(path.join(VAULT_DIR, entry.file));
 
   const meta = `🔐 *VIEWONCE VAULT*\n\nFrom: @${entry.sender}\nWhen: ${new Date(entry.ts).toLocaleString()}\nType: ${entry.type} • ${entry.sizeKb}KB`;
-  const payload = {
-    [entry.wa || entry.type === 'image' ? 'image' : entry.type === 'video' ? 'video' : entry.type === 'audio' ? 'audio' : 'sticker']: buffer,
-    caption: meta,
-    mentions: [`${entry.sender}@s.whatsapp.net`],
-    mimetype: entry.type === 'audio' ? 'audio/ogg; codecs=opus' : undefined,
-  };
-  // fix payload key properly
   const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
   const realPayload = { [keyMap[entry.type]]: buffer, caption: meta, mentions: [`${entry.sender}@s.whatsapp.net`] };
   if (entry.type === 'audio') realPayload.mimetype = 'audio/ogg; codecs=opus';

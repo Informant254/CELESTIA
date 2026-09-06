@@ -63,7 +63,7 @@ module.exports = [
 
   {
   name: 'del',
-  aliases: ['delete'],
+  aliases: [],
   description: 'Delete a message. Reply to a message with .del',
   async execute(sock, msg) {
     const { jid, ctx, quotedMessage, quotedKey } = getQuoted(sock, msg);
