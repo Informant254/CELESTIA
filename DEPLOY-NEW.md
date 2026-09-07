@@ -117,6 +117,12 @@ DASHBOARD_API_KEY=         # optional
 - Pairing station: 5 attempts/hour per IP, session dirs hashed, auto-cleanup
 - Session strings are secrets — anyone holding one controls that WhatsApp link
 
+## Surviving restarts (why she stops "crushing")
+- **Settings guardian** (`utils/settingsGuardian.js`): rolling backup every 10s + on SIGTERM into `.bkp/`, restores anything missing on boot. Panel kills lose nothing.
+- **SESSION_ID + DATABASE_URL = stateless deploys.** Session restores from env, settings live in Postgres. A wiped filesystem is a minor inconvenience, not a re-pair.
+- **Memory cap:** she runs with `--max-old-space-size=512` (Procfile + Dockerfile) so small containers OOM far less. Raise it on big VPS boxes if you run heavy media queues.
+- **Fly.io:** `fly.toml` is ready (`jnb` region, never-sleep machines, `/health` checks, volume for `vault/` media). See the steps at the top of that file.
+
 ## Updating a deployment
 ```bash
 cd celestia && git pull && docker compose up -d --build

@@ -1,5 +1,15 @@
 ﻿globalThis.crypto = require('node:crypto').webcrypto;
 require('dotenv').config();
+
+// 🛡️ Settings guardian FIRST — restore anything a panel restart wiped,
+// then keep rolling backups so the next kill loses nothing.
+// (utils/settingsGuardian.js — restore fills gaps only, never clobbers.)
+try {
+  const guardian = require('./utils/settingsGuardian');
+  guardian.restoreMissing();
+  guardian.startGuardian();
+} catch {}
+
 const path = require('path');
 const { groupCache } = require('./utils/groupCache');
 const figlet = require('figlet');

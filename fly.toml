@@ -1,30 +1,73 @@
-# Fly.io — she stays awake here (machines never auto-stop).
-app = "celestia"
-primary_region = "jnb"
+# fly.toml — CELESTIA · Fly.io deployment
+# Docs: https://fly.io/docs/reference/configuration/
+#
+# ─── DEPLOY STEPS (first time only) ─────────────────────────────
+#  1. Install flyctl → https://fly.io/docs/hands-on/install-flyctl/
+#  2. fly auth login
+#  3. fly launch --no-deploy   (YES to use this fly.toml)
+#  4. Create ONE persistent volume (keeps her vault media across deploys):
+#       fly vol create celestia_data --size 1 --region jnb
+#  5. Set secrets that can't live in this file (public repo):
+#       fly secrets set SESSION_ID="CELESTIA:~your-session-string-here"
+#       fly secrets set OWNER_NUMBER="2547XXXXXXXX"
+#       fly secrets set DATABASE_URL="postgres://user:pass@host:5432/db?sslmode=require"
+#  6. fly deploy
+#
+#  Every future deploy is just: fly deploy
+# ────────────────────────────────────────────────────────────────
+# Stateless by design: SESSION_ID restores her link, DATABASE_URL keeps
+# settings in Postgres. The volume below only preserves vault/ media.
+# The in-process settings guardian (.bkp/) covers the restarts in between.
+
+app            = 'celestia'
+primary_region = 'jnb'
+kill_signal    = 'SIGINT'
+kill_timeout   = '30s'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
+# ─── Environment Variables ──────────────────────────────────────
+[env]
+  NODE_ENV   = 'production'
+  BOT_NAME   = 'CELESTIA'
+  BOT_PREFIX = '.'
+  TIMEZONE   = 'Africa/Nairobi'
+  LOG_LEVEL  = 'info'
+
+# ─── HTTP Service ───────────────────────────────────────────────
 [http_service]
-  internal_port = 3000
-  force_https = true
-  auto_stop_machines = "off"
-  auto_start_machines = true
+  internal_port        = 3000
+  force_https          = true
+  auto_stop_machines   = 'off'
+  auto_start_machines  = true
   min_machines_running = 1
-  processes = ["app"]
+  processes            = ['app']
+
+  [http_service.concurrency]
+    type       = 'connections'
+    hard_limit = 25
+    soft_limit = 20
 
   [[http_service.checks]]
-    grace_period = "30s"
-    interval = "30s"
-    method = "GET"
-    path = "/health"
-    timeout = "10s"
+    grace_period = '30s'
+    interval     = '30s'
+    method       = 'GET'
+    path         = '/health'
+    timeout      = '10s'
 
-[env]
-  BOT_NAME = "CELESTIA"
-  BOT_PREFIX = "."
-  TIMEZONE = "Africa/Nairobi"
-  LOG_LEVEL = "info"
-  NODE_ENV = "production"
-# Secrets to set with `fly secrets set` (never commit):
-#   SESSION_ID, OWNER_NUMBER, OPENAI_API_KEY, GEMINI_API_KEY, DASHBOARD_API_KEY
+# ─── Machine size ───────────────────────────────────────────────
+[[vm]]
+  memory   = '1gb'
+  cpu_kind = 'shared'
+  cpus     = 1
+
+# ─── Persistent volume (vault media only) ───────────────────────
+# Create once before first deploy (see step 4 above).
+[[mounts]]
+  source                     = 'celestia_data'
+  destination                = '/app/vault'
+  initial_size               = '1gb'
+  auto_extend_size_threshold = 80
+  auto_extend_size_increment = '1gb'
+  auto_extend_size_limit     = '10gb'
