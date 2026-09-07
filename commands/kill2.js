@@ -1,4 +1,5 @@
 const config = require('../config/config');
+const { isOwner } = require('../utils/isOwner');
 const { isBotAdmin, getBotIdentifiers } = require('../utils/isAdmin');
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const fs = require('fs');
@@ -19,10 +20,9 @@ function normalize(jid) {
   return idPart + domain;
 }
 
+// Owner gate — shared LID-aware util (matches your number AND your LID).
 function isStrictOwner(msg) {
-  const senderJid = msg.key.participant || msg.key.remoteJid;
-  const senderNumber = senderJid.split('@')[0].split(':')[0];
-  return senderNumber === config.ownerNumber;
+  return isOwner(msg);
 }
 
 function extractInviteCode(link) {
