@@ -11,15 +11,34 @@
  *   .roast me savage       → no mercy mode
  */
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 
 // ═══════════════════════════════════════════
 // THE FIRE ENGINE — pieces, never whole lines
 // Every angle is written in SECOND PERSON ("you")
 // so it works for any target without names.
 // 30 setups × 45 burns × 25 spikes × savage layer = millions
+//
+// FULLY EDITABLE: drop your own lines into data/roast/*.json
+// (setups.json, burns.json, spikes.json, savage.json) and they
+// REPLACE the defaults below. No code edits ever needed.
 // ═══════════════════════════════════════════
 
-const SETUPS = [
+const ROAST_DIR = path.join(__dirname, '..', 'data', 'roast');
+
+function loadCustom(name, fallback) {
+  try {
+    const p = path.join(ROAST_DIR, name);
+    if (fs.existsSync(p)) {
+      const arr = JSON.parse(fs.readFileSync(p, 'utf8'));
+      if (Array.isArray(arr) && arr.length) return arr.map(String);
+    }
+  } catch { /* corrupt file -> defaults */ }
+  return fallback;
+}
+
+const SETUPS = loadCustom('setups.json', [
   "Alright, listen up.", "Let's be honest for a second.", "Fun fact:",
   "I've been holding this in all day, but", "The committee has voted, and",
   "Doctors are baffled, but", "Nobody wanted to say it, so I will:",
@@ -34,9 +53,9 @@ const SETUPS = [
   "After careful scientific review,", "Fun fact:", "Fun fact:",
   "The group chat held a meeting about you, and", "A wise man once saw you and whispered:",
   "Fun fact:", "Somewhere, your potential filed a missing persons report, because",
-];
+]);
 
-const BURNS = [
+const BURNS = loadCustom('burns.json', [
   "you type like the keyboard owes you an apology and you're not leaving until you get one",
   "you treat 'tomorrow' like a legally binding contract that you break every single day",
   "your glow-up has been in beta testing since primary school and the developers have clearly given up",
@@ -82,9 +101,9 @@ const BURNS = [
   "even GPS says 'you have arrived' and then apologizes",
   "you have main character syndrome in a story that's mostly filler episodes",
   "your reputation arrives 20 minutes before you do, and it's already made excuses",
-];
+]);
 
-const SPIKES = [
+const SPIKES = loadCustom('spikes.json', [
   "Anyway. Hydrate. Something has to help. 💧",
   "The burns are free. The therapy afterwards isn't. 🚑",
   "Roast complete. Ego: successfully recalibrated. ⚙️",
@@ -110,9 +129,9 @@ const SPIKES = [
   "Consider that a free personality assessment. 📋",
   "Certified wolf-grade roast. ⚡",
   "And the stars looked down and said 'yeah, fair.' ✨",
-];
+]);
 
-const SAVAGE_LAYER = [
+const SAVAGE_LAYER = loadCustom('savage.json', [
   "And I'm not done: your ancestors are watching and honestly they're just tired.",
   "Real talk: your backup plan needs a backup plan, and both need therapy.",
   "Extra spicy: even your shadow left you on read, and it's literally attached to you.",
@@ -121,7 +140,7 @@ const SAVAGE_LAYER = [
   "Free of charge: your life is a 'how it started vs how it's going' meme, except it's the same picture, and it's mid.",
   "Lucky you: doctors recommend 8 glasses of water and zero more of whatever you're doing.",
   "And another thing: your future called — it wants better security questions.",
-];
+]);
 
 function pick(arr, seed, offset = 0n) {
   return arr[Number((seed >> offset) % BigInt(arr.length))];

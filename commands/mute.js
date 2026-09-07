@@ -1,6 +1,8 @@
+const { parseDuration, formatDuration, scheduleUnmute } = require('../utils/muteTimers');
+
 module.exports = {
   name: 'mute',
-  description: 'Restricts the group to admins-only messaging. Use ".mute off" to unmute.',
+  description: 'Mutes the group (admins-only messaging). Timed: .mute 30m / .mute 2h / .mute 1d — auto-unmutes. ".mute off" to unmute now.',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
 
@@ -22,12 +24,48 @@ module.exports = {
       return;
     }
 
-    const turningOff = args[0]?.toLowerCase() === 'off';
-    await sock.groupSettingUpdate(jid, turningOff ? 'not_announcement' : 'announcement');
+    const first = (args[0] || '').toLowerCase();
 
-    const replyText = turningOff
-      ? '🔓 Group unmuted — everyone can send messages again.'
-      : '🔒 Group muted — only admins can send messages now.';
-    await sock.sendMessage(jid, { text: replyText }, { quoted: msg });
+    // .mute off / .mute unmute — lift immediately
+    if (first === 'off' || first === 'unmute') {
+      await sock.groupSettingUpdate(jid, 'not_announcement');
+      await sock.sendMessage(jid, { text: '🔓 Group unmuted — everyone can send messages again.' }, { quoted: msg });
+      return;
+    }
+
+    // .mute status — show remaining time
+    if (first === 'status') {
+      const fs = require('fs');
+      const path = require('path');
+      const timers = (() => {
+        try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'data', 'muteTimers.json'), 'utf8')); } catch { return {}; }
+      })();
+      const at = timers[jid];
+      if (at && at > Date.now()) {
+        await sock.sendMessage(jid, { text: `⏳ Muted — auto-unmute in *${formatDuration(at - Date.now())}*. Use *.mute off* to unmute now.` }, { quoted: msg });
+      } else {
+        await sock.sendMessage(jid, { text: 'ℹ️ No active mute timer for this group.' }, { quoted: msg });
+      }
+      return;
+    }
+
+    // .mute <duration> — timed mute with auto-unmute
+    const ms = parseDuration(args.join(''));
+    if (ms) {
+      await sock.groupSettingUpdate(jid, 'announcement');
+      scheduleUnmute(sock, jid, ms);
+      const human = formatDuration(ms);
+      await sock.sendMessage(jid, { text: `🔒 Group muted for *${human}* — only admins can send messages.\n⏰ Auto-unmute scheduled. *.mute status* to check, *.mute off* to end early.` }, { quoted: msg });
+      return;
+    }
+
+    // .mute — permanent (no timer)
+    if (!first) {
+      await sock.groupSettingUpdate(jid, 'announcement');
+      await sock.sendMessage(jid, { text: '🔒 Group muted — only admins can send messages now.\nTip: *.mute 30m* / *.mute 2h* to auto-unmute later.' }, { quoted: msg });
+      return;
+    }
+
+    await sock.sendMessage(jid, { text: '❓ Unknown option. Try: *.mute* (forever), *.mute 30m / 2h / 1d* (timed), *.mute status*, *.mute off*.' }, { quoted: msg });
   },
 };

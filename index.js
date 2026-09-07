@@ -724,6 +724,14 @@ async function startBot() {
     registerConnectionHandler(sock, startBot, wasAlreadyRegistered);
     registerMessageHandler(sock, commands);
 
+    // Resume timed mutes that survived a restart (auto-unmute timers)
+    try {
+      const resumed = require('./utils/muteTimers').resumeAll(sock);
+      if (resumed > 0) logger.info(`[muteTimers] Resumed ${resumed} timed mute(s).`);
+    } catch (e) {
+      logger.error(`[muteTimers] Resume failed: ${e.message}`);
+    }
+
     if (!global.__cacheClearScheduled) {
       global.__cacheClearScheduled = true;
       setInterval(() => {
