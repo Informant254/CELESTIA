@@ -18,6 +18,18 @@ let discovered = null;
  */
 function adoptOwnerFromSession(sock) {
   try {
+    // ALWAYS learn + persist our LID first — LID-only group messages need it
+    // to match the owner, regardless of whether OWNER_NUMBER env is set.
+    try {
+      const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+      const lidRaw = sock.user?.lid || null;
+      const lid = lidRaw ? jidNormalizedUser(lidRaw).split('@')[0].split(':')[0].replace(/\D/g, '') : '';
+      if (lid) {
+        globalThis.__ownerLid = lid;
+        try { require('./settingsStore').set('ownerLid', lid); } catch {}
+        logger.info(`[autoOwner] Owner LID recorded: ${lid}`);
+      }
+    } catch {}
     if (process.env.OWNER_NUMBER) return false; // explicit env wins
 
     const { jidNormalizedUser } = require('@whiskeysockets/baileys');
@@ -32,13 +44,6 @@ function adoptOwnerFromSession(sock) {
 
     discovered = digits;
     config.ownerNumber = digits; // hot-swap the running config
-    try {
-      // Also record our LID so isOwner can match group messages that
-      // arrive LID-only (new WhatsApp addressing). fromMe covers DMs,
-      // but belt-and-suspenders for every path.
-      const myLid = sock.user?.lid ? String(sock.user.lid) : '';
-      if (myLid) globalThis.__ownerLid = myLid.split('@')[0].split(':')[0].replace(/\D/g, '');
-    } catch {}
     logger.info(`dY?� [autoOwner] Owner adopted from session: ${digits}`);
     return true;
   } catch (e) {
