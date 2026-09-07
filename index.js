@@ -209,8 +209,22 @@ healthApp.get('/', (req, res) => res.json({
 }));
 healthApp.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), bot: 'CELESTIA', inspiredBy: 'WolfTech ðŸº', lineage: wolfTech.tribute.tagline }));
 healthApp.get('/qr', (req, res) => {
-  // Baileys QR is printed in terminal; this endpoint confirms server is alive
-  res.json({ message: 'Check terminal/logs for QR. If auth present, already logged in.', authExists: fs.existsSync(path.join(__dirname, config.authFolder, 'creds.json')) });
+  const qr = globalThis.__lastQR;
+  const age = qr ? Math.round((Date.now() - globalThis.__lastQRAt) / 1000) : -1;
+  const fresh = qr && age <= 50;
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>CELESTIA — Live QR</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;margin:8px 0;">CELESTIA</h1>${fresh ? `<p style="color:#00e5ff;">● LIVE QR — ${age}s old — scan now</p><img src="/qr.png" width="340" height="340" style="border-radius:16px;border:2px solid #00e5ff;">` : `<p style="color:#ffcf6b;">Waiting for a fresh QR… (auto-refreshes every 10s)</p>`}<p style="color:#8ea6c8;font-size:13px;">WhatsApp → Linked Devices → Link a Device → scan this screen with your phone</p></body></html>`);
+});
+healthApp.get('/qr.png', async (req, res) => {
+  const qr = globalThis.__lastQR;
+  if (!qr) return res.status(404).json({ ok: false, message: 'No QR yet — reload in a few seconds.' });
+  try {
+    const png = await require('qrcode').toBuffer(qr, { width: 512, margin: 2 });
+    res.set('Content-Type', 'image/png');
+    res.set('Cache-Control', 'no-store');
+    res.send(png);
+  } catch (e) {
+    res.status(500).json({ ok: false, message: e.message });
+  }
 });
 healthApp.get('/wolftech', (req, res) => res.json({ tribute: wolfTech.tribute, lore: wolfTech.lore }));
 const HEALTH_PORT = config.dashboardPort;
