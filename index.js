@@ -39,6 +39,14 @@ if (process.env.PAIR_MODE === 'true') {
 
   const pairLog = (...a) => console.log('[PAIR]', ...a);
 
+  // ── QR fallback: typed codes expire fast + get rate-limited.
+  // QR scan uses a separate flow and almost always works.
+  // Latest QR is kept in memory and served at /qr.png + /qr (auto-refresh page).
+  let lastQR = null;
+  let lastQRAt = 0;
+  let QRCode = null;
+  try { QRCode = require('qrcode'); } catch { QRCode = null; }
+
   async function pairLoop() {
     pairLog('=== CELESTIA CLOUD PAIRING ===');
     pairLog('Watching for a pairing code for:', PAIR_PHONE);
@@ -71,7 +79,8 @@ if (process.env.PAIR_MODE === 'true') {
 
           sock.ev.on('creds.update', saveCreds);
 
-          sock.ev.on('connection.update', async ({ connection }) => {
+          sock.ev.on('connection.update', async ({ connection, qr }) => {
+            if (qr) { lastQR = qr; lastQRAt = Date.now(); }
             if ((connection === 'connecting' || connection === 'connected') && !codeAsked) {
               codeAsked = true;
               setTimeout(async () => {
@@ -141,6 +150,25 @@ if (process.env.PAIR_MODE === 'true') {
   const healthPair = require('express')();
   healthPair.get('/', (req, res) => res.json({ service: 'celestia-pairing-mode', ok: true }));
   healthPair.get('/health', (req, res) => res.json({ ok: true, mode: 'pairing' }));
+  // Live QR as PNG — open in a laptop browser, scan with the phone camera.
+  // No typing, no 2-minute rush. Refreshes automatically with each new code.
+  healthPair.get('/qr.png', async (req, res) => {
+    if (!lastQR || !QRCode) {
+      return res.status(404).json({ ok: false, message: 'No QR yet — wait for the next cycle (~90s) and reload.' });
+    }
+    try {
+      const png = await QRCode.toBuffer(lastQR, { width: 512, margin: 2 });
+      res.set('Content-Type', 'image/png');
+      res.set('Cache-Control', 'no-store');
+      res.send(png);
+    } catch (e) {
+      res.status(500).json({ ok: false, message: e.message });
+    }
+  });
+  healthPair.get('/qr', (req, res) => {
+    const age = lastQR ? Math.round((Date.now() - lastQRAt) / 1000) : -1;
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>CELESTIA — Scan to Pair</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;">CELESTIA</h1><p>WhatsApp → Linked Devices → Link a Device → scan:</p>${lastQR ? `<img src="/qr.png" width="320" height="320" style="border-radius:16px;border:1px solid #00e5ff;">` : `<p>Waiting for QR… (first one lands ~90s after boot)</p>`}<p style="color:#8ea6c8;font-size:13px;">${age >= 0 ? `QR age: ${age}s — page auto-refreshes` : `codes still work too — check the deploy Logs tab`}</p></body></html>`);
+  });
   healthPair.listen(process.env.PORT || 3000, '0.0.0.0', () => pairLog('health server up on /health'));
 
   // never crash the deploy: catch everything, keep container alive
