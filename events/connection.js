@@ -14,12 +14,26 @@ const { autoJoinGroupOnce } = require('../utils/autoJoin');
  *                              used to reconnect automatically when needed
  */
 function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
+  // Live-QR state shared with the health server (declared in index.js)
+  globalThis.__lastQR = null;
+  globalThis.__lastQRAt = 0;
+
   sock.ev.on('connection.update', async (update) => {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      globalThis.__lastQR = qr;
+      globalThis.__lastQRAt = Date.now();
       logger.info('Scan the QR code below with WhatsApp to log in:');
       qrcode.generate(qr, { small: true });
+      // Also save as PNG — easier to scan from a phone than terminal ASCII.
+      try {
+        require('qrcode').toFile(
+          path.join(__dirname, '..', 'assets', 'qr.png'),
+          qr,
+          { width: 512, margin: 2 }
+        ).then(() => logger.info('📷 QR also saved to assets/qr.png — open it and scan with your phone.')).catch(() => {});
+      } catch {}
     }
 
     if (connection === 'connecting') {

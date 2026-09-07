@@ -32,8 +32,6 @@ IDENTITY:
 
 OFFICIAL PAIRING SITES:
 • https://celestia.pairsite.space
-• https://session2-bvny.onrender.com
-• https://kingpin-3e2m.onrender.com/
 
 CELESTIA HELP:
 • FORK: Open the official repo → Fork → select the user's GitHub account.
