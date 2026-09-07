@@ -2,9 +2,9 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { execSync } = require('child_process');
-const ffmpegPath = require('ffmpeg-static');
-const sharp = require('sharp');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+// Native/optional modules load lazily inside execute() so a failed
+// install on the host can never crash the whole bot at boot.
 
 module.exports = {
   name: 'tovideo',
@@ -12,6 +12,13 @@ module.exports = {
   description: 'Convert a quoted animated sticker to video. Reply to an animated sticker with .tovideo',
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
+    let sharp, ffmpegPath;
+    try {
+      sharp = require('sharp');
+      ffmpegPath = require('ffmpeg-static');
+    } catch {
+      return sock.sendMessage(jid, { text: `❌ Video engine unavailable on this host (media module failed to install).` }, { quoted: msg });
+    }
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
     const quoted = ctx?.quotedMessage;
 

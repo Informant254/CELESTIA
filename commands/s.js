@@ -1,10 +1,9 @@
 const { downloadContentFromMessage } = require("@whiskeysockets/baileys");
-const { Sticker, StickerTypes } = require("wa-sticker-formatter");
 const fs = require("fs");
 const path = require("path");
 const { exec } = require("child_process");
-const sharp = require("sharp");
-const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static') || 'ffmpeg';
+// Native/optional modules load lazily inside execute() so a failed
+// install on the host can never crash the whole bot at boot.
 
 module.exports = {
   name: "s",
@@ -12,6 +11,18 @@ module.exports = {
   description: "Convert an image or short video into a sticker.",
   category: "media",
   async execute(sock, msg) {
+    let Sticker, StickerTypes, sharp, ffmpegPath;
+    try {
+      ({ Sticker, StickerTypes } = require("wa-sticker-formatter"));
+      sharp = require("sharp");
+      ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static') || 'ffmpeg';
+    } catch {
+      return await sock.sendMessage(
+        msg.key.remoteJid,
+        { text: "❌ Sticker engine unavailable on this host (media module failed to install)." },
+        { quoted: msg }
+      );
+    }
     try {
       const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
       if (!quoted) {

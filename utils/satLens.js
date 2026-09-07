@@ -13,7 +13,9 @@
  */
 
 const axios = require('axios');
-const sharp = require('sharp');
+const { need: needNative } = require('./nativeSafe');
+// sharp is optional (native module) — loaded lazily so a missing build
+// never crashes the bot at boot; satellite commands fail gracefully instead.
 const geo = require('./geoLens');
 const UA = 'CELESTIA-SatLens/2.0';
 
@@ -66,6 +68,7 @@ async function fetchTile(url) {
 // ─────────────────────────────────────────
 
 async function renderSatImage({ lat, lon, zoom = 15, grid = 3, source = 'esri', date = null }) {
+  const sharp = needNative('sharp');
   const src = SOURCES[source];
   if (!src) throw new Error(`Unknown source ${source}`);
   const z = Math.min(zoom, src.maxZoom);

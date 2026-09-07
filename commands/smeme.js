@@ -1,5 +1,6 @@
 const Jimp = require('jimp');
-const { Sticker, StickerTypes } = require('wa-sticker-formatter');
+// wa-sticker-formatter loads lazily inside execute() so a failed
+// install on the host can never crash the whole bot at boot.
 
 async function drawCaption(image, text, font, y) {
   if (!text) return;
@@ -14,6 +15,12 @@ module.exports = {
   description: 'Make a meme sticker. Usage: reply to an image with .smeme top text|bottom text',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
+    let Sticker, StickerTypes;
+    try {
+      ({ Sticker, StickerTypes } = require('wa-sticker-formatter'));
+    } catch {
+      return sock.sendMessage(jid, { text: '❌ Sticker engine unavailable on this host (media module failed to install).' }, { quoted: msg });
+    }
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
     const quoted = ctx?.quotedMessage;
 

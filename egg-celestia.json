@@ -90,6 +90,24 @@
       "user_viewable": false,
       "user_editable": true,
       "rules": "nullable|string"
+    },
+    {
+      "name": "Main File",
+      "description": "Entry file the panel startup script launches. Leave as index.js unless you know why.",
+      "env_variable": "MAIN_FILE",
+      "default_value": "index.js",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "required|string|max:50"
+    },
+    {
+      "name": "Node Args",
+      "description": "Extra flags passed to node (e.g. --max-old-space-size=512 on small servers). Leave blank for defaults.",
+      "env_variable": "NODE_ARGS",
+      "default_value": "",
+      "user_viewable": true,
+      "user_editable": true,
+      "rules": "nullable|string|max:200"
     }
   ]
 }
