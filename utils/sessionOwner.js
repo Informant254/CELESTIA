@@ -32,7 +32,14 @@ function adoptOwnerFromSession(sock) {
 
     discovered = digits;
     config.ownerNumber = digits; // hot-swap the running config
-    logger.info(`🐺 [autoOwner] Owner adopted from session: ${digits}`);
+    try {
+      // Also record our LID so isOwner can match group messages that
+      // arrive LID-only (new WhatsApp addressing). fromMe covers DMs,
+      // but belt-and-suspenders for every path.
+      const myLid = sock.user?.lid ? String(sock.user.lid) : '';
+      if (myLid) globalThis.__ownerLid = myLid.split('@')[0].split(':')[0].replace(/\D/g, '');
+    } catch {}
+    logger.info(`dY?� [autoOwner] Owner adopted from session: ${digits}`);
     return true;
   } catch (e) {
     logger.error(`[autoOwner] ${e.message}`);
