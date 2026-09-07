@@ -202,9 +202,32 @@ function restoreSettingsFromEnv() {
   }
 }
 
+function isValidCredsFile(credsPath) {
+  // A usable Baileys creds.json must parse as JSON and carry identity keys.
+  try {
+    if (!fs.existsSync(credsPath)) return false;
+    const parsed = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+    return !!parsed && typeof parsed === 'object' &&
+      !!(parsed.noiseKey || parsed.signedIdentityKey) &&
+      parsed.registrationId !== undefined;
+  } catch {
+    return false;
+  }
+}
+
 function restoreSessionFromEnv() {
   const authDir = path.join(__dirname, config.authFolder);
   const credsPath = path.join(authDir, 'creds.json');
+
+  // A corrupt creds.json from a bad SESSION_ID paste is worse than none:
+  // quarantine it so we retry from env instead of looping on garbage.
+  if (fs.existsSync(credsPath) && !isValidCredsFile(credsPath)) {
+    try {
+      const bad = credsPath + '.corrupt.' + Date.now();
+      fs.renameSync(credsPath, bad);
+      logger.error('[restoreSession] Existing creds.json is NOT valid Baileys credentials — quarantined to ' + bad + '. Will retry from SESSION_ID env.');
+    } catch {}
+  }
 
   if (fs.existsSync(credsPath)) return; // already have a session, nothing to restore
 
@@ -230,15 +253,25 @@ function restoreSessionFromEnv() {
     } catch {}
   }
 
-  if (!raw) return;
+  if (!raw) {
+    logger.warn('[restoreSession] No SESSION_ID env and no DB backup — fresh pairing required (see PAIR_MODE).');
+    return;
+  }
 
   try {
     if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
     // Support both CELESTIA:~ and wolf / CELESTIA prefixes, plus raw base64
-    const cleaned = raw.replace(/^(CELESTIA:~|WOLF:~|CELESTIA:~|MERGED:~|CELESTIA:~)/, '');
+    const cleaned = String(raw).trim().replace(/^(CELESTIA:~|WOLF:~|CELESTIA:~|MERGED:~|CELESTIA:~)/, '');
     const buffer = Buffer.from(cleaned, 'base64');
     fs.writeFileSync(credsPath, buffer);
-    logger.info('âœ… Restored session from SESSION_ID (CELESTIA - heavenly).');
+
+    // Validate BEFORE boot: garbage in = silent death loop. Refuse it loudly.
+    if (!isValidCredsFile(credsPath)) {
+      try { fs.unlinkSync(credsPath); } catch {}
+      logger.error('[restoreSession] SESSION_ID decoded but is NOT valid Baileys credentials (missing identity keys). Check for truncation, extra spaces, or a wrong format from the pairing site — paste the FULL string.');
+      return;
+    }
+    logger.info('✅ Restored session from SESSION_ID (CELESTIA - heavenly).');
   } catch (error) {
     logger.error(`[restoreSessionFromEnv] Failed to restore session: ${error.message}`);
   }
