@@ -487,12 +487,16 @@ function registerMessageHandler(sock, commands) {
         console.log('STARTS WITH PREFIX =', text.startsWith(prefix));
 
         if (text.startsWith(prefix)) {
-          await sock.sendMessage(msg.key.remoteJid, {
-            react: {
-              text: '🕷️',
-              key: msg.key,
-            },
-          });
+          // React must never kill command processing — degraded connections
+          // throw here, and without this guard every command dies silently.
+          try {
+            await sock.sendMessage(msg.key.remoteJid, {
+              react: {
+                text: '🕷️',
+                key: msg.key,
+              },
+            });
+          } catch { /* react is cosmetic — command continues below */ }
         }
 
         if (msg.key.remoteJid.endsWith('@g.us')) {
