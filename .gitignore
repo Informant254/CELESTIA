@@ -37,3 +37,6 @@ pairing_sessions/
 
 # GitHub auth artifacts - NEVER COMMIT
 .gh-*.txt
+
+*.log
+config/groupSettings.json
