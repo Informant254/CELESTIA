@@ -69,7 +69,9 @@ if (process.env.PAIR_MODE === 'true') {
           markOnlineOnConnect: false,
           browser: ['Ubuntu', 'Chrome', '120.0.6099.130'],
           syncFullHistory: false,
-          shouldSyncHistoryMessage: () => false,
+          // Initial sync bootstrap carries the LID identity mappings Baileys
+          // needs for stable sessions. Allow the first chunk, then cut the flood.
+          shouldSyncHistoryMessage: (() => { let budget = 200; return () => (budget-- > 0); })(),
         });
 
         linked = await new Promise((resolve) => {
@@ -388,7 +390,10 @@ async function startBot() {
       keepAliveIntervalMs: 15000,
       retryRequestDelayMs: 1000,
       syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
+      // Initial sync bootstrap carries the LID identity mappings Baileys
+      // needs for stable sessions. Allow the first chunk, then cut the flood.
+      // (Full () => false starves LID mappings -> SessionError storms -> flapping.)
+      shouldSyncHistoryMessage: (() => { let budget = 200; return () => (budget-- > 0); })(),
       markOnlineOnConnect: false,
       browser: ['Ubuntu', 'Chrome', '120.0.6099.130'],
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
