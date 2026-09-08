@@ -445,18 +445,24 @@ async function startBot() {
         const status = lastDisconnect?.error?.output?.statusCode;
         if (status === DisconnectReason.loggedOut) {
           releaseLock();
-          try {
-            const settingsStore = require('./utils/settingsStore');
-            settingsStore.set('_sessionBackup', null); // wipe dead session from DB
-            settingsStore.set('_sessionLoggedOut', true); // flag: skip restore on next start
-            logger.info('[sessionBackup] DB backup cleared after logout.');
-          } catch {}
-          // Delete auth folder so no stale creds.json remains on disk
-          try {
-            const authDir = path.join(__dirname, config.authFolder);
-            fs.rmSync(authDir, { recursive: true, force: true });
-            logger.info('[session] Auth folder deleted â€” ready for fresh pair on restart.');
-          } catch {}
+          // ONCE per process: the close event can replay (event-buffer) dozens
+          // of times per second — without this guard rmSync hot-loops, pegs the
+          // CPU, and starves the event loop (no QR, no handshake, dead health).
+          if (!global.__logoutCleaned) {
+            global.__logoutCleaned = true;
+            try {
+              const settingsStore = require('./utils/settingsStore');
+              settingsStore.set('_sessionBackup', null); // wipe dead session from DB
+              settingsStore.set('_sessionLoggedOut', true); // flag: skip restore on next start
+              logger.info('[sessionBackup] DB backup cleared after logout.');
+            } catch {}
+            // Delete auth folder so no stale creds.json remains on disk
+            try {
+              const authDir = path.join(__dirname, config.authFolder);
+              fs.rmSync(authDir, { recursive: true, force: true });
+              logger.info('[session] Auth folder deleted â€” ready for fresh pair on restart.');
+            } catch {}
+          }
         }
       }
     });
