@@ -1,4 +1,4 @@
-const qrcode = require('qrcode-terminal');
+﻿const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
 const { DisconnectReason, jidNormalizedUser } = require('@whiskeysockets/baileys');
@@ -26,13 +26,13 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
       globalThis.__lastQRAt = Date.now();
       logger.info('Scan the QR code below with WhatsApp to log in:');
       qrcode.generate(qr, { small: true });
-      // Also save as PNG — easier to scan from a phone than terminal ASCII.
+      // Also save as PNG â€” easier to scan from a phone than terminal ASCII.
       try {
         require('qrcode').toFile(
           path.join(__dirname, '..', 'assets', 'qr.png'),
           qr,
           { width: 512, margin: 2 }
-        ).then(() => logger.info('📷 QR also saved to assets/qr.png — open it and scan with your phone.')).catch(() => {});
+        ).then(() => logger.info('ðŸ“· QR also saved to assets/qr.png â€” open it and scan with your phone.')).catch(() => {});
       } catch {}
     }
 
@@ -41,10 +41,10 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
     }
 
     if (connection === 'open') {
-  logger.info('✅ Connected to WhatsApp successfully!');
+  logger.info('âœ… Connected to WhatsApp successfully!');
 
   try {
-    // 🐺 ONE-VAR DEPLOY: the number that linked the session IS the owner
+    // ðŸº ONE-VAR DEPLOY: the number that linked the session IS the owner
     require('../utils/sessionOwner').adoptOwnerFromSession(sock);
   } catch { /* non-fatal */ }
 
@@ -55,7 +55,7 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
       for (const [groupJid, metadata] of Object.entries(allGroups)) {
         groupCache.set(groupJid, metadata);
       }
-      logger.info(`✅ Warmed group metadata cache for ${Object.keys(allGroups).length} group(s).`);
+      logger.info(`âœ… Warmed group metadata cache for ${Object.keys(allGroups).length} group(s).`);
     } catch (error) {
       logger.error(`[groupCache] Failed to warm cache on connect: ${error.message}`);
     }
@@ -65,26 +65,26 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
     const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
 
     if (!selfJid) {
-      logger.warn('[connection] sock.user not available yet — skipping startup/session-backup message this time.');
+      logger.warn('[connection] sock.user not available yet â€” skipping startup/session-backup message this time.');
     } else {
       // Always send the startup message, whether this is a fresh pairing
       // or a reconnect using an existing session.
-      // 🐺 WolfTech lineage included — heavenly tribute
-      let wolfFooter = '🐺 WolfTech howled → ✨ CELESTIA answered';
+      // ðŸº WolfTech lineage included â€” heavenly tribute
+      let wolfFooter = 'ðŸº WolfTech howled â†’ âœ¨ CELESTIA answered';
       try { wolfFooter = require('../utils/wolfTech').getRandomFooter(); } catch {}
       await sock.sendMessage(selfJid, {
-        text: `✨ *CELESTIA has started running* ✨\n💫 The Most Beautiful Bot | VPS Ready • Hardened • Heavenly\n🐺 *Inspired by WolfTech* — _Forged in the Wolf's Den, Crowned in Celestial Heaven_\n> _${wolfFooter}_\n\nType *.menu* for heavenly commands • *.wolftech* for the origin howl`,
+        text: `âœ¨ *CELESTIA has started running* âœ¨\nðŸ’« The Most Beautiful Bot | VPS Ready â€¢ Hardened â€¢ Heavenly\nðŸº *Inspired by WolfTech* â€” _Forged in the Wolf's Den, Crowned in Celestial Heaven_\n> _${wolfFooter}_\n\nType *.menu* for heavenly commands â€¢ *.wolftech* for the origin howl`,
       }).catch((err) => logger.error('Failed to send startup message:', err));
 
       if (!wasAlreadyRegistered) {
-        // First-ever pairing on this device (fresh QR scan or pairing code) —
+        // First-ever pairing on this device (fresh QR scan or pairing code) â€”
         // additionally back up the session as a portable SESSION_ID and DM
         // it to the owner's own WhatsApp. That way, if this server's
         // storage is ever wiped or you move hosts, you can reconnect by
         // pasting this value into the SESSION_ID environment variable
         // instead of re-pairing.
 
-        // Also reset the message-cutoff marker used by events/messages.js —
+        // Also reset the message-cutoff marker used by events/messages.js â€”
         // a fresh pairing means any old cutoff (from a previous session on
         // this same server) no longer applies. Deleting it here lets
         // messages.js set a brand new cutoff the moment it next loads.
@@ -100,12 +100,12 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
           const sessionId = `CELESTIA:~${credsBuffer.toString('base64')}`;
 
           await sock.sendMessage(selfJid, {
-            text: `✅ *CELESTIA linked successfully!* ✨\n💫 The Most Beautiful Bot\n\n🔐 *Session Backup* (CELESTIA format)\nSave this somewhere safe. Paste into SESSION_ID env to reconnect without re-pairing.\n\n⚠️ Treat like a password — anyone with it controls your WhatsApp.\n\n${sessionId}`,
+            text: `âœ… *CELESTIA linked successfully!* âœ¨\nðŸ’« The Most Beautiful Bot\n\nðŸ” *Session Backup* (CELESTIA format)\nSave this somewhere safe. Paste into SESSION_ID env to reconnect without re-pairing.\n\nâš ï¸ Treat like a password â€” anyone with it controls your WhatsApp.\n\n${sessionId}`,
           });
 
-          logger.info('✅ Session backup sent to your own WhatsApp number.');
+          logger.info('âœ… Session backup sent to your own WhatsApp number.');
         } else {
-          logger.warn('[sessionBackup] creds.json not found yet — skipping session backup message.');
+          logger.warn('[sessionBackup] creds.json not found yet â€” skipping session backup message.');
         }
       }
     }
@@ -117,45 +117,61 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
     if (connection === 'close') {
     const statusCode = lastDisconnect?.error?.output?.statusCode;
 
+    // Reconnect circuit breaker: replayed close events (or a tight
+    // die-loop) must never hot-loop startBot and starve the event loop.
+    // Past 5 restarts in 60s, back off 30s before the next attempt.
+    const now = Date.now();
+    globalThis.__restartTimes = (globalThis.__restartTimes || []).filter(t => now - t < 60_000);
+    const storm = globalThis.__restartTimes.length >= 5;
+    const delayedStart = () => {
+      globalThis.__restartTimes.push(Date.now());
+      if (storm) {
+        logger.warn('[reconnect] storm detected (5+ restarts/min) â€” backing off 30s.');
+        setTimeout(() => { try { startBot(); } catch {} }, 30_000);
+      } else {
+        try { startBot(); } catch {}
+      }
+    };
+
     switch (statusCode) {
       case DisconnectReason.badSession:
-        logger.error('❌ Bad session file. Delete the auth folder and restart to re-link.');
+        logger.error('âŒ Bad session file. Delete the auth folder and restart to re-link.');
         process.exit(1);
         break;
 
       case DisconnectReason.loggedOut:
-        logger.error('❌ Device logged out. Delete the auth folder / SESSION_ID and re-scan to re-link.');
+        logger.error('âŒ Device logged out. Delete the auth folder / SESSION_ID and re-scan to re-link.');
         process.exit(1);
         break;
 
       case DisconnectReason.connectionReplaced:
-        logger.error('❌ Connection replaced — another session was opened elsewhere. Not auto-reconnecting.');
+        logger.error('âŒ Connection replaced â€” another session was opened elsewhere. Not auto-reconnecting.');
         process.exit(1);
         break;
 
       case DisconnectReason.connectionClosed:
-        logger.warn('⚠️ Connection closed. Reconnecting...');
-        startBot();
+        logger.warn('âš ï¸ Connection closed. Reconnecting...');
+        delayedStart();
         break;
 
       case DisconnectReason.connectionLost:
-        logger.warn('⚠️ Connection lost from server. Reconnecting...');
-        startBot();
+        logger.warn('âš ï¸ Connection lost from server. Reconnecting...');
+        delayedStart();
         break;
 
       case DisconnectReason.restartRequired:
-        logger.warn('🔄 Restart required by WhatsApp. Reconnecting...');
-        startBot();
+        logger.warn('ðŸ”„ Restart required by WhatsApp. Reconnecting...');
+        delayedStart();
         break;
 
       case DisconnectReason.timedOut:
-        logger.warn('⚠️ Connection timed out. Reconnecting...');
-        startBot();
+        logger.warn('âš ï¸ Connection timed out. Reconnecting...');
+        delayedStart();
         break;
 
       default:
-        logger.warn(`⚠️ Connection closed (reason: ${statusCode || 'unknown'}). Reconnecting...`);
-        startBot();
+        logger.warn(`âš ï¸ Connection closed (reason: ${statusCode || 'unknown'}). Reconnecting...`);
+        delayedStart();
     }
   }
   });
