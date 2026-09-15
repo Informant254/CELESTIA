@@ -369,29 +369,9 @@ const T6 = {
     if (pages > 1) L.push('', `_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`);
     return L.join('\n');
   },
-  // Paged index: chunks split ONLY between complete realm blocks,
-  // never mid-block. Page 1 carries the system block.
-  pages(prefix, commands, total) {
-    const LIMIT = 1500;
-    const pages = [];
-    let cur = [this.sysBlock(prefix, commands, total), ''];
-    let len = cur.join('\n').length;
-    const flush = () => { pages.push(cur.join('\n').trim()); cur = []; len = 0; };
-    for (const c of CATEGORIES) {
-      const avail = c.cmds.filter(n => commands.has(n));
-      if (!avail.length) continue;
-      const block = [`╭── ❏ ${c.title.toUpperCase()} ❏`, '│'];
-      for (const name of avail) block.push(`│ ⊳ ${name.toUpperCase()}`);
-      block.push('╰───────────────────────', '');
-      const blen = block.join('\n').length;
-      if (len + blen > LIMIT && cur.length > 2) flush();
-      cur.push(...block);
-      len += blen;
-    }
-    cur.push('> _Howl of the Wolf → Light of the Stars_');
-    flush();
-    return pages;
-  },
+  // Full index: ONE whole menu, every realm, never split.
+  // (Single bubble = single width. Blocks are atomic by construction
+  // since we only ever append complete lines.)
   footer: '> _Howl of the Wolf → Light of the Stars_',
 };
 
@@ -449,14 +429,15 @@ module.exports = {
       await sock.sendMessage(jid, { text }, { quoted: msg });
     };
 
-    // Page sender: logo ONLY on the first page, follow-ups plain
-    // (one logo is the crown; five is spam). Only first quotes.
+    // Page sender: logo as its OWN photo message first (short caption),
+    // then the content as plain text. Keeps long menus out of the
+    // image-caption limit and guarantees one clean bubble per send.
+    // Only the logo message quotes.
     const sendPage = async (text, first) => {
       if (first && fs.existsSync(LOGO_PATH)) {
         try {
-          await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH), caption: text }, { quoted: msg });
-          return;
-        } catch { /* fall */ }
+          await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH), caption: '✨ *CELESTIA* — _The Most Beautiful Bot_ 🐺' }, { quoted: msg });
+        } catch { /* logo optional — menu must still send */ }
       }
       await sock.sendMessage(jid, { text }, first ? { quoted: msg } : {});
     };
@@ -534,21 +515,11 @@ module.exports = {
       } catch { /* fall to render */ }
     }
 
-    // ─── boxed pages: `.menu 2` re-views one page ───
-    if (/^\d+$/.test(arg0 || '') && theme.key === 'boxed') {
-      const pg = theme.pages(prefix, commands, total);
-      const n = Math.max(1, Math.min(parseInt(arg0, 10), pg.length));
-      return sendPage(pg[n - 1] + (pg.length > 1 ? `\n\n❏ _page ${n}/${pg.length}_` : ''), false);
-    }
-
-    // ─── bare .menu — themed index (boxed: clean auto-pages) ───
+    // ─── bare .menu — themed index ───
+    // Boxed face: ONE whole menu in a single bubble (single bubble =
+    // single width, always). Logo goes first as its own photo.
     if (theme.key === 'boxed') {
-      const pg = theme.pages(prefix, commands, total);
-      for (let i = 0; i < pg.length; i++) {
-        const tag = pg.length > 1 ? `\n\n❏ _${i === 0 ? 'page 1' : 'continued'} ${i + 1}/${pg.length}_` : '';
-        await sendPage(pg[i] + tag, i === 0);
-      }
-      return;
+      return sendPage(theme.index(prefix, commands, total), true);
     }
     const idx = theme.index(prefix, commands, total);
     return send(idx);
