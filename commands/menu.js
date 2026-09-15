@@ -5,7 +5,7 @@ const wolfTech = require('../utils/wolfTech');
 const config = require('../config/config');
 const settingsStore = require('../utils/settingsStore');
 
-const LOGO_PATH = path.join(__dirname, '../assets/logo.png');
+const LOGO_PATH = path.join(__dirname, '../assets/banner.png');
 
 // ═══════════════════════════════════════════════════
 // THE REALMS — shared data, rendered by 4 themes
