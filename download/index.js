@@ -77,6 +77,14 @@ async function handleSearchCommand(sock, msg, kind, rawQuery) {
   const searching = await sock.sendMessage(chatId, { text: `🔎 Searching for: ${query.slice(0, 100)}` }, { quoted: msg });
   try {
     const results = await search(query, tag);
+    // Obvious pick? Download it silently. Genuinely ambiguous? Ask.
+    if (!fallback.isAmbiguous(query, results)) {
+      const snap = { chatId, senderId, kind, query, quality, results, picked: results[0] };
+      logger.select({ tag, auto: true, title: results[0].title.slice(0, 60) });
+      await sock.sendMessage(chatId, { text: `✅ ${results[0].title.slice(0, 80)}\n📥 Sending...` }, { quoted: msg });
+      runJob(sock, msg, snap).catch((e) => logger.celestia({ tag, err: String(e.message).slice(0, 80) }));
+      return;
+    }
     sessions.create({ chatId, senderId, kind, query, quality, results });
     await sock.sendMessage(chatId, { text: fmtResults(query.slice(0, 80), results) }, { quoted: msg });
     try { await sock.sendMessage(chatId, { text: '🔎 Searching: done.', edit: searching.key }); } catch { /* cosmetic */ }

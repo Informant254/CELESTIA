@@ -112,4 +112,37 @@ function bestRelevant(query, candidates, triedUrls, maxPick = cfg.MAX_RESULT_FAL
   return scored.slice(0, maxPick).map((s) => s.cand);
 }
 
-module.exports = { downloadWithFallback, validateFile, relevance, bestRelevant };
+// --- ambiguity: are the top results the SAME thing or unrelated things? ---
+// Same song in different clothes (lyrics/live/remix/official) -> auto-download.
+// Different songs/topics sharing words -> ask the user to choose.
+const TITLE_DROP = new Set(['official', 'video', 'videos', 'lyrics', 'lyric', 'audio', 'hd', 'hq', 'mv', 'live', 'performance', 'remix', 'remastered', 'remaster', 'version', 'cover', 'acoustic', 'extended', 'slowed', 'reverb', 'tiktok', 'shorts', 'full', 'song', 'music', '4k', 'visualizer', 'the', 'a', 'an', 'of', 'and']);
+
+function coreWords(title) {
+  return String(title || '').toLowerCase()
+    .replace(/\([^)]*\)/g, ' ')
+    .replace(/\[[^\]]*\]/g, ' ')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w && !TITLE_DROP.has(w));
+}
+
+function sameTitle(a, b) {
+  const A = new Set(coreWords(a));
+  const B = new Set(coreWords(b));
+  if (!A.size || !B.size) return false;
+  const inter = [...A].filter((w) => B.has(w)).length;
+  return inter / Math.min(A.size, B.size) >= 0.6;
+}
+
+// True when the results disagree with each other -> user must choose.
+// Anchored on result #1 (the search engine's top pick).
+function isAmbiguous(query, results) {
+  if (!results || results.length < 2) return false;
+  const first = results[0];
+  for (let i = 1; i < results.length; i++) {
+    if (!sameTitle(first.title, results[i].title)) return true;
+  }
+  return false;
+}
+
+module.exports = { downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle };
