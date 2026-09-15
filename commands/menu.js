@@ -235,12 +235,85 @@ const T4 = {
   footer: '> 🐺 _By fang and starlight._',
 };
 
+// ═══════════════════════════════════════════════════
+// THEME 5: CELESTIAL REIGN — her flagship face 👑
+// Built for how WhatsApp REALLY renders: no column-aligned
+// boxes (they shatter in proportional fonts), only symmetric
+// ornaments, generous air, one idea per line. Logo rides above.
+ // ═══════════════════════════════════════════════════
+const T5 = {
+  key: 'celestial', name: 'CELESTIAL REIGN', icon: '🌌',
+  index(prefix, commands, total) {
+    const L = [];
+    L.push('✨ ⋆⋅☆⋅⋆ ✨ ⋆⋅☆⋅⋆ ✨');
+    L.push('        *CELESTIA*');
+    L.push('  _The Most Beautiful Bot_');
+    L.push('✨ ⋆⋅☆⋅⋆ ✨ ⋆⋅☆⋅⋆ ✨');
+    L.push('');
+    L.push('🐺 _WolfTech howled → Celestia ascended_');
+    L.push('');
+    L.push('◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦');
+    L.push(`   📜 *${total}* commands · *${CATEGORIES.length}* realms`);
+    L.push(`   ⌨️ prefix: \`${prefix}\` · ⏱️ ${uptimeShort()}`);
+    L.push('◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦');
+    L.push('');
+    for (const c of CATEGORIES) {
+      const n = c.cmds.filter(x => commands.has(x)).length;
+      if (!n) continue;
+      L.push(`${c.icon} *${c.title}*  ·  _${n}_`);
+      L.push(`   └ \`${prefix}menu ${c.key}\` — _${c.poem}_`);
+    }
+    L.push('');
+    L.push('❖ ───────── ★ ───────── ❖');
+    L.push(`📖 \`${prefix}menu all 1\` — the full atlas`);
+    L.push(`🎨 \`${prefix}menutheme\` — change her face`);
+    L.push('> _Howl of the Wolf → Light of the Stars_');
+    return L.join('\n');
+  },
+  realm(cat, prefix, commands, page) {
+    const PER = 14;
+    const avail = cat.cmds.filter(n => commands.has(n));
+    const pages = Math.ceil(avail.length / PER) || 1;
+    const p = Math.max(1, Math.min(page, pages));
+    const slice = avail.slice((p - 1) * PER, p * PER);
+    const L = [];
+    L.push(`${cat.icon} *${cat.title}*`);
+    L.push(`_❝ ${cat.poem} ❞_`);
+    L.push('· · ───── ✦ ───── · ·');
+    L.push('');
+    for (const name of slice) {
+      const cmd = commands.get(name);
+      const d = (cmd.description || '').split('.')[0].slice(0, 52);
+      L.push(`✧ \`${prefix}${name}\``);
+      if (d) L.push(`   _${d}_`);
+    }
+    L.push('');
+    L.push('· · ───── ✦ ───── · ·');
+    if (pages > 1) L.push(`_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`);
+    L.push(`_back home: \`${prefix}menu\`_`);
+    return L.join('\n');
+  },
+  footer: '> _Howl of the Wolf → Light of the Stars_',
+};
+
+function uptimeShort() {
+  const s = Math.floor(process.uptime());
+  const d = Math.floor(s / 86400);
+  const h = Math.floor((s % 86400) / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  if (d) return `${d}d ${h}h`;
+  if (h) return `${h}h ${m}m`;
+  if (m) return `${m}m`;
+  return `${s}s`;
+}
+
 function cat2Spell(cat) {
   return cat.poem;
 }
 
-const THEMES = { constellation: T1, neon: T2, zen: T3, grimoire: T4 };
+const THEMES = { celestial: T5, constellation: T1, neon: T2, zen: T3, grimoire: T4 };
 const THEME_ORDER = [
+  { key: 'celestial', icon: '🌌', name: 'CELESTIAL REIGN' },
   { key: 'constellation', icon: '🗺️', name: 'STAR MAP' },
   { key: 'neon', icon: '🌆', name: 'NEON CLASSIC' },
   { key: 'zen', icon: '🍃', name: 'MINIMAL ZEN' },
@@ -248,8 +321,8 @@ const THEME_ORDER = [
 ];
 
 function getTheme() {
-  const t = settingsStore.get('menu_theme', 'constellation');
-  return THEMES[t] || T1;
+  const t = settingsStore.get('menu_theme', 'celestial');
+  return THEMES[t] || T5;
 }
 
 // ═══════════════════════════════════════════════════
@@ -258,7 +331,7 @@ function getTheme() {
 module.exports = {
   name: 'menu',
   aliases: ['help', 'commands', 'list'],
-  description: '✨ The Menu of Four Faces — Constellation, Neon, Zen, Grimoire',
+  description: '✨ The Menu of Five Faces — Celestial Reign, Constellation, Neon, Zen, Grimoire',
   execute: async (sock, msg, args, commands, reply) => {
     const jid = msg.key.remoteJid;
     const prefix = settingsStore.get('prefix', config.prefix) || '.';
@@ -299,6 +372,7 @@ module.exports = {
               title: `${t.icon} ${t.name}`,
               rowId: `${prefix}menutheme ${t.key}`,
               description: {
+                celestial: 'her flagship face · airy ornaments · logo crown',
                 constellation: 'star-map · figlet banner · realm poems',
                 neon: 'cyber grid · box panels · sharp lines',
                 zen: 'quiet whitespace · command clouds',
@@ -310,7 +384,7 @@ module.exports = {
         return;
       } catch {
         // fallback text picker
-        const cur = settingsStore.get('menu_theme', 'constellation');
+        const cur = settingsStore.get('menu_theme', 'celestial');
         const lines = THEME_ORDER.map(t => `${t.icon} \`${prefix}menutheme ${t.key}\`${t.key === cur ? ' ← current' : ''}`).join('\n');
         return reply(`🎨 *Menu appearances:*\n\n${lines}\n\nOr \`.menutheme native\` for WhatsApp tappable menus.`);
       }
