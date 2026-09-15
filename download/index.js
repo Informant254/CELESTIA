@@ -38,7 +38,11 @@ function fmtResults(query, results) {
   const L = ['> ╭─❏ *SEARCH RESULTS* ❏', `> │ 🔎 ${query}`, '> │'];
   results.forEach((r, i) => {
     L.push(`> │ ${['1️⃣', '2️⃣', '3️⃣'][i]} ${r.title.slice(0, 60)}`);
-    L.push(`> │ 📺 ${String(r.channel).slice(0, 28)} · ⏱ ${r.durationText}`);
+    // meta line shows only what we actually know — never "Unknown · —"
+    const meta = [];
+    if (r.channel) meta.push(`📺 ${String(r.channel).slice(0, 28)}`);
+    if (r.durationText && r.durationText !== '—') meta.push(`⏱ ${r.durationText}`);
+    if (meta.length) L.push(`> │ ${meta.join(' · ')}`);
     L.push('> │');
   });
   L.push('> ╰─────────────────', '', '_Reply with 1-3 to download._');

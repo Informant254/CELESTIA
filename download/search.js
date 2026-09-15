@@ -62,14 +62,20 @@ async function apiSearchFallback(query, n) {
   );
   const list = r.data?.data;
   if (!Array.isArray(list) || !list.length) throw new Error('no results');
-  return list.slice(0, n).map((v) => ({
-    id: v.videoId || null,
-    url: v.url || (v.videoId ? `https://www.youtube.com/watch?v=${v.videoId}` : null),
-    title: v.title || 'Untitled',
-    channel: v.channel || v.author || 'Unknown',
-    duration: null,
-    durationText: '—',
-  })).filter((v) => v.url);
+  return list.slice(0, n).map((v) => {
+    // duration may arrive as { seconds, timestamp } — parse both shapes
+    const d = v.duration;
+    const secs = typeof d === 'number' ? d : d?.seconds ?? null;
+    const dtext = (typeof d === 'object' && d?.timestamp) || secondsToClock(secs);
+    return {
+      id: v.videoId || null,
+      url: v.url || (v.videoId ? `https://www.youtube.com/watch?v=${v.videoId}` : null),
+      title: v.title || 'Untitled',
+      channel: v.channel || v.author || v.uploader || null,
+      duration: secs,
+      durationText: dtext,
+    };
+  }).filter((v) => v.url);
 }
 
 async function search(query, tag) {
