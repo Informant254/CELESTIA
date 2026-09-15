@@ -8,7 +8,7 @@ const axios = require('axios');
 const cfg = require('./config');
 const { ensureYtDlp } = require('./engines');
 const cache = require('./cache');
-const { log } = require('./errors');
+const logger = require('./logger');
 
 function secondsToClock(s) {
   if (s == null || isNaN(s)) return '—';
@@ -77,7 +77,7 @@ async function search(query, tag) {
   if (!q) throw new Error('Empty search query.');
   const cached = cache.get(q);
   if (cached) {
-    log('search-cache-hit', { tag, q: q.slice(0, 60) });
+    logger.search({ tag, status: 'cache-hit', q: q.slice(0, 60) });
     return cached;
   }
   let results = [];
@@ -87,13 +87,13 @@ async function search(query, tag) {
     results = await runYtDlpSearch(bin, q, cfg.SEARCH_RESULTS);
     if (!results.length) throw new Error('no results');
   } catch (e1) {
-    log('search-fallback', { tag, reason: String(e1.message).slice(0, 80) });
+    logger.search({ tag, status: 'fallback', reason: String(e1.message).slice(0, 80) });
     engine = 'api';
     results = await apiSearchFallback(q, cfg.SEARCH_RESULTS);
   }
   if (!results.length) throw new Error('No results found.');
   cache.set(q, results);
-  log('search', { tag, engine, q: q.slice(0, 60), hits: results.length });
+  logger.search({ tag, engine, status: 'success', q: q.slice(0, 60), hits: results.length });
   return results;
 }
 

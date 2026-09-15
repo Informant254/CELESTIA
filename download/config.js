@@ -6,9 +6,16 @@ module.exports = {
   SESSION_TTL_MS: parseInt(process.env.DL_SESSION_TTL_MS || '', 10) || 5 * 60 * 1000,
   // search result cache lives 10 minutes
   SEARCH_CACHE_TTL_MS: parseInt(process.env.DL_SEARCH_CACHE_MS || '', 10) || 10 * 60 * 1000,
-  SEARCH_RESULTS: parseInt(process.env.DL_SEARCH_RESULTS || '', 10) || 5,
+  SEARCH_RESULTS: parseInt(process.env.DL_SEARCH_RESULTS || '', 10) || 3,
   // downloads at the same time
   MAX_CONCURRENT_DOWNLOADS: parseInt(process.env.DL_MAX_CONCURRENT || '', 10) || 2,
+  // silent fallback budgets (never infinite)
+  MAX_SEARCH_ATTEMPTS: parseInt(process.env.DL_MAX_SEARCH || '', 10) || 3,
+  MAX_DOWNLOAD_ATTEMPTS: parseInt(process.env.DL_MAX_ATTEMPTS || '', 10) || 3,
+  MAX_RESULT_FALLBACKS: parseInt(process.env.DL_MAX_RESULTS || '', 10) || 3,
+  MAX_FORMAT_FALLBACKS: parseInt(process.env.DL_MAX_FORMATS || '', 10) || 4,
+  // global ceiling per user request (kills runaway jobs)
+  DOWNLOAD_TIMEOUT_MS: parseInt(process.env.DL_TIMEOUT_MS || '', 10) || 10 * 60 * 1000,
   // WhatsApp upload guardrails
   MAX_VIDEO_BYTES: parseInt(process.env.DL_MAX_VIDEO_BYTES || '', 10) || 96 * 1024 * 1024,
   MAX_AUDIO_BYTES: parseInt(process.env.DL_MAX_AUDIO_BYTES || '', 10) || 32 * 1024 * 1024,
