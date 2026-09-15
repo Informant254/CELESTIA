@@ -323,8 +323,9 @@ const T6 = {
     const time = now.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
     const date = now.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const mode = String(settingsStore.get('mode', config.WORK_TYPE) || 'public').toUpperCase();
+    const BAR = '─'.repeat(23);
     const L = [];
-    L.push('╭───────────────────────');
+    L.push('╭' + BAR);
     L.push('│ 🤖 CELESTIA BOT');
     L.push(`│ ⚡ Prefix : [ ${prefix} ]`);
     L.push(`│ 🔓 Mode : ${mode}`);
@@ -333,25 +334,28 @@ const T6 = {
     L.push(`│ 💻 Ram : ${gb(used)} GB / ${gb(os.totalmem())} GB`);
     L.push(`│ ⏳ Uptime : ${uptimeShort()}`);
     L.push(`│ 🔌 Plugins : ${total} commands`);
-    L.push('╰───────────────────────');
+    L.push('╰' + BAR);
     return L.join('\n');
   },
   index(prefix, commands, total) {
-    const L = [this.sysBlock(prefix, total), ''];
+    const BAR = '─'.repeat(23);
+    const L = [this.sysBlock(prefix, total)];
     for (const c of CATEGORIES) {
       const avail = c.cmds.filter(n => commands.has(n));
       if (!avail.length) continue;
+      L.push('');
       L.push(`╭── ❏ ${c.title.toUpperCase()} ❏`);
       L.push('│');
       for (const name of avail) L.push(`│ ⊳ ${name.toUpperCase()}`);
-      L.push('╰───────────────────────');
-      L.push('');
+      L.push('╰' + BAR);
     }
-    L.push('> _Howl of the Wolf → Light of the Stars_');
-    return L.join('\n').trim();
+    // Whole menu in ONE monospace code block — box-drawing chars
+    // only align in monospace. One block = one bubble = one width.
+    return '```\n' + L.join('\n').trim() + '\n```';
   },
   realm(cat, prefix, commands, page) {
     const PER = 16;
+    const BAR = '─'.repeat(23);
     const avail = cat.cmds.filter(n => commands.has(n));
     const pages = Math.ceil(avail.length / PER) || 1;
     const p = Math.max(1, Math.min(page, pages));
@@ -362,11 +366,12 @@ const T6 = {
     for (const name of slice) {
       const cmd = commands.get(name);
       const d = (cmd.description || '').split('.')[0].slice(0, 48);
-      L.push(`│ ⊳ ${name.toUpperCase()}${d ? ` — _${d}_` : ''}`);
+      L.push(`│ ⊳ ${name.toUpperCase()}${d ? ` — ${d}` : ''}`);
     }
-    L.push('╰───────────────────────');
-    if (pages > 1) L.push('', `_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`);
-    return L.join('\n');
+    L.push('╰' + BAR);
+    let out = '```\n' + L.join('\n') + '\n```';
+    if (pages > 1) out += `\n\n_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`;
+    return out;
   },
   footer: '> _Howl of the Wolf → Light of the Stars_',
 };
@@ -422,25 +427,12 @@ module.exports = {
 
     const theme = getTheme();
 
-    const send = async (text) => {
-      const chunks = splitMenuText(text);
-      for (const chunk of chunks) {
-        if (fs.existsSync(LOGO_PATH)) {
-          try {
-            await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH), caption: chunk }, { quoted: msg });
-            continue;
-          } catch { /* fall */ }
-        }
-        await sock.sendMessage(jid, { text: chunk }, { quoted: msg });
-      }
-    };
-
-    // Page sender: logo as its OWN photo message (NO caption — bare image
-    // gives the widest natural bubble, matching the text bubble below).
-    // Then the content as plain text. Keeps long menus out of the
-    // image-caption limit and guarantees clean width alignment.
+    // Universal sender: logo as its OWN bare photo (no caption → natural
+    // full-width bubble), then the menu text below. Boxed menu rides in
+    // ONE monospace bubble (55k limit keeps it whole — single bubble =
+    // single width, boxes always aligned).
     const sendPage = async (text, first) => {
-      const chunks = splitMenuText(text);
+      const chunks = splitMenuText(text, 55000);
       if (first && fs.existsSync(LOGO_PATH)) {
         try {
           await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH) }, { quoted: msg });
@@ -450,6 +442,8 @@ module.exports = {
         await sock.sendMessage(jid, { text: chunk }, i === 0 && first ? { quoted: msg } : {});
       }
     };
+
+    const send = async (text) => sendPage(text, true);
 
     // ─── .menu theme — show theme picker (native list) ───
     if (arg0 === 'theme' || arg0 === 'style' || arg0 === 'appearance') {
