@@ -3,6 +3,7 @@
  */
 const { execFile } = require('child_process');
 const fs = require('fs');
+const path = require('path');
 const { ffmpegPath, ffprobePath, runOnce } = require('./engines');
 
 function probe(file) {
@@ -55,4 +56,57 @@ async function check() {
   }
 }
 
-module.exports = { probe, toMp3, check };
+function streams(file) {
+  const ffprobe = ffprobePath();
+  return new Promise((resolve, reject) => {
+    execFile(
+      ffprobe,
+      ['-v', 'error', '-show_streams', '-of', 'json', file],
+      { timeout: 30000 },
+      (err, stdout) => {
+        if (err) return reject(new Error('Stream inspection failed.'));
+        try {
+          resolve(JSON.parse(stdout || '{}').streams || []);
+        } catch {
+          reject(new Error('Stream inspection failed.'));
+        }
+      }
+    );
+  });
+}
+
+// Normalize any video to what phones + WhatsApp actually play:
+// H.264 + AAC, yuv420p, faststart (moov up front for streaming).
+// Already-friendly files get a seconds-long copy pass; others re-encode.
+function normalizeForWhatsApp(input, workDir) {
+  const ffmpeg = ffmpegPath(); // throws admin diagnostic if missing
+  return new Promise(async (resolve, reject) => {
+    let friendly = false;
+    try {
+      const ss = await streams(input);
+      const v = ss.find((s) => s.codec_type === 'video');
+      const a = ss.find((s) => s.codec_type === 'audio');
+      friendly =
+        !!v &&
+        v.codec_name === 'h264' &&
+        (!a || a.codec_name === 'aac') &&
+        (!v.pix_fmt || v.pix_fmt === 'yuv420p');
+    } catch {
+      friendly = false;
+    }
+    const out = path.join(workDir, 'wa.mp4');
+    const args = friendly
+      ? ['-y', '-i', input, '-c', 'copy', '-movflags', '+faststart', out]
+      : ['-y', '-i', input, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23',
+         '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '128k', '-movflags', '+faststart', out];
+    execFile(ffmpeg, args, { timeout: 600000 }, (err) => {
+      if (err) return reject(new Error('Phone-format conversion failed: ' + String(err.message).slice(0, 150)));
+      if (!fs.existsSync(out) || !fs.statSync(out).size) {
+        return reject(new Error('Phone-format conversion produced no file.'));
+      }
+      resolve(out);
+    });
+  });
+}
+
+module.exports = { probe, toMp3, check, streams, normalizeForWhatsApp };

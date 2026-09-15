@@ -173,20 +173,24 @@ async function runJob(sock, msg, session, quality) {
         engine = 'api-direct';
       }
 
-      if (size > maxBytes) {
-        const err = new Error(`File is ${(size / 1048576).toFixed(0)}MB — over the ${(maxBytes / 1048576).toFixed(0)}MB limit.`);
-        err.userDetail = `File is too large (${(size / 1048576).toFixed(0)}MB) — try Audio or a shorter video.`;
-        throw err;
-      }
-
       await setStatus('⚙️ Processing...');
       let sendFile = file;
       if (isAudio && !/\.mp3$/i.test(file)) {
         const out = path.join(dir, 'out.mp3');
         await ffmpeg.toMp3(file, out);
         sendFile = out;
+      } else if (!isAudio) {
+        // Phones + WhatsApp only play H.264/AAC faststart MP4 — normalize.
+        sendFile = await ffmpeg.normalizeForWhatsApp(file, dir);
       } else {
         await ffmpeg.probe(file).catch(() => null);
+      }
+      size = fs.statSync(sendFile).size;
+
+      if (size > maxBytes) {
+        const err = new Error(`File is ${(size / 1048576).toFixed(0)}MB — over the ${(maxBytes / 1048576).toFixed(0)}MB limit.`);
+        err.userDetail = `File is too large (${(size / 1048576).toFixed(0)}MB) — try Audio or a shorter video.`;
+        throw err;
       }
 
       await setStatus('📤 Uploading...');

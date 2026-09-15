@@ -27,6 +27,8 @@ function baseArgs(workDir, ffmpeg, maxBytes) {
     '--ffmpeg-location', ffmpeg,
     '--merge-output-format', 'mp4',
     '--no-playlist',
+    // Prefer H.264: phones + WhatsApp play it natively (avoids re-encode).
+    '-S', 'vcodec:h264',
     '-o', path.join(workDir, 'out.%(ext)s'),
   ];
   if (maxBytes) a.push('--max-filesize', String(maxBytes));
