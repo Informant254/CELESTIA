@@ -20,7 +20,10 @@
     "inspired-by-wolftech"
   ],
   "author": "CELESTIA (Inspired by WolfTech 🐺)",
-  "contributors": ["WolfTech 🐺 — Original Howl / Inspiration", "CELESTIA ✨ — Heavenly Evolution"],
+  "contributors": [
+    "WolfTech 🐺 — Original Howl / Inspiration",
+    "CELESTIA ✨ — Heavenly Evolution"
+  ],
   "homepage": "https://github.com/yourname/celestia#inspired-by-wolftech",
   "license": "MIT",
   "dependencies": {
@@ -55,11 +58,12 @@
     "wa-sticker-formatter": "^4.4.4",
     "ws": "^8.20.0",
     "xlsx": "^0.18.5",
+    "yt-search": "^2.13.1",
     "ytdl-core": "^4.11.5"
   },
   "optionalDependencies": {
-    "sharp": "^0.35.3",
-    "better-sqlite3": "^12.8.0"
+    "better-sqlite3": "^12.8.0",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "nodemon": "^3.1.14",
