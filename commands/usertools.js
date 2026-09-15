@@ -37,7 +37,7 @@ module.exports = [
   {
     name: 'fullpp',
     aliases: ['setpp'],
-    description: "Set your WhatsApp profile picture from a replied image. Usage: reply to an image with .fullpp",
+    description: "Set the bot's profile picture: bare .fullpp uses her new logo, or reply to an image to use that instead.",
     async execute(sock, msg) {
       const jid = msg.key.remoteJid;
 
@@ -48,16 +48,24 @@ module.exports = [
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
       const quoted = ctx?.quotedMessage;
 
-      if (!quoted?.imageMessage) {
-        return sock.sendMessage(jid, { text: '❌ *Reply to an image with .fullpp*' }, { quoted: msg });
-      }
-
       try {
-        const media = await downloadMediaMessage(
-          { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } },
-          'buffer',
-          {}
-        );
+        let media;
+        if (quoted?.imageMessage) {
+          media = await downloadMediaMessage(
+            { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } },
+            'buffer',
+            {}
+          );
+        } else {
+          // No reply: use her official new logo from disk.
+          const fs = require('fs');
+          const path = require('path');
+          const logoPath = path.join(__dirname, '../assets/logo.png');
+          if (!fs.existsSync(logoPath)) {
+            return sock.sendMessage(jid, { text: '❌ *Reply to an image with .fullpp*' }, { quoted: msg });
+          }
+          media = fs.readFileSync(logoPath);
+        }
 
         await sock.updateProfilePicture(sock.user.id, media);
         await sock.sendMessage(jid, { text: '✅ *Profile picture updated.*' }, { quoted: msg });
