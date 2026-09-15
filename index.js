@@ -361,7 +361,23 @@ async function startBot() {
     );
     const wasAlreadyRegistered = state.creds.registered;
 
-    const { version } = await fetchLatestBaileysVersion();
+    // Fetch-once version: the upstream version check has no timeout and on a
+    // flaky network it can stall boot/reconnects for minutes. Fetch once per
+    // process (15s cap, pinned fallback), reuse for every reconnect.
+    if (!global.__waVersion) {
+      try {
+        const { version } = await Promise.race([
+          fetchLatestBaileysVersion(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('version fetch timeout')), 15_000)),
+        ]);
+        global.__waVersion = version;
+        logger.info(`[version] using WhatsApp v${version.join('.')}`);
+      } catch (e) {
+        global.__waVersion = global.__waVersion || [2, 3000, 1027934701];
+        logger.warn(`[version] fetch failed (${e.message}) — pinned fallback v${global.__waVersion.join('.')}`);
+      }
+    }
+    const version = global.__waVersion;
 
     let phoneNumber = null;
     if (!state.creds.registered && process.stdin.isTTY) {

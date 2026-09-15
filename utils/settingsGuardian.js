@@ -75,6 +75,9 @@ function backupNow() {
 
 function restoreMissing() {
   if (!fs.existsSync(BACKUP_DIR)) return 0;
+  // NEVER restore auth sessions from backup: a stale creds.json resurrects
+  // dead sessions and causes infinite 401-logout loops. Fresh pair only.
+  const NEVER_RESTORE = new Set(['auth_info_baileys', 'creds.json']);
   let restored = 0;
   const walk = (backupBase, liveBase) => {
     let entries;
@@ -84,6 +87,7 @@ function restoreMissing() {
       return;
     }
     for (const entry of entries) {
+      if (NEVER_RESTORE.has(entry.name)) continue; // session ghosts stay buried
       const bPath = path.join(backupBase, entry.name);
       const lPath = path.join(liveBase, entry.name);
       if (entry.isDirectory()) {
