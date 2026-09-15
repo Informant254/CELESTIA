@@ -314,25 +314,9 @@ function uptimeShort() {
 // ONE message: banner image + full menu as the caption,
 // so logo and menu are literally one bubble (always aligned).
 // Every line quote-prefixed (> ), commands in monospace.
-// Only commands that actually exist in this bot are listed.
+// Renders the FULL realm taxonomy (CATEGORIES) — every command
+// that exists in this bot appears, including CYBER FORTRESS.
 // ═══════════════════════════════════════════════════
-const MENU_CATS = [
-  ['OWNER', ['self','public','settings','botpp','getprefix','getpfp','pair','pair2','save','save1','kill','kill2','update','updatenow','eval','antilinkall','menutype','rpp','creategc','antibot','antitag','welcomegoodbye','broadcast','restart','block','blocklist','logout','fetch','shell','getcmd','getfile','cat','addsudo','delsudo','checksudo','clearsudos','oadmin','mygroups']],
-  ['GROUP', ['leavegroup','demote','promote','antipromote','antidemote','groupinfo','kick','badword','mute','unmute','tagall','warn','add','invite','hijack','join','welcome','goodbye','rgpp','amute','aunmute','ban','unban','demoteall','promoteall','close','open','desc','subject','link','revoke','icon','hidetag','antilink','antigm','setgreet','tag','disp-1','disp-7','disp-90','disp-off','approve','reject','admin','vcf','groupstatus','foreigners','antigstatus','antispam','antiword','common','gpp','gstatus']],
-  ['SETTINGS', ['anticall','antidelete','antiedit','chatbot','wapresence','autoread','autorecording','autotyping','mode','prefix','autoview','autolike','autobio','pdm','zushi']],
-  ['DOWNLOADS', ['download','igstory','pindl','play2','video','video2','audio','spotify','play','tiktok','ig','fb','twitter','ytsearch','song','shazam','lyrics','lyrics2','wiki']],
-  ['AI', ['gemini','imagine','vision2','groq','mi','worm','gpt','dall','bing','upscale','vision','void','vanta','claude','wormgpt','tts','vocalremover','transcribe','muslimai','bibleai','speechwriter']],
-  ['USER', ['block','unblock','pp','fullpp','jid','gjid','left','spam','ison']],
-  ['TOOLS', ['fancy','webscan','zip','screenshot','gitclone','apk','clearcache','qr','upload','zodiac','url','define']],
-  ['FOOTBALL', ['livescore','fixtures','bundesliga','epl','laliga','ligue1','seriea','ucl','news','playersearch','teamsearch','fifa','fifaplayoffs','euro','eplscorers','laligascorers','bundesligascorers','serieascorers','ligue1scorers','uclscorers','nba']],
-  ['CODING', ['enc','gpass','compile-py','compile-js','compile-c','compile-c++','base','unbase']],
-  ['MEDIA', ['s','take','photo','mix','smeme','vv','vv2','removebg','imagesearch','similarimage','remini','bass','deep','robot','chipmunk','nightcore','reverse','slow','fast','earrape','fliptext','uuid','whois','geoip']],
-  ['WHATSAPP', ['poll','react','del','setstatus','status','caption','doc','cinfo','clear']],
-  ['CONVERTER', ['topdf','toexcel','toword','tovideo','toviewonce','toaudio','toimg','totext','attp','ocr','carbon','cut','merge']],
-  ['GAMES', ['game','tictactoe','move','ttend','rps','wordguess','guess','wgend','mathquiz','mans','answer']],
-  ['UTILITY', ['isaac','trt','bot','runtime','script','owner','calc','donate','alive','help','joke','menu','ping','quote','user','stats','uptime','time']],
-];
-
 function downloadBuffer(url) {
   return new Promise((resolve, reject) => {
     https.get(url, (response) => {
@@ -390,10 +374,10 @@ const T6 = {
     menuText += '  🔌 *Plugins* : ' + new Set(commands.values()).size + ' commands\n';
     menuText += '└──────────────────────────────┘\n';
 
-    for (const [category, commandList] of MENU_CATS) {
-      const avail = commandList.filter((c) => commands.has(c));
+    for (const cat of CATEGORIES) {
+      const avail = cat.cmds.filter((c) => commands.has(c));
       if (!avail.length) continue;
-      menuText += '> ╭─❏ *' + category + '* ❏\n';
+      menuText += '> ╭─❏ *' + cat.title.toUpperCase() + '* ❏\n';
       for (const command of avail) {
         menuText += '> │ ' + '```' + command.toUpperCase() + '```' + '\n';
       }
@@ -404,10 +388,9 @@ const T6 = {
   index(prefix, commands) {
     return this.buildFull(prefix, commands);
   },
-  realm(entry, prefix, commands) {
-    const [category, commandList] = entry;
-    const avail = commandList.filter((c) => commands.has(c));
-    let t = '> ╭─❏ *' + category + '* ❏\n';
+  realm(cat, prefix, commands) {
+    const avail = cat.cmds.filter((c) => commands.has(c));
+    let t = '> ╭─❏ *' + cat.title.toUpperCase() + '* ❏\n';
     for (const command of avail) {
       t += '> │ ' + '```' + command.toUpperCase() + '```' + '\n';
     }
@@ -532,8 +515,8 @@ module.exports = {
     if (arg0 === 'all') {
       if (theme.key === 'boxed') {
         const parts = ['> 📖 *ATLAS — ALL REALMS*'];
-        for (const entry of MENU_CATS) {
-          if (entry[1].some((c) => commands.has(c))) parts.push(theme.realm(entry, prefix, commands));
+        for (const cat of CATEGORIES) {
+          if (cat.cmds.some((c) => commands.has(c))) parts.push(theme.realm(cat, prefix, commands));
         }
         return sendBoxed(parts.join('\n'));
       }
@@ -550,9 +533,9 @@ module.exports = {
     // ─── .menu <realm> [page] ───
     if (arg0) {
       if (theme.key === 'boxed') {
-        const entry = MENU_CATS.find(([n]) => n.toLowerCase() === arg0);
-        if (entry) return sendBoxed(theme.realm(entry, prefix, commands));
-        return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${MENU_CATS.map(([n]) => n.toLowerCase()).join(' • ')}`);
+        const cat = CATEGORIES.find((c) => c.key === arg0);
+        if (cat) return sendBoxed(theme.realm(cat, prefix, commands));
+        return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${CATEGORIES.map((c) => c.key).join(' • ')}`);
       }
       const cat = CATEGORIES.find(c => c.key === arg0);
       if (cat) {
