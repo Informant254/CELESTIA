@@ -42,3 +42,7 @@ pairing_sessions/
 config/groupSettings.json
 
 profiles/
+
+# Downloader: platform binaries + transient media (bootstrapped/rebuilt at runtime)
+download/bin/
+downloads/

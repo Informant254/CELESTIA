@@ -369,6 +369,18 @@ function registerMessageHandler(sock, commands) {
 
         if (!text) continue;
 
+        // ─── ⬇️ DOWNLOADER SESSIONS — bare-number picks (results 1-5, quality 1-6)
+        // Session-gated: only fires when THIS sender has a pending search in
+        // THIS chat. Guarded so it can never break normal message flow.
+        if (!text.startsWith(prefix)) {
+          try {
+            const dlSelect = require('../download/index');
+            if (await dlSelect.handleSelection(sock, msg, text)) continue;
+          } catch (e) {
+            logger.error(`[dlselect] ${e.message}`);
+          }
+        }
+
         // No-prefix triggers (e.g. emoji-only commands like vv2)
         {
           let earlyNoPrefixCommand = null;
