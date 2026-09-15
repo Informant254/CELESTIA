@@ -46,8 +46,6 @@ module.exports = {
     if (sub === 'to') {
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
       let rawTarget = null;
-      let whenStr = '';
-      let textStart = 2;
 
       // from mention
       const mentioned = ctx?.mentionedJid?.[0];
@@ -56,18 +54,15 @@ module.exports = {
       if (!rawTarget && ctx?.participant) rawTarget = ctx.participant;
 
       // from raw number arg
+      let whenStartIdx = 1;
       if (!rawTarget && args[1]) {
         const asJid = phoneJidFromInput(args[1]);
         if (asJid) {
           rawTarget = asJid;
-          whenStr = args[2] || '';
-          textStart = 3;
-        } else {
-          whenStr = args[1];
+          whenStartIdx = 2;
         }
-      } else if (rawTarget && !whenStr) {
-        whenStr = args[1] || '';
       }
+      let textStart = whenStartIdx + 1;
 
       if (!rawTarget) {
         return reply('🕰️ Who receives it? Reply to their message, tag them, or:\n*.capsule to 7d <message>* (replying to them)');
@@ -79,7 +74,13 @@ module.exports = {
         return reply('🕰️ Who receives it? Reply to their message or tag them.');
       }
 
-      const when = tk.parseWhen(whenStr);
+      // longest time-match first ("1 jan 2027" beats "1" o'clock)
+      let when = null;
+      for (const n of [3, 2, 1]) {
+        if (args.length < whenStartIdx + n) continue;
+        const parsed = tk.parseWhen(args.slice(whenStartIdx, whenStartIdx + n).join(' '));
+        if (parsed) { when = parsed; textStart = whenStartIdx + n; break; }
+      }
       if (!when) return reply('🕰️ When does it open? *.capsule to @user 7d <message>* (m/h/d/w, time, or date)');
 
       const text = args.slice(textStart).join(' ').trim();
@@ -110,14 +111,15 @@ module.exports = {
       return;
     }
 
-    // ─── capsule <when> <message> — to self ───
-    let whenStr = args[0];
+    // ─── capsule <when> <message> — to self (longest time-match first,
+    // so "1 jan 2027" wins over "1" o'clock) ───
+    let when = null;
     let textStart = 1;
-    if (!tk.parseWhen(whenStr) && args[1]) {
-      const two = tk.parseWhen(args[0] + ' ' + args[1]);
-      if (two) { whenStr = args[0] + ' ' + args[1]; textStart = 2; }
+    for (const n of [3, 2, 1]) {
+      if (args.length < n) continue;
+      const parsed = tk.parseWhen(args.slice(0, n).join(' '));
+      if (parsed) { when = parsed; textStart = n; break; }
     }
-    const when = tk.parseWhen(whenStr);
     if (!when) {
       return reply(
         '🕰️ *When does it open?*\n\n' +

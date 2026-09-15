@@ -30,11 +30,13 @@ function uid(prefix) {
 
 function parseWhen(whenStr, base = new Date()) {
   if (!whenStr) return null;
-  const s = String(whenStr).toLowerCase().trim();
+  // allow "in 30d", "in 2 hours"
+  const s = String(whenStr).toLowerCase().trim().replace(/^in\s+/, '');
   const now = base;
 
   // relative: 45m / 2h / 3d / 1w (also 45min, 2hrs, etc.)
-  const rel = s.match(/^(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)\b/);
+  // End-anchored: "30d" matches, "30d remember this" does NOT (that's time+message).
+  const rel = s.match(/^(\d+(?:\.\d+)?)\s*(m|min|mins|minute|minutes|h|hr|hrs|hour|hours|d|day|days|w|week|weeks)$/);
   if (rel) {
     const n = parseFloat(rel[1]);
     const unit = rel[2][0]; // m | h | d | w
@@ -42,16 +44,28 @@ function parseWhen(whenStr, base = new Date()) {
     return { ts: Date.now() + n * mult, label: `in ${rel[1]}${unit}` };
   }
 
-  // today/tomorrow + optional time
-  const dayMatch = s.match(/^(today|tomorrow|tmr)\s*(.*)/);
+  // today/tomorrow + optional time. A non-empty unparseable rest is NOT a
+  // time ("tomorrow remember this" must not match) — only bare words default.
+  const dayMatch = s.match(/^(today|tomorrow|tmr)(?:\s+(.*))?$/);
   if (dayMatch) {
     const d = new Date(now);
     if (dayMatch[1] !== 'today') d.setDate(d.getDate() + 1);
-    const t = parseClock(dayMatch[2], d);
+    const t = parseClock(dayMatch[2] || '', d);
     if (t) return t;
-    // bare "tomorrow" → default 9am
+    if ((dayMatch[2] || '').trim()) return null;
+    // bare "today"/"tomorrow" → default 9am
     d.setHours(9, 0, 0, 0);
-    return { ts: d.getTime(), label: `tomorrow 09:00` };
+    return { ts: d.getTime(), label: `${dayMatch[1]} 09:00` };
+  }
+
+  // next week / next month (9am)
+  const nxt = s.match(/^next\s+(week|month)$/);
+  if (nxt) {
+    const d = new Date(now);
+    if (nxt[1] === 'week') d.setDate(d.getDate() + 7);
+    else d.setMonth(d.getMonth() + 1);
+    d.setHours(9, 0, 0, 0);
+    return { ts: d.getTime(), label: nxt[1] === 'week' ? 'next week' : 'next month' };
   }
 
   // bare clock: 9pm, 21:30, 9:15am (today; if passed, tomorrow)
@@ -74,7 +88,28 @@ function parseWhen(whenStr, base = new Date()) {
     d.setDate(parseInt(dateAbs[1], 10));
     if (dateAbs[3]) d.setFullYear(parseInt(dateAbs[3], 10));
     d.setHours(dateAbs[4] ? parseInt(dateAbs[4], 10) + (/pm/.test(dateAbs[6] || '') && parseInt(dateAbs[4], 10) < 12 ? 12 : 0) : 9, dateAbs[5] ? parseInt(dateAbs[5], 10) : 0, 0, 0);
-    if (isNaN(d.getTime()) || d.getTime() <= Date.now()) return null;
+    if (isNaN(d.getTime())) return null;
+    if (d.getTime() <= Date.now()) {
+      if (dateAbs[3]) return null; // explicit past year — really invalid
+      d.setFullYear(d.getFullYear() + 1); // "25 dec" after Christmas → next Christmas
+      if (d.getTime() <= Date.now()) return null;
+    }
+    return { ts: d.getTime(), label: d.toLocaleDateString() };
+  }
+
+  // month-first date: jan 1, january 1 2027, dec 25 8pm
+  const mFirst = s.match(/^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{1,2})(?:\s*,?\s*(\d{4}))?(?:\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?)?$/);
+  if (mFirst) {
+    const mi = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'].indexOf(mFirst[1]);
+    const d = new Date(now.getFullYear(), mi, parseInt(mFirst[2], 10));
+    if (mFirst[3]) d.setFullYear(parseInt(mFirst[3], 10));
+    d.setHours(mFirst[4] ? parseInt(mFirst[4], 10) + (/pm/.test(mFirst[6] || '') && parseInt(mFirst[4], 10) < 12 ? 12 : 0) : 9, mFirst[5] ? parseInt(mFirst[5], 10) : 0, 0, 0);
+    if (isNaN(d.getTime())) return null;
+    if (d.getTime() <= Date.now()) {
+      if (mFirst[3]) return null;
+      d.setFullYear(d.getFullYear() + 1); // "jan 1" in March → next Jan 1
+      if (d.getTime() <= Date.now()) return null;
+    }
     return { ts: d.getTime(), label: d.toLocaleDateString() };
   }
 
