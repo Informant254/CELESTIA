@@ -309,13 +309,13 @@ function uptimeShort() {
 
 // ═══════════════════════════════════════════════════
 // THEME 6: IRONBOX — boxed steel, live system block ❏
-// Exact box-drawing structure (┌ │ └ ╭ ╰ ⊳ ❏), all names
-// uppercase, live prefix/mode/time/date/RAM/uptime/count.
-// Logo image rides above via send().
+// Exact template-matched box-drawing (╭ │ ╰ ⊳ ❏), all
+// names UPPERCASE, live prefix/mode/time/date/RAM/uptime.
+// Logo sent BARE (no caption) for natural-width alignment.
 // ═══════════════════════════════════════════════════
 const T6 = {
   key: 'boxed', name: 'IRONBOX', icon: '❏',
-  sysBlock(prefix, commands, total) {
+  sysBlock(prefix, total) {
     const os = require('os');
     const gb = (b) => (b / 1073741824).toFixed(1);
     const used = os.totalmem() - os.freemem();
@@ -324,21 +324,20 @@ const T6 = {
     const date = now.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
     const mode = String(settingsStore.get('mode', config.WORK_TYPE) || 'public').toUpperCase();
     const L = [];
-    L.push('┌───────────────────────');
+    L.push('╭───────────────────────');
     L.push('│ 🤖 CELESTIA BOT');
-    L.push('└───────────────────────');
-    L.push(`⚡ Prefix : [ ${prefix} ]`);
-    L.push(`🔓 Mode : ${mode}`);
-    L.push(`🕒 Time : ${time}`);
-    L.push(`📅 Date : ${date}`);
-    L.push(`💻 Ram : ${gb(used)} GB / ${gb(os.totalmem())} GB`);
-    L.push(`⏳ Uptime : ${uptimeShort()}`);
-    L.push(`🔌 Plugins : ${total} commands`);
-    L.push('└───────────────────────');
+    L.push(`│ ⚡ Prefix : [ ${prefix} ]`);
+    L.push(`│ 🔓 Mode : ${mode}`);
+    L.push(`│ 🕒 Time : ${time}`);
+    L.push(`│ 📅 Date : ${date}`);
+    L.push(`│ 💻 Ram : ${gb(used)} GB / ${gb(os.totalmem())} GB`);
+    L.push(`│ ⏳ Uptime : ${uptimeShort()}`);
+    L.push(`│ 🔌 Plugins : ${total} commands`);
+    L.push('╰───────────────────────');
     return L.join('\n');
   },
   index(prefix, commands, total) {
-    const L = [this.sysBlock(prefix, commands, total), ''];
+    const L = [this.sysBlock(prefix, total), ''];
     for (const c of CATEGORIES) {
       const avail = c.cmds.filter(n => commands.has(n));
       if (!avail.length) continue;
@@ -369,9 +368,6 @@ const T6 = {
     if (pages > 1) L.push('', `_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`);
     return L.join('\n');
   },
-  // Full index: ONE whole menu, every realm, never split.
-  // (Single bubble = single width. Blocks are atomic by construction
-  // since we only ever append complete lines.)
   footer: '> _Howl of the Wolf → Light of the Stars_',
 };
 
@@ -388,6 +384,19 @@ const THEME_ORDER = [
   { key: 'zen', icon: '🍃', name: 'MINIMAL ZEN' },
   { key: 'grimoire', icon: '📜', name: 'ARCANE GRIMOIRE' },
 ];
+
+function splitMenuText(text, maxLength = 3800) {
+  if (!text || text.length <= maxLength) return [text];
+
+  let splitAt = text.lastIndexOf('\n', maxLength);
+  if (splitAt <= 0) splitAt = Math.max(1, Math.min(maxLength, text.length));
+
+  const first = text.slice(0, splitAt).trim();
+  const rest = text.slice(splitAt).trim();
+
+  if (!first) return splitMenuText(rest, maxLength);
+  return [first, ...splitMenuText(rest, maxLength)];
+}
 
 function getTheme() {
   const t = settingsStore.get('menu_theme', 'boxed');
@@ -414,32 +423,32 @@ module.exports = {
     const theme = getTheme();
 
     const send = async (text) => {
-      if (text.length > 3800) {
-        const mid = text.lastIndexOf('\n', 2200);
-        await send(text.slice(0, mid).trim());
-        await send(text.slice(mid).trim());
-        return;
+      const chunks = splitMenuText(text);
+      for (const chunk of chunks) {
+        if (fs.existsSync(LOGO_PATH)) {
+          try {
+            await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH), caption: chunk }, { quoted: msg });
+            continue;
+          } catch { /* fall */ }
+        }
+        await sock.sendMessage(jid, { text: chunk }, { quoted: msg });
       }
-      if (fs.existsSync(LOGO_PATH)) {
-        try {
-          await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH), caption: text }, { quoted: msg });
-          return;
-        } catch { /* fall */ }
-      }
-      await sock.sendMessage(jid, { text }, { quoted: msg });
     };
 
-    // Page sender: logo as its OWN photo message first (short caption),
-    // then the content as plain text. Keeps long menus out of the
-    // image-caption limit and guarantees one clean bubble per send.
-    // Only the logo message quotes.
+    // Page sender: logo as its OWN photo message (NO caption — bare image
+    // gives the widest natural bubble, matching the text bubble below).
+    // Then the content as plain text. Keeps long menus out of the
+    // image-caption limit and guarantees clean width alignment.
     const sendPage = async (text, first) => {
+      const chunks = splitMenuText(text);
       if (first && fs.existsSync(LOGO_PATH)) {
         try {
-          await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH), caption: '✨ *CELESTIA* — _The Most Beautiful Bot_ 🐺' }, { quoted: msg });
+          await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH) }, { quoted: msg });
         } catch { /* logo optional — menu must still send */ }
       }
-      await sock.sendMessage(jid, { text }, first ? { quoted: msg } : {});
+      for (const [i, chunk] of chunks.entries()) {
+        await sock.sendMessage(jid, { text: chunk }, i === 0 && first ? { quoted: msg } : {});
+      }
     };
 
     // ─── .menu theme — show theme picker (native list) ───
