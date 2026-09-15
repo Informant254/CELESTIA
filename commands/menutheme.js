@@ -14,7 +14,7 @@
 const settingsStore = require('../utils/settingsStore');
 
 const THEMES = [
-  { key: 'boxed', icon: '❏', name: 'IRONBOX', desc: 'boxed steel · live system block · uppercase ranks' },
+  { key: 'boxed', icon: '❏', name: 'IRONBOX', desc: 'banner + full menu in one message · classic quote style' },
   { key: 'celestial', icon: '🌌', name: 'CELESTIAL REIGN', desc: 'her flagship face · airy ornaments · logo crown' },
   { key: 'constellation', icon: '🗺️', name: 'STAR MAP', desc: 'figlet banner · realm poems · star-light' },
   { key: 'neon', icon: '🌆', name: 'NEON CLASSIC', desc: 'cyber grid · box panels · sharp neon lines' },
@@ -82,7 +82,7 @@ module.exports = {
     }
     settingsStore.set('menu_theme', t.key);
     const preview = {
-      boxed: '❏ boxed steel ranks, live system block on top',
+      boxed: '❏ banner image with the full menu as its caption — one bubble',
       celestial: '🌌 airy ornaments, breathing room, crowned in starlight',
       constellation: '✧ ✦ star-lines and poems await',
       neon: '┣ ⚡ neon grid online',

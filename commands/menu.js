@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
+const https = require('https');
 const figlet = require('figlet');
 const wolfTech = require('../utils/wolfTech');
 const config = require('../config/config');
@@ -308,72 +310,111 @@ function uptimeShort() {
 }
 
 // ═══════════════════════════════════════════════════
-// THEME 6: IRONBOX — boxed steel, live system block ❏
-// Exact template-matched box-drawing (╭ │ ╰ ⊳ ❏), all
-// names UPPERCASE, live prefix/mode/time/date/RAM/uptime.
-// Logo sent BARE (no caption) for natural-width alignment.
+// THEME 6: IRONBOX — the reference menu, CELESTIA build.
+// ONE message: banner image + full menu as the caption,
+// so logo and menu are literally one bubble (always aligned).
+// Every line quote-prefixed (> ), commands in monospace.
+// Only commands that actually exist in this bot are listed.
 // ═══════════════════════════════════════════════════
+const MENU_CATS = [
+  ['OWNER', ['self','public','settings','botpp','getprefix','getpfp','pair','pair2','save','save1','kill','kill2','update','updatenow','eval','antilinkall','menutype','rpp','creategc','antibot','antitag','welcomegoodbye','broadcast','restart','block','blocklist','logout','fetch','shell','getcmd','getfile','cat','addsudo','delsudo','checksudo','clearsudos','oadmin','mygroups']],
+  ['GROUP', ['leavegroup','demote','promote','antipromote','antidemote','groupinfo','kick','badword','mute','unmute','tagall','warn','add','invite','hijack','join','welcome','goodbye','rgpp','amute','aunmute','ban','unban','demoteall','promoteall','close','open','desc','subject','link','revoke','icon','hidetag','antilink','antigm','setgreet','tag','disp-1','disp-7','disp-90','disp-off','approve','reject','admin','vcf','groupstatus','foreigners','antigstatus','antispam','antiword','common','gpp','gstatus']],
+  ['SETTINGS', ['anticall','antidelete','antiedit','chatbot','wapresence','autoread','autorecording','autotyping','mode','prefix','autoview','autolike','autobio','pdm','zushi']],
+  ['DOWNLOADS', ['download','igstory','pindl','play2','video','video2','audio','spotify','play','tiktok','ig','fb','twitter','ytsearch','song','shazam','lyrics','lyrics2','wiki']],
+  ['AI', ['gemini','imagine','vision2','groq','mi','worm','gpt','dall','bing','upscale','vision','void','vanta','claude','wormgpt','tts','vocalremover','transcribe','muslimai','bibleai','speechwriter']],
+  ['USER', ['block','unblock','pp','fullpp','jid','gjid','left','spam','ison']],
+  ['TOOLS', ['fancy','webscan','zip','screenshot','gitclone','apk','clearcache','qr','upload','zodiac','url','define']],
+  ['FOOTBALL', ['livescore','fixtures','bundesliga','epl','laliga','ligue1','seriea','ucl','news','playersearch','teamsearch','fifa','fifaplayoffs','euro','eplscorers','laligascorers','bundesligascorers','serieascorers','ligue1scorers','uclscorers','nba']],
+  ['CODING', ['enc','gpass','compile-py','compile-js','compile-c','compile-c++','base','unbase']],
+  ['MEDIA', ['s','take','photo','mix','smeme','vv','vv2','removebg','imagesearch','similarimage','remini','bass','deep','robot','chipmunk','nightcore','reverse','slow','fast','earrape','fliptext','uuid','whois','geoip']],
+  ['WHATSAPP', ['poll','react','del','setstatus','status','caption','doc','cinfo','clear']],
+  ['CONVERTER', ['topdf','toexcel','toword','tovideo','toviewonce','toaudio','toimg','totext','attp','ocr','carbon','cut','merge']],
+  ['GAMES', ['game','tictactoe','move','ttend','rps','wordguess','guess','wgend','mathquiz','mans','answer']],
+  ['UTILITY', ['isaac','trt','bot','runtime','script','owner','calc','donate','alive','help','joke','menu','ping','quote','user','stats','uptime','time']],
+];
+
+function downloadBuffer(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        return downloadBuffer(response.headers.location).then(resolve).catch(reject);
+      }
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks)));
+      response.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+async function getMenuImage() {
+  const customBanner = settingsStore.get('menu_banner', null);
+  if (customBanner) {
+    try { return Buffer.from(customBanner, 'base64'); } catch { /* fall through */ }
+  }
+  for (const f of ['banner.png', 'script.jpg']) {
+    const p = path.join(__dirname, '../assets', f);
+    if (fs.existsSync(p)) {
+      try { return fs.readFileSync(p); } catch { /* try next */ }
+    }
+  }
+  try {
+    return await downloadBuffer('https://i.imgur.com/3Z8Xy9G.jpeg');
+  } catch (error) {
+    console.error('[MENU IMAGE FETCH ERROR]', error && error.message);
+    return null;
+  }
+}
+
 const T6 = {
   key: 'boxed', name: 'IRONBOX', icon: '❏',
-  sysBlock(prefix, total) {
-    const os = require('os');
-    const gb = (b) => (b / 1073741824).toFixed(1);
-    const used = os.totalmem() - os.freemem();
+  buildFull(prefix, commands) {
+    const totalRam = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(1);
+    const freeRam = (os.freemem() / (1024 * 1024 * 1024)).toFixed(1);
+    const usedRam = (parseFloat(totalRam) - parseFloat(freeRam)).toFixed(1);
+    const uptime = process.uptime();
     const now = new Date();
-    const time = now.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    const date = now.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
-    const mode = String(settingsStore.get('mode', config.WORK_TYPE) || 'public').toUpperCase();
-    const BAR = '─'.repeat(23);
-    const L = [];
-    L.push('╭' + BAR);
-    L.push('│ 🤖 CELESTIA BOT');
-    L.push(`│ ⚡ Prefix : [ ${prefix} ]`);
-    L.push(`│ 🔓 Mode : ${mode}`);
-    L.push(`│ 🕒 Time : ${time}`);
-    L.push(`│ 📅 Date : ${date}`);
-    L.push(`│ 💻 Ram : ${gb(used)} GB / ${gb(os.totalmem())} GB`);
-    L.push(`│ ⏳ Uptime : ${uptimeShort()}`);
-    L.push(`│ 🔌 Plugins : ${total} commands`);
-    L.push('╰' + BAR);
-    return L.join('\n');
-  },
-  index(prefix, commands, total) {
-    const BAR = '─'.repeat(23);
-    const L = [this.sysBlock(prefix, total)];
-    for (const c of CATEGORIES) {
-      const avail = c.cmds.filter(n => commands.has(n));
+    const date = new Intl.DateTimeFormat('en-GB', { timeZone: config.timezone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(now);
+    const time = new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit', hour12: true }).format(now);
+    const mode = settingsStore.get('mode', config.WORK_TYPE);
+
+    let menuText = '┌──────────────────────────────┐\n';
+    menuText += '  🤖 *CELESTIA BOT*\n';
+    menuText += '  ━━━━━━━━━━━━━━━━━━━━━━━\n';
+    menuText += '  ⚡ *Prefix* : [ ' + (prefix || '.') + ' ]\n';
+    menuText += '  🔒 *Mode*   : ' + (mode || 'public').toUpperCase() + '\n';
+    menuText += '  🕒 *Time*   : ' + time + '\n';
+    menuText += '  🗓️ *Date*   : ' + date + '\n';
+    menuText += '  💾 *Ram*    : ' + usedRam + ' GB / ' + totalRam + ' GB\n';
+    menuText += '  ⏱️ *Uptime* : ' + Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm\n';
+    menuText += '  🔌 *Plugins* : ' + new Set(commands.values()).size + ' commands\n';
+    menuText += '└──────────────────────────────┘\n';
+
+    for (const [category, commandList] of MENU_CATS) {
+      const avail = commandList.filter((c) => commands.has(c));
       if (!avail.length) continue;
-      L.push('');
-      L.push(`╭── ❏ ${c.title.toUpperCase()} ❏`);
-      L.push('│');
-      for (const name of avail) L.push(`│ ⊳ ${name.toUpperCase()}`);
-      L.push('╰' + BAR);
+      menuText += '> ╭─❏ *' + category + '* ❏\n';
+      for (const command of avail) {
+        menuText += '> │ ' + '```' + command.toUpperCase() + '```' + '\n';
+      }
+      menuText += '> ╰─────────────────\n';
     }
-    // Whole menu in ONE monospace code block — box-drawing chars
-    // only align in monospace. One block = one bubble = one width.
-    return '```\n' + L.join('\n').trim() + '\n```';
+    return menuText;
   },
-  realm(cat, prefix, commands, page) {
-    const PER = 16;
-    const BAR = '─'.repeat(23);
-    const avail = cat.cmds.filter(n => commands.has(n));
-    const pages = Math.ceil(avail.length / PER) || 1;
-    const p = Math.max(1, Math.min(page, pages));
-    const slice = avail.slice((p - 1) * PER, p * PER);
-    const L = [];
-    L.push(`╭── ❏ ${cat.title.toUpperCase()} ❏`);
-    L.push('│');
-    for (const name of slice) {
-      const cmd = commands.get(name);
-      const d = (cmd.description || '').split('.')[0].slice(0, 48);
-      L.push(`│ ⊳ ${name.toUpperCase()}${d ? ` — ${d}` : ''}`);
+  index(prefix, commands) {
+    return this.buildFull(prefix, commands);
+  },
+  realm(entry, prefix, commands) {
+    const [category, commandList] = entry;
+    const avail = commandList.filter((c) => commands.has(c));
+    let t = '> ╭─❏ *' + category + '* ❏\n';
+    for (const command of avail) {
+      t += '> │ ' + '```' + command.toUpperCase() + '```' + '\n';
     }
-    L.push('╰' + BAR);
-    let out = '```\n' + L.join('\n') + '\n```';
-    if (pages > 1) out += `\n\n_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`;
-    return out;
+    t += '> ╰─────────────────';
+    return t;
   },
-  footer: '> _Howl of the Wolf → Light of the Stars_',
+  footer: '',
 };
 
 function cat2Spell(cat) {
@@ -445,6 +486,17 @@ module.exports = {
 
     const send = async (text) => sendPage(text, true);
 
+    // Boxed face: ONE message — banner image + full menu as the caption.
+    // Logo and menu are literally one bubble, so they always align.
+    const sendBoxed = async (text) => {
+      const imageBuffer = await getMenuImage();
+      if (imageBuffer) {
+        await sock.sendMessage(jid, { image: imageBuffer, caption: text }, { quoted: msg });
+      } else {
+        await sock.sendMessage(jid, { text }, { quoted: msg });
+      }
+    };
+
     // ─── .menu theme — show theme picker (native list) ───
     if (arg0 === 'theme' || arg0 === 'style' || arg0 === 'appearance') {
       try {
@@ -457,7 +509,7 @@ module.exports = {
               title: `${t.icon} ${t.name}`,
               rowId: `${prefix}menutheme ${t.key}`,
               description: {
-                boxed: 'boxed steel · live system block · uppercase ranks',
+                boxed: 'banner + full menu in one message · classic quote style',
                 celestial: 'her flagship face · airy ornaments · logo crown',
                 constellation: 'star-map · figlet banner · realm poems',
                 neon: 'cyber grid · box panels · sharp lines',
@@ -478,6 +530,13 @@ module.exports = {
 
     // ─── .menu all [page] — atlas in current theme ───
     if (arg0 === 'all') {
+      if (theme.key === 'boxed') {
+        const parts = ['> 📖 *ATLAS — ALL REALMS*'];
+        for (const entry of MENU_CATS) {
+          if (entry[1].some((c) => commands.has(c))) parts.push(theme.realm(entry, prefix, commands));
+        }
+        return sendBoxed(parts.join('\n'));
+      }
       const PER = 3;
       const totalPages = Math.ceil(CATEGORIES.length / PER);
       const p = Math.max(1, Math.min(parseInt(args[1], 10) || 1, totalPages));
@@ -490,6 +549,11 @@ module.exports = {
 
     // ─── .menu <realm> [page] ───
     if (arg0) {
+      if (theme.key === 'boxed') {
+        const entry = MENU_CATS.find(([n]) => n.toLowerCase() === arg0);
+        if (entry) return sendBoxed(theme.realm(entry, prefix, commands));
+        return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${MENU_CATS.map(([n]) => n.toLowerCase()).join(' • ')}`);
+      }
       const cat = CATEGORIES.find(c => c.key === arg0);
       if (cat) {
         const r = theme.realm(cat, prefix, commands, parseInt(args[1], 10) || 1);
@@ -519,10 +583,9 @@ module.exports = {
     }
 
     // ─── bare .menu — themed index ───
-    // Boxed face: ONE whole menu in a single bubble (single bubble =
-    // single width, always). Logo goes first as its own photo.
+    // Boxed face: banner image + full menu as ONE captioned message.
     if (theme.key === 'boxed') {
-      return sendPage(theme.index(prefix, commands, total), true);
+      return sendBoxed(theme.index(prefix, commands, total));
     }
     const idx = theme.index(prefix, commands, total);
     return send(idx);
