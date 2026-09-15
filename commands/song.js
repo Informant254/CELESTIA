@@ -1,19 +1,14 @@
 /**
- * commands/song.js
- * ------------------
- * Downloads a song from YouTube using the Keith API. Centralized via
- * config/apis.js — update KEITH_BASE there if this API ever changes.
+ * commands/song.js — downloads a song from YouTube (shared downloader util).
  */
-const axios = require('axios');
-const yts = require('yt-search');
-const { KEITH_BASE } = require('../config/apis');
+const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'song',
   description: 'Download a song from YouTube. Usage: .song <song name>',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
-    const query = args.join(' ');
+    const query = args.join(' ').trim();
 
     if (!query) {
       return sock.sendMessage(jid, { text: '❌ Usage: .song <song name>' }, { quoted: msg });
@@ -22,30 +17,33 @@ module.exports = {
     await sock.sendMessage(jid, { text: `🔍 Searching for "${query}"...` }, { quoted: msg });
 
     try {
-      const search = await yts(query);
-      const video = search.videos?.[0];
-      if (!video) {
-        return sock.sendMessage(jid, { text: '❌ No results found.' }, { quoted: msg });
+      let videoUrl, videoTitle;
+      if (/youtu\.be|youtube\.com/i.test(query)) {
+        videoUrl = query;
+        try {
+          videoTitle = (await ytSearch(query)).title || 'YouTube Audio';
+        } catch {
+          videoTitle = 'YouTube Audio';
+        }
+      } else {
+        const found = await ytSearch(query);
+        videoUrl = found.url;
+        videoTitle = found.title;
       }
 
-      await sock.sendMessage(jid, { text: `⏳ Downloading: ${video.title} (${video.timestamp})` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `⏳ Downloading: ${videoTitle}` }, { quoted: msg });
 
-      const videoUrl = `https://www.youtube.com/watch?v=${video.videoId}`;
-      const download = await axios.get(`${KEITH_BASE}/download/ytmp3?url=${encodeURIComponent(videoUrl)}`);
-      const audioUrl = download.data?.result;
-
-      if (!audioUrl) {
-        throw new Error('Failed to retrieve audio.');
-      }
+      const { url: audioUrl, title } = await ytAudio(videoUrl, videoTitle);
+      const finalTitle = title || videoTitle;
 
       await sock.sendMessage(jid, {
         audio: { url: audioUrl },
         mimetype: 'audio/mpeg',
-        fileName: `${video.title}.mp3`.replace(/[\\/:*?"<>|]/g, ''),
-        caption: `🎵 *${video.title}*\n⏱ ${video.timestamp} | 👁 ${video.views}`
+        fileName: cleanName(finalTitle, '.mp3'),
+        caption: `🎵 *${finalTitle}*`
       }, { quoted: msg });
     } catch (e) {
       await sock.sendMessage(jid, { text: '❌ Song download failed: ' + e.message }, { quoted: msg });
     }
-  }
+  },
 };

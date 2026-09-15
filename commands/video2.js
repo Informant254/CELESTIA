@@ -1,11 +1,10 @@
 const axios = require('axios');
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
+const { ytSearch, ytVideo, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'video2',
   aliases: ['ytv2'],
-  description: 'Download YouTube video via alternate API. Usage: .video2 <video name or link>',
+  description: 'Download YouTube video via alternate route. Usage: .video2 <video name or link>',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     const text = args.join(' ').trim();
@@ -23,41 +22,39 @@ module.exports = {
         videoUrl = text;
         videoTitle = 'YouTube Video';
       } else {
-        const search = await axios.get(`${API}/search/yts?query=${encodeURIComponent(text)}`);
-        const videos = search.data?.result;
-        if (!Array.isArray(videos) || videos.length === 0) {
-          return sock.sendMessage(jid, { text: '❌ No results found.', edit: searching.key });
-        }
-        videoUrl = videos[0].url;
-        videoTitle = videos[0].title;
+        const found = await ytSearch(text);
+        videoUrl = found.url;
+        videoTitle = found.title;
       }
 
       await sock.sendMessage(jid, { text: `😍 Found: *${videoTitle}*\n⏳ Downloading...`, edit: searching.key });
 
-      const download = await axios.get(`${API}/download/mp4?url=${encodeURIComponent(videoUrl)}`);
-      const downloadUrl = download.data?.result;
-      if (!downloadUrl) {
-        return sock.sendMessage(jid, { text: '❌ Failed to get video.', edit: searching.key });
-      }
+      const { url: downloadUrl, title } = await ytVideo(videoUrl, videoTitle);
+      const finalTitle = title || videoTitle;
 
-      const head = await axios.head(downloadUrl).catch(() => null);
-      if (!head || !head.headers['content-type']?.includes('video')) {
+      const head = await axios.head(downloadUrl, { timeout: 15000 }).catch(() => null);
+      if (head && head.headers['content-type'] && !/video|octet-stream/.test(head.headers['content-type'])) {
         return sock.sendMessage(jid, { text: '❌ Invalid video format from API.', edit: searching.key });
       }
 
-      const response = await axios.get(downloadUrl, { responseType: 'arraybuffer' });
+      const response = await axios.get(downloadUrl, { responseType: 'arraybuffer', timeout: 120000 });
       const size = response.headers['content-length'];
       if (size && parseInt(size) > 150 * 1024 * 1024) {
         return sock.sendMessage(jid, { text: '❌ Video too large. Try another one.', edit: searching.key });
       }
 
       const buffer = Buffer.from(response.data);
-      const fileName = `${videoTitle}.mp4`.replace(/[^\w\s.-]/gi, '');
+      if (!buffer.length) {
+        return sock.sendMessage(jid, { text: '❌ Downloaded file was empty. Try again.', edit: searching.key });
+      }
 
-      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', fileName, caption: `🎬 ${videoTitle}` }, { quoted: msg });
-      await sock.sendMessage(jid, { text: `✅ Successfully downloaded! *${videoTitle}*`, edit: searching.key });
+      const fileName = cleanName(finalTitle, '.mp4');
+
+      await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', fileName, caption: `🎬 ${finalTitle}` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `✅ Successfully downloaded! *${finalTitle}*`, edit: searching.key });
     } catch (err) {
-      await sock.sendMessage(jid, { text: '❌ Error downloading video. API may be unstable.' }, { quoted: msg });
+      console.error('[VIDEO2 ERROR]', err.message);
+      await sock.sendMessage(jid, { text: '❌ Error downloading video: ' + err.message }, { quoted: msg });
     }
   },
 };

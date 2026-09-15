@@ -1,5 +1,5 @@
 const axios = require('axios');
-const { KEITH_BASE } = require('../config/apis');
+const { ytSearch, ytVideo, cleanName } = require('../utils/downloader');
 
 const STREAM_TIMEOUT_MS = 45000;
 
@@ -20,30 +20,6 @@ function reasonFor(e) {
         ? 'timed out'
         : e.message;
 }
-
-// ── Downloader sources, tried in order until one works ──────────────────────
-// NOTE: iamtkm.vercel.app was removed — curl confirmed it's a dead Vercel
-// deployment (404 DEPLOYMENT_NOT_FOUND), not a transient failure. Add a real
-// second source back here if you find/build one.
-
-async function resolveViaKeith(videoUrl) {
-  const apiRes = await axios.get(
-    `${KEITH_BASE}/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-    { timeout: 60000 }
-  );
-  const resData = apiRes.data;
-  // Confirmed via curl: `result` is the download URL itself (a plain string),
-  // not an object with .url/.downloadUrl — Keith doesn't return a title either.
-  const downloadUrl = typeof resData?.result === 'string' ? resData.result : null;
-  if (!resData?.status || !downloadUrl) {
-    throw new Error(typeof resData?.result === 'string' ? resData.result : 'no valid video URL in response');
-  }
-  return { downloadUrl, title: null };
-}
-
-const DOWNLOAD_SOURCES = [
-  { name: 'Keith', resolve: resolveViaKeith },
-];
 
 module.exports = {
   name: 'video',
@@ -81,16 +57,12 @@ module.exports = {
         videoUrl = text;
         videoTitle = 'YouTube Video';
       } else {
-        const search = await axios.get(`${KEITH_BASE}/search/yts?query=${encodeURIComponent(text)}`, { timeout: 20000 });
-        const videos = search.data?.result;
-        if (!Array.isArray(videos) || videos.length === 0) {
-          return sock.sendMessage(jid, { text: `❌ No results found for: *${text}*`, edit: searching.key });
-        }
-        videoUrl = videos[0].url;
-        videoTitle = videos[0].title;
+        const found = await ytSearch(text);
+        videoUrl = found.url;
+        videoTitle = found.title;
       }
     } catch (e) {
-      console.error('[VIDEO] Search step failed:', e.response?.status, e.response?.data || e.message);
+      console.error('[VIDEO] Search step failed:', e.message);
       return sock.sendMessage(jid, {
         text: `❌ Search failed: ${reasonFor(e)}`,
         edit: searching.key
@@ -99,31 +71,22 @@ module.exports = {
 
     await sock.sendMessage(jid, { text: `😍 Found: *${videoTitle}*\n⏳ Downloading...`, edit: searching.key });
 
-    // ── 2. Resolve the actual download link — try each source in order ────
+    // ── 2. Resolve the actual download link ───────────────────────────────
     let downloadUrl, finalTitle;
-    const failures = [];
-    for (const { name, resolve } of DOWNLOAD_SOURCES) {
-      try {
-        const result = await resolve(videoUrl);
-        downloadUrl = result.downloadUrl;
-        finalTitle = result.title || videoTitle;
-        console.log(`[VIDEO] Resolved download link via ${name}`);
-        break;
-      } catch (e) {
-        const reason = reasonFor(e);
-        console.error(`[VIDEO] ${name} downloader failed:`, reason);
-        failures.push(`${name}: ${reason}`);
-      }
-    }
-
-    if (!downloadUrl) {
+    try {
+      const res = await ytVideo(videoUrl, videoTitle);
+      downloadUrl = res.url;
+      finalTitle = res.title || videoTitle;
+      console.log('[VIDEO] Resolved download link');
+    } catch (e) {
+      console.error('[VIDEO] downloader failed:', e.message);
       return sock.sendMessage(jid, {
-        text: `❌ Download failed on all sources.\n${failures.join('\n')}`,
+        text: `❌ Download failed: ${e.message}`,
         edit: searching.key
       });
     }
 
-    const fileName = `${finalTitle.replace(/[\/\\:*?"<>|]/g, '').trim()}.mp4`;
+    const fileName = cleanName(finalTitle, '.mp4');
     await sock.sendMessage(jid, { text: `✅ Downloading: *${finalTitle}*`, edit: searching.key });
 
     // ── 3. Send: try streaming the URL directly (cheap on memory), and if
@@ -167,4 +130,3 @@ module.exports = {
     }
   },
 };
-

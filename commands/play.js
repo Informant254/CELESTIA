@@ -1,8 +1,4 @@
-const axios = require("axios");
-const yts = require("yt-search");
-
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
+const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: "play",
@@ -40,34 +36,17 @@ module.exports = {
       // YouTube link
       if (/youtu\.be|youtube\.com/i.test(query)) {
         videoUrl = query;
-
-        const info = await yts(query);
-
-        if (!info) {
-          return await sock.sendMessage(chatId, {
-            text: "❌ Invalid YouTube link.",
-            edit: statusMsg.key
-          });
+        try {
+          const found = await ytSearch(query);
+          videoTitle = found.title || "YouTube Audio";
+        } catch {
+          videoTitle = "YouTube Audio";
         }
-
-        videoTitle = info.title || "YouTube Audio";
       } else {
         // Search by name
-        const search = await axios.get(
-          `${API}/search/yts?query=${encodeURIComponent(query)}`
-        );
-
-        const videos = search.data?.result;
-
-        if (!Array.isArray(videos) || videos.length === 0) {
-          return await sock.sendMessage(chatId, {
-            text: "❌ No results found.",
-            edit: statusMsg.key
-          });
-        }
-
-        videoUrl = videos[0].url;
-        videoTitle = videos[0].title;
+        const found = await ytSearch(query);
+        videoUrl = found.url;
+        videoTitle = found.title;
       }
 
       // Downloading...
@@ -76,17 +55,9 @@ module.exports = {
         edit: statusMsg.key
       });
 
-      const download = await axios.get(
-        `${API}/download/audio?url=${encodeURIComponent(videoUrl)}`
-      );
-
-      const audioUrl = download.data?.result;
-
-      if (!audioUrl) {
-        throw new Error("Failed to retrieve audio.");
-      }
-
-      const fileName = `${videoTitle}.mp3`.replace(/[\\/:*?"<>|]/g, "");
+      const { url: audioUrl, title } = await ytAudio(videoUrl, videoTitle);
+      const finalTitle = title || videoTitle;
+      const fileName = cleanName(finalTitle, '.mp3');
 
       // Playable audio
       await sock.sendMessage(
@@ -113,12 +84,12 @@ module.exports = {
 
       // Success
       await sock.sendMessage(chatId, {
-        text: `✅ Successfully downloaded\n\n🎵 *${videoTitle}*`,
+        text: `✅ Successfully downloaded\n\n🎵 *${finalTitle}*`,
         edit: statusMsg.key
       });
 
     } catch (err) {
-      console.error("[PLAY ERROR]", err);
+      console.error("[PLAY ERROR]", err.message);
 
       if (statusMsg) {
         await sock.sendMessage(chatId, {

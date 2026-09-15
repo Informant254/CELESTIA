@@ -1,12 +1,8 @@
-const axios = require("axios");
-const yts = require("yt-search");
-
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
+const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: "spotify",
-  description: "Search and download a track. Usage: .spotify <song name or link>",
+  description: "Search and download a track. Usage: .spotify <song name>",
 
   async execute(sock, msg, args) {
     const chatId = msg.key.remoteJid;
@@ -22,76 +18,32 @@ module.exports = {
       );
     }
 
+    if (/open\.spotify\.com/i.test(query)) {
+      return await sock.sendMessage(
+        chatId,
+        { text: "🎵 Send me the *song name* instead (e.g. `.spotify Shape of You`)\nSpotify links can't be resolved directly, but I'll find the track for you." },
+        { quoted: msg }
+      );
+    }
+
     let statusMsg;
 
     try {
-      // Send one status message
-      statusMsg = await sock.sendMessage(
-        chatId,
-        {
-          text: "🔍 Searching..."
-        },
-        { quoted: msg }
-      );
+      statusMsg = await sock.sendMessage(chatId, { text: "🔍 Searching..." }, { quoted: msg });
 
-      let videoUrl;
-      let videoTitle;
+      const found = await ytSearch(query + ' audio');
+      const videoUrl = found.url;
+      const videoTitle = found.title;
 
-      // User sent a YouTube link
-      if (/youtu\.be|youtube\.com/i.test(query)) {
-        videoUrl = query;
-
-        const info = await yts(query);
-
-        if (!info) {
-          return await sock.sendMessage(
-            chatId,
-            {
-              text: "❌ Invalid link.",
-              edit: statusMsg.key
-            }
-          );
-        }
-
-        videoTitle = info.title || "Audio";
-      } else {
-        // Search by song name
-        const search = await axios.get(
-          `${API}/search/yts?query=${encodeURIComponent(query)}`
-        );
-
-        const videos = search.data?.result;
-
-        if (!Array.isArray(videos) || videos.length === 0) {
-          return await sock.sendMessage(chatId, {
-            text: "❌ No results found.",
-            edit: statusMsg.key
-          });
-        }
-
-        videoUrl = videos[0].url;
-        videoTitle = videos[0].title;
-      }
-
-      // Edit to downloading
       await sock.sendMessage(chatId, {
         text: `🎧 Downloading...\n\n*${videoTitle}*`,
         edit: statusMsg.key
       });
 
-      const download = await axios.get(
-        `${API}/download/audio?url=${encodeURIComponent(videoUrl)}`
-      );
+      const { url: audioUrl, title } = await ytAudio(videoUrl, videoTitle);
+      const finalTitle = title || videoTitle;
+      const fileName = cleanName(finalTitle, '.mp3');
 
-      const audioUrl = download.data?.result;
-
-      if (!audioUrl) {
-        throw new Error("Failed to retrieve audio.");
-      }
-
-      const fileName = `${videoTitle}.mp3`.replace(/[\\/:*?"<>|]/g, "");
-
-      // Send audio
       await sock.sendMessage(
         chatId,
         {
@@ -103,14 +55,13 @@ module.exports = {
         { quoted: msg }
       );
 
-      // Edit to success
       await sock.sendMessage(chatId, {
-        text: `✅ Successfully downloaded\n\n🎵 *${videoTitle}*`,
+        text: `✅ Successfully downloaded\n\n🎵 *${finalTitle}*`,
         edit: statusMsg.key
       });
 
     } catch (err) {
-      console.error("[SPOTIFY ERROR]", err);
+      console.error("[SPOTIFY ERROR]", err.message);
 
       if (statusMsg) {
         await sock.sendMessage(chatId, {

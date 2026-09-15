@@ -1,5 +1,4 @@
-const axios = require('axios');
-const { KEITH_BASE } = require('../config/apis');
+const { ytAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'download',
@@ -20,26 +19,18 @@ module.exports = {
     await sock.sendMessage(jid, { text: '⏳ Downloading audio, this may take a moment...' }, { quoted: msg });
 
     try {
-      const res = await axios.get(`${KEITH_BASE}/download/audio?url=${encodeURIComponent(url)}`);
-      const data = res.data;
-
-      if (!data?.status || !data?.result) {
-        throw new Error(data?.error || 'API request failed');
-      }
-
-      const audioUrl = data.result;
-      const title = data.title || 'audio';
+      const { url: audioUrl, title } = await ytAudio(url);
 
       await sock.sendMessage(
         jid,
-        { audio: { url: audioUrl }, mimetype: 'audio/mpeg', ptt: false, fileName: `${title}.mp3` },
+        { audio: { url: audioUrl }, mimetype: 'audio/mpeg', ptt: false, fileName: cleanName(title, '.mp3') },
         { quoted: msg }
       );
     } catch (error) {
-      console.error('[DOWNLOAD ERROR]', error);
+      console.error('[DOWNLOAD ERROR]', error.message);
       await sock.sendMessage(
         jid,
-        { text: '❌ Could not download that video. Try again later or check the link.' },
+        { text: '❌ Could not download that video. ' + error.message },
         { quoted: msg }
       );
     }
