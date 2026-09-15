@@ -1,7 +1,8 @@
 /**
  * .menutheme — choose her face
  *
- *   .menutheme                 → native tappable picker (5 styles)
+ *   .menutheme                 → native tappable picker (6 styles)
+ *   .menutheme boxed          → ❏ Ironbox (flagship boxes)
  *   .menutheme celestial      → 🌌 Celestial Reign (flagship)
  *   .menutheme constellation    → 🗺️ Star Map
  *   .menutheme neon             → 🌆 Neon Classic
@@ -13,6 +14,7 @@
 const settingsStore = require('../utils/settingsStore');
 
 const THEMES = [
+  { key: 'boxed', icon: '❏', name: 'IRONBOX', desc: 'boxed steel · live system block · uppercase ranks' },
   { key: 'celestial', icon: '🌌', name: 'CELESTIAL REIGN', desc: 'her flagship face · airy ornaments · logo crown' },
   { key: 'constellation', icon: '🗺️', name: 'STAR MAP', desc: 'figlet banner · realm poems · star-light' },
   { key: 'neon', icon: '🌆', name: 'NEON CLASSIC', desc: 'cyber grid · box panels · sharp neon lines' },
@@ -23,7 +25,7 @@ const THEMES = [
 module.exports = {
   name: 'menutheme',
   aliases: ['mtheme', 'face'],
-  description: '🎨 Choose her menu face — 5 appearances + native tappable mode',
+  description: '🎨 Choose her menu face — 6 appearances + native tappable mode',
   execute: async (sock, msg, args, commands, reply) => {
     const jid = msg.key.remoteJid;
     const prefix = settingsStore.get('prefix', '.') || '.';
@@ -31,7 +33,7 @@ module.exports = {
 
     // ─── Bare: tappable picker ───
     if (!sub || sub === 'status') {
-      const cur = settingsStore.get('menu_theme', 'celestial');
+      const cur = settingsStore.get('menu_theme', 'boxed');
       const native = settingsStore.get('menu_native', false);
       if (!sub) {
         try {
@@ -80,6 +82,7 @@ module.exports = {
     }
     settingsStore.set('menu_theme', t.key);
     const preview = {
+      boxed: '❏ boxed steel ranks, live system block on top',
       celestial: '🌌 airy ornaments, breathing room, crowned in starlight',
       constellation: '✧ ✦ star-lines and poems await',
       neon: '┣ ⚡ neon grid online',

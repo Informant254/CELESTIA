@@ -307,12 +307,78 @@ function uptimeShort() {
   return `${s}s`;
 }
 
+// ═══════════════════════════════════════════════════
+// THEME 6: IRONBOX — boxed steel, live system block ❏
+// Exact box-drawing structure (┌ │ └ ╭ ╰ ⊳ ❏), all names
+// uppercase, live prefix/mode/time/date/RAM/uptime/count.
+// Logo image rides above via send().
+// ═══════════════════════════════════════════════════
+const T6 = {
+  key: 'boxed', name: 'IRONBOX', icon: '❏',
+  sysBlock(prefix, commands, total) {
+    const os = require('os');
+    const gb = (b) => (b / 1073741824).toFixed(1);
+    const used = os.totalmem() - os.freemem();
+    const now = new Date();
+    const time = now.toLocaleString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const date = now.toLocaleString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const mode = String(settingsStore.get('mode', config.WORK_TYPE) || 'public').toUpperCase();
+    const L = [];
+    L.push('┌───────────────────────');
+    L.push('│ 🤖 CELESTIA BOT');
+    L.push('└───────────────────────');
+    L.push(`⚡ Prefix : [ ${prefix} ]`);
+    L.push(`🔓 Mode : ${mode}`);
+    L.push(`🕒 Time : ${time}`);
+    L.push(`📅 Date : ${date}`);
+    L.push(`💻 Ram : ${gb(used)} GB / ${gb(os.totalmem())} GB`);
+    L.push(`⏳ Uptime : ${uptimeShort()}`);
+    L.push(`🔌 Plugins : ${total} commands`);
+    L.push('└───────────────────────');
+    return L.join('\n');
+  },
+  index(prefix, commands, total) {
+    const L = [this.sysBlock(prefix, commands, total), ''];
+    for (const c of CATEGORIES) {
+      const avail = c.cmds.filter(n => commands.has(n));
+      if (!avail.length) continue;
+      L.push(`╭── ❏ ${c.title.toUpperCase()} ❏`);
+      L.push('│');
+      for (const name of avail) L.push(`│ ⊳ ${name.toUpperCase()}`);
+      L.push('╰───────────────────────');
+      L.push('');
+    }
+    L.push('> _Howl of the Wolf → Light of the Stars_');
+    return L.join('\n').trim();
+  },
+  realm(cat, prefix, commands, page) {
+    const PER = 16;
+    const avail = cat.cmds.filter(n => commands.has(n));
+    const pages = Math.ceil(avail.length / PER) || 1;
+    const p = Math.max(1, Math.min(page, pages));
+    const slice = avail.slice((p - 1) * PER, p * PER);
+    const L = [];
+    L.push(`╭── ❏ ${cat.title.toUpperCase()} ❏`);
+    L.push('│');
+    for (const name of slice) {
+      const cmd = commands.get(name);
+      const d = (cmd.description || '').split('.')[0].slice(0, 48);
+      L.push(`│ ⊳ ${name.toUpperCase()}${d ? ` — _${d}_` : ''}`);
+    }
+    L.push('╰───────────────────────');
+    if (pages > 1) L.push('', `_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`);
+    return L.join('\n');
+  },
+  footer: '> _Howl of the Wolf → Light of the Stars_',
+};
+
 function cat2Spell(cat) {
   return cat.poem;
 }
 
-const THEMES = { celestial: T5, constellation: T1, neon: T2, zen: T3, grimoire: T4 };
+const THEMES = { boxed: T6, celestial: T5, constellation: T1, neon: T2, zen: T3, grimoire: T4 };
 const THEME_ORDER = [
+  { key: 'boxed', icon: '❏', name: 'IRONBOX' },
   { key: 'celestial', icon: '🌌', name: 'CELESTIAL REIGN' },
   { key: 'constellation', icon: '🗺️', name: 'STAR MAP' },
   { key: 'neon', icon: '🌆', name: 'NEON CLASSIC' },
@@ -321,8 +387,8 @@ const THEME_ORDER = [
 ];
 
 function getTheme() {
-  const t = settingsStore.get('menu_theme', 'celestial');
-  return THEMES[t] || T5;
+  const t = settingsStore.get('menu_theme', 'boxed');
+  return THEMES[t] || T6;
 }
 
 // ═══════════════════════════════════════════════════
@@ -331,7 +397,7 @@ function getTheme() {
 module.exports = {
   name: 'menu',
   aliases: ['help', 'commands', 'list'],
-  description: '✨ The Menu of Five Faces — Celestial Reign, Constellation, Neon, Zen, Grimoire',
+  description: '✨ The Menu of Six Faces — Ironbox, Celestial Reign, Constellation, Neon, Zen, Grimoire',
   execute: async (sock, msg, args, commands, reply) => {
     const jid = msg.key.remoteJid;
     const prefix = settingsStore.get('prefix', config.prefix) || '.';
@@ -372,6 +438,7 @@ module.exports = {
               title: `${t.icon} ${t.name}`,
               rowId: `${prefix}menutheme ${t.key}`,
               description: {
+                boxed: 'boxed steel · live system block · uppercase ranks',
                 celestial: 'her flagship face · airy ornaments · logo crown',
                 constellation: 'star-map · figlet banner · realm poems',
                 neon: 'cyber grid · box panels · sharp lines',
@@ -384,7 +451,7 @@ module.exports = {
         return;
       } catch {
         // fallback text picker
-        const cur = settingsStore.get('menu_theme', 'celestial');
+        const cur = settingsStore.get('menu_theme', 'boxed');
         const lines = THEME_ORDER.map(t => `${t.icon} \`${prefix}menutheme ${t.key}\`${t.key === cur ? ' ← current' : ''}`).join('\n');
         return reply(`🎨 *Menu appearances:*\n\n${lines}\n\nOr \`.menutheme native\` for WhatsApp tappable menus.`);
       }
