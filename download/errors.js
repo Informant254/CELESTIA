@@ -46,7 +46,7 @@ const USER_REASONS = {
 function userMessage(err, action = 'DOWNLOAD FAILED') {
   const cat = classify(err);
   const detail = (err && err.userDetail) || USER_REASONS[cat] || USER_REASONS.unknown;
-  return `❌ *${action}*\n\nPossible reason:\n• ${detail}\n\n_Try again, or pick another result._`;
+  return `> ╭─❏ *${action}* ❏\n> │ • ${detail}\n> ╰─────────────────\n\n_Try again, or pick another result._`;
 }
 
 module.exports = { classify, userMessage, log, senderTag, USER_REASONS };

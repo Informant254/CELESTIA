@@ -23,20 +23,20 @@ try { require('./cleanup').sweepStale(); } catch { /* tmp may not exist yet */ }
 const URL_RE = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+/i;
 
 function fmtResults(query, results) {
-  const L = ['╭─「 CELESTIA SEARCH 」─╮', '│', `│ 🔎 ${query}`, '│'];
+  const L = ['> ╭─❏ *SEARCH RESULTS* ❏', `> │ 🔎 ${query}`, '> │'];
   results.forEach((r, i) => {
-    L.push(`│ ${['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'][i]} ${r.title.slice(0, 70)}`);
-    L.push(`│    📺 ${String(r.channel).slice(0, 30)} · ⏱ ${r.durationText}`);
-    L.push('│');
+    L.push(`> │ ${['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'][i]} ${r.title.slice(0, 60)}`);
+    L.push(`> │ 📺 ${String(r.channel).slice(0, 28)} · ⏱ ${r.durationText}`);
+    L.push('> │');
   });
-  L.push('╰─────────────────────╯', '', '_Reply with 1-5 to download._');
+  L.push('> ╰─────────────────', '', '_Reply with 1-5 to download._');
   return L.join('\n');
 }
 
 function fmtQuality(title) {
-  const L = ['╭─「 QUALITY 」─╮', '│', `│ 🎬 ${String(title).slice(0, 60)}`, '│'];
-  for (const q of QUALITY_MENU) L.push(`│ ${['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][q.n - 1]} ${q.label}`);
-  L.push('│', '╰──────────────╯', '', '_Reply with 1-6._');
+  const L = ['> ╭─❏ *QUALITY* ❏', `> │ 🎬 ${String(title).slice(0, 55)}`, '> │'];
+  for (const q of QUALITY_MENU) L.push(`> │ ${['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][q.n - 1]} ${q.label}`);
+  L.push('> ╰─────────────────', '', '_Reply with 1-6._');
   return L.join('\n');
 }
 

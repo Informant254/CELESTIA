@@ -18,19 +18,19 @@ module.exports = {
       const tick = (v) => (v ? '✓' : '—');
       const ready = st.ytdlp && st.ffmpeg && st.ffprobe && st.storage;
       const L = [
-        '╭─「 CELESTIA DOWNLOADER 」─╮',
-        '│',
-        `│ yt-dlp   : ${ok(st.ytdlp)}${st.ytdlp ? ` (${String(st.ytdlp).slice(0, 20)})` : ''}`,
-        `│ FFmpeg   : ${ok(st.ffmpeg)}`,
-        `│ FFprobe  : ${ok(st.ffprobe)}`,
-        `│ aria2c   : ${tick(st.aria2c)}`,
-        `│ Search   : ${ok(st.ytdlp)}`,
-        `│ Queue    : ${q.active}/${q.max} · sessions ${sessions.count()}`,
-        `│ Storage  : ${ok(st.storage)}`,
-        '│',
-        `│ Status   : ${ready ? 'READY' : 'DEGRADED'}`,
-        '│',
-        '╰──────────────────────────╯',
+        '┌──────────────────────────────┐',
+        '  🤖 *CELESTIA DOWNLOADER*',
+        '  ━━━━━━━━━━━━━━━━━━━━━━━',
+        `  ⚙️ *yt-dlp* : ${ok(st.ytdlp)}${st.ytdlp ? ` (${String(st.ytdlp).slice(0, 20)})` : ''}`,
+        `  🎬 *FFmpeg* : ${ok(st.ffmpeg)}`,
+        `  🔍 *FFprobe* : ${ok(st.ffprobe)}`,
+        `  📦 *aria2c* : ${tick(st.aria2c)}`,
+        `  🔎 *Search* : ${ok(st.ytdlp)}`,
+        `  📥 *Queue* : ${q.active}/${q.max} · sessions ${sessions.count()}`,
+        `  💾 *Storage* : ${ok(st.storage)}`,
+        '  ━━━━━━━━━━━━━━━━━━━━━━━',
+        `  ✨ *Status* : ${ready ? 'READY' : 'DEGRADED'}`,
+        '└──────────────────────────────┘',
       ];
       if (!ready) {
         const missing = [];
