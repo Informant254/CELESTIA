@@ -46,3 +46,5 @@ profiles/
 # Downloader: platform binaries + transient media (bootstrapped/rebuilt at runtime)
 download/bin/
 downloads/
+# On-server LLM weights (bootstrapped at runtime, ~800MB — never commit)
+autochat/models/

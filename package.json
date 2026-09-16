@@ -51,6 +51,7 @@
     "mongoose": "^9.9.1",
     "node-cache": "^5.1.2",
     "node-fetch": "^2.7.0",
+    "node-llama-cpp": "^3.21.1",
     "openai": "^6.33.0",
     "pdfkit": "^0.18.0",
     "pino": "^8.21.0",

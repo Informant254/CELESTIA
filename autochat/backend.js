@@ -131,6 +131,14 @@ async function complete(system, user) {
     g = await gemini(prompt);
   }
   if (g) return { text: g, engine: 'gemini' };
+  // On-server model: free, always awake, dumber — the safety net.
+  try {
+    const local = require('./local');
+    const text = await local.generate(system, user);
+    if (text) return { text, engine: 'local/llama-3.2-1b' };
+  } catch (e) {
+    console.error('[autochat] local failed:', String(e.message).slice(0, 100));
+  }
   const o = await openai(system, user);
   if (o) return { text: o, engine: 'openai' };
   return null;

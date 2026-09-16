@@ -66,6 +66,17 @@ module.exports = {
       }
       return reply('🤖 Usage: `.autochat mode dm|all`');
     }
+    if (sub === 'local') {
+      const v = (args[1] || '').toLowerCase();
+      if (v === 'on' || v === 'off') {
+        settingsStore.set('local_model', v === 'on');
+        return reply(v === 'on'
+          ? '🤖 On-server model *ENABLED* — downloads ~800MB on first use, then she thinks locally.'
+          : '🤖 On-server model *OFF* — cloud providers only.');
+      }
+      const st = require('../autochat/local').status();
+      return reply(`🤖 Local model: *${st.enabled ? 'ON' : 'OFF'}* · ${st.model}\nDownloaded: ${st.downloaded ? 'yes' : 'not yet'} · Loaded: ${st.loaded ? 'yes' : 'no'}\nUsage: \`.autochat local on|off\``);
+    }
     if (sub === 'vibe') {
       const v = (args[1] || '').toLowerCase();
       if (v === 'savage' || v === 'chill') {
@@ -129,6 +140,7 @@ module.exports = {
       `  🎭 *Vibe* : ${(settingsStore.get('autochat_vibe', 'savage') || 'savage').toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
       `  🧠 *AI keys* : OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'}`,
+      `  🏠 *Local* : ${require('../autochat/local').status().enabled ? 'ON' : 'OFF'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
       '└──────────────────────────────┘',
       '',
