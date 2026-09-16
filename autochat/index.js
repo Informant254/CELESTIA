@@ -13,9 +13,31 @@ const persona = require('./persona');
 const human = require('./humanizer');
 
 const MODE_KEY = 'autochat_mode'; // off | dm | all
+const GROUPS_KEY = 'autochat_groups'; // group JIDs explicitly opted in
 
 function mode() {
   return settingsStore.get(MODE_KEY, 'off');
+}
+
+function groupList() {
+  const v = settingsStore.get(GROUPS_KEY, []);
+  return Array.isArray(v) ? v : [];
+}
+
+function isGroupAllowed(chatId) {
+  return groupList().includes(chatId);
+}
+
+function setGroupAllowed(chatId, on) {
+  const list = groupList();
+  const has = list.includes(chatId);
+  if (on && !has) {
+    list.push(chatId);
+    settingsStore.set(GROUPS_KEY, list);
+  } else if (!on && has) {
+    settingsStore.set(GROUPS_KEY, list.filter((g) => g !== chatId));
+  }
+  return groupList();
 }
 
 function isGroup(jid) {
@@ -51,7 +73,8 @@ async function handleIncoming(sock, msg, text) {
 
   const m = mode();
   if (m === 'off') return false;
-  if (isGroup(chatId) && m !== 'all') return false;
+  // Groups: global 'all' mode, or this specific group was opted in.
+  if (isGroup(chatId) && !(m === 'all' || isGroupAllowed(chatId))) return false;
   if (!backend.hasKey()) return false; // silent without a key — status shows why
 
   // Incoming from a contact: buffer it, think, answer like the owner.
@@ -88,4 +111,4 @@ async function handleIncoming(sock, msg, text) {
   }
 }
 
-module.exports = { handleIncoming, mode, MODE_KEY };
+module.exports = { handleIncoming, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList };

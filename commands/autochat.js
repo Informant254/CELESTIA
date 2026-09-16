@@ -1,8 +1,9 @@
 /**
  * .autochat — CELESTIA answers DMs as you.
  *
- *   .autochat on|off            → master switch
- *   .autochat mode dm|all       → DMs only, or groups too
+ *   .autochat on|off            → master switch (in a group: also opts it in)
+ *   .autochat mode dm|all       → DMs only, or every group too
+ *   .autochat group on|off      → opt THIS group in/out (send inside it)
  *   .autochat status            → mode, key, voice samples, memory
  *   .autochat learn <line>      → teach her a line in your voice
  *   .autochat style             → show what she's learned
@@ -16,7 +17,7 @@ const backend = require('../autochat/backend');
 const memory = require('../autochat/memory');
 const voice = require('../autochat/voice');
 const persona = require('../autochat/persona');
-const { MODE_KEY } = require('../autochat/index');
+const { MODE_KEY, isGroupAllowed, setGroupAllowed, groupList } = require('../autochat/index');
 
 module.exports = {
   name: 'autochat',
@@ -31,15 +32,31 @@ module.exports = {
     const mode = settingsStore.get(MODE_KEY, 'off');
 
     if (sub === 'on') {
-      settingsStore.set(MODE_KEY, 'dm');
-      if (!backend.hasKey()) {
-        return reply('🤖 *Autochat ON* (DMs).\n\n⚠️ No AI key yet — `.autochat setkey <Gemini-key>` or set GEMINI_API_KEY, then she can speak.');
+      settingsStore.set(MODE_KEY, settingsStore.get(MODE_KEY, 'off') === 'off' ? 'dm' : settingsStore.get(MODE_KEY));
+      let extra = '';
+      if (jid.endsWith('@g.us')) {
+        setGroupAllowed(jid, true);
+        extra = '\n✅ This group is opted in — she answers here now.';
       }
-      return reply('🤖 *Autochat ON* — she now answers your DMs as you.\n`.autochat mode all` to include groups.');
+      if (!backend.hasKey()) {
+        return reply(`🤖 *Autochat ON.*${extra}\n\n⚠️ No AI key yet — \`.autochat setkey <Gemini-key>\` or set GEMINI_API_KEY, then she can speak.`);
+      }
+      return reply(`🤖 *Autochat ON.*${extra}\nShe answers your DMs as you.`);
     }
     if (sub === 'off') {
       settingsStore.set(MODE_KEY, 'off');
-      return reply('🤖 Autochat *OFF* — you have the phone back.');
+      return reply('🤖 Autochat *OFF* everywhere — you have the phone back.');
+    }
+    if (sub === 'group') {
+      if (!jid.endsWith('@g.us')) return reply('🤖 Send that inside the group: `.autochat group on|off`');
+      const v = (args[1] || '').toLowerCase();
+      if (v === 'on' || v === 'off') {
+        setGroupAllowed(jid, v === 'on');
+        return reply(v === 'on'
+          ? '🤖 ✅ She answers *this group* now.'
+          : '🤖 She went quiet in *this group* (DMs unaffected).');
+      }
+      return reply(`🤖 This group: *${isGroupAllowed(jid) ? 'ON' : 'OFF'}*.\nUsage: \`.autochat group on|off\``);
     }
     if (sub === 'mode') {
       const v = (args[1] || '').toLowerCase();
@@ -85,11 +102,12 @@ module.exports = {
       '  🤖 *CELESTIA AUTOCHAT*',
       '  ━━━━━━━━━━━━━━━━━━━━━━━',
       `  🔌 *Mode* : ${mode.toUpperCase()}`,
+      `  👥 *Groups* : ${groupList().length} opted in`,
       `  🧠 *AI key* : ${backend.hasKey() ? 'SET' : 'MISSING'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
       '└──────────────────────────────┘',
       '',
-      '_.autochat on|off · mode dm|all · learn · style · forget · setkey · test_',
+      '_.autochat on|off · mode dm|all · group on|off · learn · style · forget · setkey · test_ (send `on`/`group on` inside a group to opt it in)_',
     ];
     return reply(L.join('\n'));
   },
