@@ -66,6 +66,16 @@ module.exports = {
       }
       return reply('🤖 Usage: `.autochat mode dm|all`');
     }
+    if (sub === 'vibe') {
+      const v = (args[1] || '').toLowerCase();
+      if (v === 'savage' || v === 'chill') {
+        settingsStore.set('autochat_vibe', v);
+        return reply(v === 'savage'
+          ? '🤖 Vibe: *SAVAGE* — feral teenager energy. Watch your mouth around grandma.'
+          : '🤖 Vibe: *CHILL* — relaxed human texting.');
+      }
+      return reply('🤖 Usage: `.autochat vibe savage|chill`');
+    }
     if (sub === 'learn') {
       const line = args.slice(1).join(' ').trim();
       if (!line) return reply('🤖 Usage: `.autochat learn <a line in your voice>`');
@@ -116,6 +126,7 @@ module.exports = {
       '  🤖 *CELESTIA AUTOCHAT*',
       '  ━━━━━━━━━━━━━━━━━━━━━━━',
       `  🔌 *Mode* : ${mode.toUpperCase()}`,
+      `  🎭 *Vibe* : ${(settingsStore.get('autochat_vibe', 'savage') || 'savage').toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
       `  🧠 *AI keys* : OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,

@@ -3,8 +3,22 @@
  * if asked directly whether this is a bot/AI, tell the truth.
  */
 const config = require('../config/config');
+const settingsStore = require('../utils/settingsStore');
 const voice = require('./voice');
 const memory = require('./memory');
+
+const VIBE_KEY = 'autochat_vibe'; // savage | chill
+
+function vibe() {
+  return settingsStore.get(VIBE_KEY, 'savage');
+}
+
+const TONES = {
+  savage: `TONE: Ferally online teenager. Vulgar is your love language — shit, damn, wtf, hell, ass ("yo ass", "badass"), fuck (sparingly, for emphasis only). Slang on tap: bro, bruh, fr, ngl, lmao, lol, deadass, no cap, bet, lowkey, highkey, mid, W/L. Lowercase energy, readable, SHORT. Roast friends AFFECTIONATELY — punch like a best friend, never a bully. React like a person, not a helpdesk.`,
+  chill: `TONE: Relaxed, warm, normal human texting. Light slang ok, light swearing ok when it fits, never forced. Short and natural.`,
+};
+
+const BANNED = `BANNED IN EVERY VIBE: slurs of any kind, protected traits (race/religion/disability/gender/appearance), threats, sexual content toward anyone, "as an AI", "great question", lectures, bullet lists, walls of text, ending with a question every time.`;
 
 function ownerName(pushName) {
   return pushName || 'the owner';
@@ -16,6 +30,9 @@ function build({ chatId, incoming, pushName, contactName }) {
   const time = now.toLocaleString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
   const system = `You are ${me}, texting from your own phone on WhatsApp. You are NOT an assistant, NOT Meta AI, NOT a bot — you are ${me}, replying to ${contactName || 'a contact'} as yourself. Nobody should suspect otherwise.
+
+${TONES[vibe()] || TONES.savage}
+${BANNED}
 
 VOICE (copy this exactly — cadence, slang, emoji habits, length):
 ${voice.styleBlock()}
@@ -34,4 +51,4 @@ RULES:
   return { system, user };
 }
 
-module.exports = { build, ownerName };
+module.exports = { build, ownerName, vibe, VIBE_KEY };

@@ -77,7 +77,10 @@ async function gemini(prompt) {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
-    const result = await model.generateContent(prompt);
+    const result = await Promise.race([
+      model.generateContent(prompt),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('gemini timeout')), 60000)),
+    ]);
     const text = result.response?.text?.();
     if (text && text.trim()) return text.trim();
     return null;
