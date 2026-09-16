@@ -53,7 +53,7 @@ module.exports = {
       if (v === 'on' || v === 'off') {
         setGroupAllowed(jid, v === 'on');
         return reply(v === 'on'
-          ? '🤖 ✅ She answers *this group* now.'
+          ? '🤖 ✅ She answers *this group* now — but only when someone replies to her or tags her.'
           : '🤖 She went quiet in *this group* (DMs unaffected).');
       }
       return reply(`🤖 This group: *${isGroupAllowed(jid) ? 'ON' : 'OFF'}*.\nUsage: \`.autochat group on|off\``);

@@ -48,6 +48,58 @@ function contactName(msg) {
   return msg.pushName || msg.verifiedBizName || null;
 }
 
+// Message IDs she sent per chat (cap 50) — reply-to-her detection that
+// survives LID/PN addressing mismatches.
+const sentIds = new Map(); // chatId -> array of msg ids
+function noteSent(chatId, id) {
+  if (!id) return;
+  if (!sentIds.has(chatId)) sentIds.set(chatId, []);
+  const a = sentIds.get(chatId);
+  a.push(id);
+  while (a.length > 50) a.shift();
+}
+
+function bareJid(jid) {
+  return String(jid || '').split('@')[0].split(':')[0];
+}
+
+// True if this jid is the bot itself (PN or LID form).
+function isSelfJid(jid, sock) {
+  if (!jid) return false;
+  const b = bareJid(jid);
+  const ownPn = bareJid(sock.user?.id);
+  if (b && ownPn && b === ownPn) return true;
+  try {
+    const ownerLid = require('../utils/settingsStore').get('ownerLid', null);
+    if (ownerLid && b === bareJid(ownerLid)) return true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+// Group rule: answer ONLY on reply-to-her or tag. Returns false = stay silent.
+function groupGate(sock, msg) {
+  const m = msg.message || {};
+  const ctx =
+    m.extendedTextMessage?.contextInfo ||
+    m.imageMessage?.contextInfo ||
+    m.videoMessage?.contextInfo ||
+    m.stickerMessage?.contextInfo ||
+    m.audioMessage?.contextInfo ||
+    m.documentMessage?.contextInfo;
+  if (!ctx) return false;
+  // tag?
+  const mentioned = ctx.mentionedJid || [];
+  if (mentioned.some((j) => isSelfJid(j, sock))) return true;
+  // reply to one of her messages? (stanza match = bulletproof, participant = backup)
+  if (ctx.quotedMessage) {
+    const mine = sentIds.get(msg.key.remoteJid) || [];
+    if (ctx.stanzaId && mine.includes(ctx.stanzaId)) return true;
+    const qp = ctx.participant || ctx.remoteJid;
+    if (qp && isSelfJid(qp, sock)) return true;
+  }
+  return false;
+}
+
 async function handleIncoming(sock, msg, text) {
   const chatId = msg.key.remoteJid;
   const t = String(text || '').trim();
@@ -73,8 +125,12 @@ async function handleIncoming(sock, msg, text) {
 
   const m = mode();
   if (m === 'off') return false;
-  // Groups: global 'all' mode, or this specific group was opted in.
-  if (isGroup(chatId) && !(m === 'all' || isGroupAllowed(chatId))) return false;
+  // Groups: global 'all' mode, or this specific group was opted in —
+  // and even then, ONLY on reply-to-her or tag. DMs always qualify.
+  if (isGroup(chatId)) {
+    if (!(m === 'all' || isGroupAllowed(chatId))) return false;
+    if (!groupGate(sock, msg)) return false;
+  }
   if (!backend.hasKey()) return false; // silent without a key — status shows why
 
   // Incoming from a contact: buffer it, think, answer like the owner.
@@ -98,7 +154,13 @@ async function handleIncoming(sock, msg, text) {
         await sock.sendPresenceUpdate('composing', chatId);
       } catch { /* cosmetic */ }
       await human.sleep(human.typeDelayMs(parts[i].length));
-      await sock.sendMessage(chatId, { text: parts[i] }, { quoted: i === 0 ? msg : undefined });
+      try {
+        const sentMsg = await sock.sendMessage(chatId, { text: parts[i] }, { quoted: i === 0 ? msg : undefined });
+        noteSent(chatId, sentMsg?.key?.id);
+      } catch (e) {
+        console.error('[autochat] send failed:', String(e.message).slice(0, 100));
+        return false;
+      }
       if (i < parts.length - 1) await human.sleep(900 + Math.random() * 1200);
     }
     try {
@@ -111,4 +173,4 @@ async function handleIncoming(sock, msg, text) {
   }
 }
 
-module.exports = { handleIncoming, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList };
+module.exports = { handleIncoming, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList, groupGate, noteSent };

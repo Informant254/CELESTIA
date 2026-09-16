@@ -24,9 +24,9 @@ function hasKey() {
 // Free models, verified live (primary first). Free tiers throttle —
 // chain order matters, first success wins.
 const OR_MODELS = [
+  'z-ai/glm-5.2:free',
   'nex-agi/nex-n2.5-pro:free',
   'google/gemma-4-31b-it:free',
-  'z-ai/glm-5.2:free',
 ];
 
 async function openrouter(system, user) {
