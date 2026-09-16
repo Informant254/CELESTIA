@@ -91,7 +91,7 @@ function registerMessageHandler(sock, commands) {
                 if (quoted0 && vault.findViewOnce(quoted0) && vault.isAutoOn()) {
                   const senderJid = ctx0.participantPn || ctx0.participant || ctx0.participantAlt || msg.key.remoteJidAlt || msg.key.remoteJid;
                   vault.captureToVault(sock, quoted0, { remoteJid: msg.key.remoteJid, id: ctx0.stanzaId, participant: ctx0.participant }, senderJid, ownerJid)
-                    .then(r => { if (r) logger.info(`[vault] reply-capture from ${r.entry.sender} (#${r.count})`); })
+                    .then(r => { if (r) logger.info('[vault] reply-capture delivered to inbox'); })
                     .catch(() => {});
                 }
               }

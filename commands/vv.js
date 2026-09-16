@@ -11,14 +11,13 @@
  *   .vv info status
  *   .vv settings
  *   .vv clean
+ *   .vv auto on|off          → inbox auto-delivery master switch (default ON)
  *
- * Per-chat preferences persist in settingsStore. Owner reveals also
- * vault silently (best effort) so nothing valuable is ever lost.
+ * Per-chat preferences persist in settingsStore.
  */
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const settingsStore = require('../utils/settingsStore');
 const config = require('../config/config');
-const { isOwner } = require('../utils/isOwner');
 
 const BOT = config.botName || 'CELESTIA';
 
@@ -164,6 +163,17 @@ module.exports = {
       if (sub === 'clean' || sub === 'clear') {
         return send(box('CACHE CLEARED', ['RAM-only — no temp files are ever written to disk.']));
       }
+      if (sub === 'auto') {
+        const vault = require('../utils/viewonceVault');
+        const mode = (args[1] || '').toLowerCase();
+        if (mode === 'on' || mode === 'off') {
+          vault.setAuto(mode === 'on');
+          return send(box('AUTO-DELIVERY', [mode === 'on'
+            ? 'ON — replies to view-once land open in your inbox.'
+            : 'OFF — she will not touch view-once media.']));
+        }
+        return send(box('AUTO-DELIVERY', [`Currently *${vault.isAutoOn() ? 'ON' : 'OFF'}*`, '`.vv auto on|off`']));
+      }
       if (sub === 'caption') {
         const action = (args[1] || '').toLowerCase();
         const prefs = getChatPrefs(chatId);
@@ -218,6 +228,7 @@ module.exports = {
           '```VV CAPTION ...``` — manage caption',
           '```VV INFO ...``` — toggle info display',
           '```VV SETTINGS``` — view settings',
+          '```VV AUTO ON|OFF``` — inbox delivery switch',
         ]));
       }
       return send(box('VIEW-ONCE', [
@@ -237,20 +248,6 @@ module.exports = {
 
     try {
       await downloadAndSend(sock, quotedMessage, mediaInfo, chatId, msg);
-
-      // owner reveals also vault silently (best effort — never blocks the reveal)
-      if (isOwner(msg)) {
-        try {
-          const vault = require('../utils/viewonceVault');
-          const ownerJid = config.ownerNumber + '@s.whatsapp.net';
-          const senderJid = contextInfo.participantPn || contextInfo.participant || chatId;
-          await vault.captureToVault(
-            sock, contextInfo.quotedMessage,
-            { remoteJid: chatId, id: contextInfo.stanzaId, participant: contextInfo.participant },
-            senderJid, ownerJid
-          );
-        } catch { /* vault is a bonus, not the mission */ }
-      }
     } catch (error) {
       console.error('[VV] reveal failed:', error.message);
       await send(box('DOWNLOAD FAILED', [String(error.message).slice(0, 120)]));

@@ -1,14 +1,12 @@
 /**
- * 🔐 VIEWONCE VAULT — beyond normal anti-view-once 🔐
+ * 🔓 VIEWONCE INBOX — beyond normal anti-view-once 🔓
  *
  * Not a command you hunt for. A reflex:
- *   - You REPLY to any view-once message (with anything — even just ".vv" or "wow")
- *     → she instantly captures it and DMs you the OPEN media.
- *   - Every capture is vaulted (persisted) with sender + time metadata.
- *   - .vault            → browse everything she's caught
- *   - .vault 3          → re-send capture #3
- *   - .vault clear      → empty the vault
- *   - .vault auto off   → stop auto-capture
+ *   - You REPLY to any view-once message (with anything — even just an emoji)
+ *     → she instantly downloads it and DMs you the OPEN media.
+ *   - Every view-once that lands is also caught at receive-time and forwarded.
+ *   - RAM-only delivery: nothing is written to disk, nothing is archived.
+ *   - .vv auto on/off → master switch (default ON)
  *
  * Works on: viewOnceMessage, viewOnceMessageV2, V2Extension,
  * ephemeral-wrapped view-once, audio view-once.
@@ -95,6 +93,26 @@ function setAuto(on) {
 }
 
 // ─────────────────────────────────────────
+// DELIVERY — inbox-only. Downloads stay in RAM, ride one DM, vanish.
+// Nothing is written to disk, nothing is archived. Ever.
+// ─────────────────────────────────────────
+
+async function deliverToOwner(sock, ownerJid, buffer, type, caption) {
+  const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
+  const payload = { [keyMap[type] || 'image']: buffer };
+  if (caption) payload.caption = caption;
+  if (type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
+  if (type === 'video') payload.mimetype = 'video/mp4';
+  await sock.sendMessage(ownerJid, payload).catch(() => {});
+}
+
+function inboxCaption(sender, type, sizeKb, origCaption) {
+  let c = `🔓 *VIEW-ONCE*\n\nFrom: @${sender}\nType: ${type} • ${sizeKb}KB`;
+  if (origCaption) c += `\n\n_"${String(origCaption).slice(0, 120)}"_`;
+  return { text: c, mentions: [`${sender}@s.whatsapp.net`] };
+}
+
+// ─────────────────────────────────────────
 // CAPTURE — receive-time (original message, full keys) — THE RELIABLE PATH
 // ─────────────────────────────────────────
 
@@ -107,30 +125,19 @@ async function captureOriginal(sock, msg, ownerJid) {
     const senderJid = msg.key.participantPn || msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid;
     const senderNum = String(senderJid).split('@')[0].split(':')[0];
 
-    // download the ORIGINAL — has full mediaKey/directPath
+    // download the ORIGINAL — has full mediaKey/directPath — straight to RAM
     const buffer = await downloadMediaMessage(msg, 'buffer', {});
+    if (!buffer || !buffer.length) return null;
 
-    if (!fs.existsSync(VAULT_DIR)) fs.mkdirSync(VAULT_DIR, { recursive: true });
-    const ext = { image: 'jpg', video: 'mp4', audio: 'ogg', sticker: 'webp' }[found.type];
-    const fileName = `vault_${Date.now()}.${ext}`;
-    fs.writeFileSync(path.join(VAULT_DIR, fileName), buffer);
-
-    const entry = {
-      id: Date.now(),
-      type: found.type,
-      file: fileName,
-      sender: senderNum.length >= 8 ? senderNum : 'unknown',
-      ts: Date.now(),
-      caption: found.message?.caption || null,
-      sizeKb: Math.round(buffer.length / 1024),
-      source: 'receive',
-    };
-    const count = saveToVault(entry);
-
-    // DM open media to owner
-    await sendVaultEntry(sock, ownerJid, entry, buffer);
-    logger.info(`[vault] receive-time capture from ${entry.sender} (#${count})`);
-    return { entry, count };
+    const sizeKb = Math.round(buffer.length / 1024);
+    const { text, mentions } = inboxCaption(senderNum.length >= 8 ? senderNum : 'unknown', found.type, sizeKb, found.message?.caption);
+    const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
+    const payload = { [keyMap[found.type]]: buffer, caption: text, mentions };
+    if (found.type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
+    if (found.type === 'video') payload.mimetype = 'video/mp4';
+    await sock.sendMessage(ownerJid, payload).catch(() => {});
+    logger.info(`[vault] receive-time inbox delivery from ${senderNum}`);
+    return { delivered: true };
   } catch (e) {
     logger.error(`[vault] receive capture failed: ${e.message}`);
     return null;
@@ -152,29 +159,19 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
       message: rawQuotedMessage,
     };
     const buffer = await downloadMediaMessage(fakeMsg, 'buffer', {});
+    if (!buffer || !buffer.length) return null;
 
-    // persist to disk
-    if (!fs.existsSync(VAULT_DIR)) fs.mkdirSync(VAULT_DIR, { recursive: true });
-    const ext = found.type === 'image' ? 'jpg' : found.type === 'video' ? 'mp4' : found.type === 'audio' ? 'ogg' : 'webp';
-    const fileName = `vault_${Date.now()}.${ext}`;
-    const filePath = path.join(VAULT_DIR, fileName);
-    fs.writeFileSync(filePath, buffer);
+    const sizeKb = Math.round(buffer.length / 1024);
+    const senderNum = senderJid ? String(senderJid).split('@')[0] : 'unknown';
+    const { text, mentions } = inboxCaption(senderNum, found.type, sizeKb, found.message?.caption);
+    const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
+    const payload = { [keyMap[found.type]]: buffer, caption: text, mentions };
+    if (found.type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
+    if (found.type === 'video') payload.mimetype = 'video/mp4';
 
-    // vault metadata
-    const entry = {
-      id: Date.now(),
-      type: found.type,
-      file: fileName,
-      sender: senderJid ? String(senderJid).split('@')[0] : 'unknown',
-      ts: Date.now(),
-      caption: found.message?.caption || null,
-      sizeKb: Math.round(buffer.length / 1024),
-    };
-    const count = saveToVault(entry);
-
-    // DM open media to owner
-    await sendVaultEntry(sock, ownerJid, entry, buffer);
-    return { entry, count };
+    // DM open media to owner — no disk, no archive
+    await sock.sendMessage(ownerJid, payload).catch(() => {});
+    return { delivered: true };
   } catch (e) {
     logger.error(`[vault] capture failed: ${e.message}`);
     return null;
