@@ -82,19 +82,10 @@ function registerMessageHandler(sock, commands) {
             if (vault.isAutoOn() && vault.findViewOnce(msg.message)) {
               vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
             }
-            // PATH 2 — reply-time (owner replying to a quoted view-once)
+            // PATH 2 — reply-time hook: owner replies (text/emoji/sticker/…)
+            // to a quoted view-once → ripped straight to inbox.
             else {
-              const { isOwner: _isOwner } = require('../utils/isOwner');
-              if (_isOwner(msg)) {
-                const ctx0 = msg.message?.extendedTextMessage?.contextInfo;
-                const quoted0 = ctx0?.quotedMessage;
-                if (quoted0 && vault.findViewOnce(quoted0) && vault.isAutoOn()) {
-                  const senderJid = ctx0.participantPn || ctx0.participant || ctx0.participantAlt || msg.key.remoteJidAlt || msg.key.remoteJid;
-                  vault.captureToVault(sock, quoted0, { remoteJid: msg.key.remoteJid, id: ctx0.stanzaId, participant: ctx0.participant }, senderJid, ownerJid)
-                    .then(r => { if (r) logger.info('[vault] reply-capture delivered to inbox'); })
-                    .catch(() => {});
-                }
-              }
+              await vault.monitorReply(sock, msg, ownerJid).catch(() => {});
             }
           } catch (e) { logger.error(`[vault] ${e.message}`); }
         }

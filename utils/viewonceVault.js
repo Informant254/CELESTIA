@@ -12,11 +12,18 @@
  * ephemeral-wrapped view-once, audio view-once.
  */
 
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const settingsStore = require('./settingsStore');
 const logger = require('./logger');
 const fs = require('fs');
 const path = require('path');
+
+let downloaderOverride = null;
+// Test hook: swap the media downloader (production always uses Baileys).
+function setDownloader(fn) { downloaderOverride = fn || null; }
+function dlMedia(...a) {
+  const fn = downloaderOverride || require('@whiskeysockets/baileys').downloadMediaMessage;
+  return fn(...a);
+}
 
 const VAULT_DIR = path.join(__dirname, '../vault');
 
@@ -126,7 +133,7 @@ async function captureOriginal(sock, msg, ownerJid) {
     const senderNum = String(senderJid).split('@')[0].split(':')[0];
 
     // download the ORIGINAL — has full mediaKey/directPath — straight to RAM
-    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+    const buffer = await dlMedia(msg, 'buffer', {});
     if (!buffer || !buffer.length) return null;
 
     const sizeKb = Math.round(buffer.length / 1024);
@@ -158,7 +165,7 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
       key: contextKeyInfo || { remoteJid: senderJid, id: 'vault' + Date.now() },
       message: rawQuotedMessage,
     };
-    const buffer = await downloadMediaMessage(fakeMsg, 'buffer', {});
+    const buffer = await dlMedia(fakeMsg, 'buffer', {});
     if (!buffer || !buffer.length) return null;
 
     const sizeKb = Math.round(buffer.length / 1024);
@@ -178,6 +185,45 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
   }
 }
 
+// ─────────────────────────────────────────
+// MONITOR — the silent reply hook.
+// Call on every incoming message: if the OWNER replied to a view-once with
+// ANYTHING (text, emoji, sticker, image, audio, document), rip it to inbox.
+// Returns true when it handled the message.
+// ─────────────────────────────────────────
+
+async function monitorReply(sock, msg, ownerJid) {
+  try {
+    const { isOwner } = require('./isOwner');
+    if (!isOwner(msg)) return false;
+    if (!isAutoOn()) return false;
+
+    // Replies can ride on ANY message type — check every context carrier.
+    const m = msg.message || {};
+    const ctx =
+      m.extendedTextMessage?.contextInfo ||
+      m.imageMessage?.contextInfo ||
+      m.videoMessage?.contextInfo ||
+      m.stickerMessage?.contextInfo ||
+      m.audioMessage?.contextInfo ||
+      m.documentMessage?.contextInfo;
+    const quoted = ctx?.quotedMessage;
+    if (!quoted || !findViewOnce(quoted)) return false;
+
+    const senderJid = ctx.participantPn || ctx.participant || ctx.participantAlt || msg.key.remoteJidAlt || msg.key.remoteJid;
+    const r = await captureToVault(
+      sock, quoted,
+      { remoteJid: msg.key.remoteJid, id: ctx.stanzaId, participant: ctx.participant },
+      senderJid, ownerJid
+    );
+    if (r) logger.info('[vault] monitor: reply-rip delivered to inbox');
+    return !!r;
+  } catch (e) {
+    logger.error(`[vault] monitor: ${e.message}`);
+    return false;
+  }
+}
+
 async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
   const buffer = preloadedBuffer ||
     fs.readFileSync(path.join(VAULT_DIR, entry.file));
@@ -193,7 +239,7 @@ async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
 
 module.exports = {
   unwrapViewOnce, findViewOnce, classifyMedia,
-  captureToVault, captureOriginal, sendVaultEntry,
+  captureToVault, captureOriginal, sendVaultEntry, monitorReply, setDownloader,
   getVault, getFromVault, clearVault, saveToVault,
   isAutoOn, setAuto,
   VAULT_DIR,
