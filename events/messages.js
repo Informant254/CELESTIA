@@ -90,6 +90,27 @@ function registerMessageHandler(sock, commands) {
           } catch (e) { logger.error(`[vault] ${e.message}`); }
         }
 
+        // ─── 🤖 AUTOCHAT — answers chats as the owner. Runs BEFORE the privacy
+        // gate (like the vault hook) so it works in private mode too.
+        // Explicit noprefix triggers (vv2 emojis…) always win over her.
+        {
+          let _acSkip = false;
+          try {
+            for (const cmd of new Set(commands.values())) {
+              if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(text)) { _acSkip = true; break; }
+            }
+          } catch { /* never break flow */ }
+          const _acPrefix = settingsStore.get('prefix', config.prefix) || '.';
+          if (!_acSkip && text && !text.startsWith(_acPrefix)) {
+            try {
+              const ac = require('../autochat/index');
+              if (await ac.handleIncoming(sock, msg, text)) continue;
+            } catch (e) {
+              logger.error(`[autochat] ${e.message}`);
+            }
+          }
+        }
+
         if (_workTypeEarly === 'private' && !msg.key.fromMe) {
           const { isSudo } = require('../utils/isSudo');
           if (!isSudo(msg)) continue; // total silence for strangers

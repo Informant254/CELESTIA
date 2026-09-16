@@ -1,8 +1,9 @@
 /**
  * AI command - flagship CELESTIA feature
- * Uses OpenAI / Gemini if API keys set, otherwise fallback
+ * Uses Gemini (preferred) / OpenAI if keys set — key can live in
+ * settingsStore (via .autochat setkey) or env. Otherwise fallback.
  */
-const config = require('../config/config');
+const settingsStore = require('../utils/settingsStore');
 module.exports = {
   name: 'ai',
   aliases: ['gpt', 'gemini', 'ask'],
@@ -13,29 +14,40 @@ module.exports = {
 
     await reply('🤖 Thinking (CELESTIA AI)...');
 
-    // Try OpenAI if key exists
+    const geminiKey = settingsStore.get('gemini_key', null) || process.env.GEMINI_API_KEY;
+    const openaiKey = settingsStore.get('openai_key', null) || process.env.OPENAI_API_KEY;
+
+    // Try Gemini first (flash-latest — pro is retired)
     try {
-      if (process.env.OPENAI_API_KEY) {
-        const OpenAI = require('openai');
-        const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      if (geminiKey) {
+        const { GoogleGenerativeAI } = require('@google/generative-ai');
+        const genAI = new GoogleGenerativeAI(geminiKey);
+        const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+        const result = await model.generateContent(prompt);
+        const text = result.response?.text?.();
+        if (text && text.trim()) return reply(text.trim().slice(0, 2000));
+      }
+    } catch (e) {
+      console.error('[AI] gemini failed:', e.message);
+    }
+
+    // Then OpenAI (4o-mini — 3.5-turbo is retired)
+    try {
+      if (openaiKey) {
+        const { default: OpenAI } = require('openai');
+        const client = new OpenAI({ apiKey: openaiKey });
         const res = await client.chat.completions.create({
-          model: 'gpt-3.5-turbo',
+          model: 'gpt-4o-mini',
           messages: [{ role: 'user', content: prompt }],
           max_tokens: 500
         });
-        return reply(res.choices[0].message.content);
+        const text = res.choices?.[0]?.message?.content;
+        if (text && text.trim()) return reply(text.trim().slice(0, 2000));
       }
-      if (process.env.GEMINI_API_KEY) {
-        const { GoogleGenerativeAI } = require('@google/generative-ai');
-        const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-        const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
-        const result = await model.generateContent(prompt);
-        return reply(result.response.text());
-      }
-      // No API key - fallback echo with CELESTIA branding
-      return reply(`🐺 *CELESTIA AI* (no API key set):\nYou asked: "${prompt}"\n\nSet OPENAI_API_KEY or GEMINI_API_KEY in .env to enable real AI.`);
     } catch (e) {
-      return reply(`❌ AI error: ${e.message}`);
+      console.error('[AI] openai failed:', e.message);
     }
-  }
+
+    return reply('🐺 *CELESTIA AI* (no working key): ask the owner to run `.autochat setkey <Gemini-key>`.');
+  },
 };
