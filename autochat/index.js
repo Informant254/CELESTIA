@@ -116,6 +116,20 @@ function groupGate(sock, msg) {
   return false;
 }
 
+// Degenerate = stuck in a loop: same single word as her last reply,
+// or one word hammered 3+ times. Legit short replies ("bet 😂") pass.
+function isDegenerate(text, chatId) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  if (/^(\S+)(?:\s+\1){2,}\s*[^\w\s]*$/i.test(t)) return true;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length <= 1) {
+    const prev = memory.get(chatId).filter((m) => m.role === 'me').slice(-1)[0];
+    if (prev && prev.text.trim().toLowerCase() === t.toLowerCase()) return true;
+  }
+  return false;
+}
+
 async function handleIncoming(sock, msg, text) {
   const chatId = msg.key.remoteJid;
   const t = String(text || '').trim();
@@ -161,11 +175,22 @@ async function handleIncoming(sock, msg, text) {
     });
     const res = await backend.complete(system, user);
     if (!res || !res.text) return false;
-    memory.push(chatId, 'me', res.text);
+    console.log(`[autochat] engine: ${res.engine || 'unknown'}`);
+    let replyText = res.text;
+    // Loop guard: a brain stuck repeating one word gets ONE fresh sample.
+    if (isDegenerate(replyText, chatId)) {
+      console.log('[autochat] degenerate reply, resampling once');
+      const retry = await backend.complete(system, `${user}\n(Vary your wording. Never repeat one word.)`);
+      if (retry && retry.text && !isDegenerate(retry.text, chatId)) {
+        console.log(`[autochat] engine: ${retry.engine || 'unknown'} (resample)`);
+        replyText = retry.text;
+      }
+    }
+    memory.push(chatId, 'me', replyText);
 
     // human rhythm: read pause -> typing -> paced bubbles
     await human.presence(sock, chatId, 'composing', human.readDelayMs(t.length));
-    const parts = human.chunk(res.text);
+    const parts = human.chunk(replyText);
     for (let i = 0; i < parts.length; i++) {
       try {
         await sock.sendPresenceUpdate('composing', chatId);

@@ -95,13 +95,26 @@ function enqueue(fn) {
   return run;
 }
 
+// Small brains need small instructions: fixed mini-prompt, few-shot,
+// low temperature. The big persona prompt makes 1B models loop.
+function miniPrompt(user, savage) {
+  const style = savage
+    ? 'Slang ok (bro, fr, lol, lmao), light swearing ok (damn, shit). Examples: "spill it rn", "lol fr", "bet, im in", "deadass? no way".'
+    : 'Casual and warm. Examples: "haha nice", "oh really?", "sounds good".';
+  return `You are texting as a chill teenager on WhatsApp. Reply in 1-2 very short sentences. Never lecture, never repeat one word. ${style}\nFriend: ${user}\nYou:`;
+}
+
 async function generate(system, user) {
   if (!enabled()) return null;
+  let savage = true;
+  try {
+    savage = require('../utils/settingsStore').get('autochat_vibe', 'savage') !== 'chill';
+  } catch { /* default savage */ }
   try {
     return await enqueue(async () => {
       const session = await ensureSession();
       const answer = await Promise.race([
-        session.prompt(`${system}\n\nContact: ${user}`, { maxTokens: 150, temperature: 0.9 }),
+        session.prompt(miniPrompt(user, savage), { maxTokens: 80, temperature: 0.7 }),
         new Promise((_, reject) => setTimeout(() => reject(new Error('local timeout')), 120000)),
       ]);
       const text = String(answer || '').trim();
