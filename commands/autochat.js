@@ -81,8 +81,22 @@ module.exports = {
       return reply('🤖 Voice + short-term memory wiped. Clean slate.');
     }
     if (sub === 'setkey') {
+      const which = (args[1] || '').toLowerCase();
+      // .autochat setkey openrouter <key> | .autochat setkey <gemini-key>
+      if (which === 'openrouter' || which === 'or') {
+        const key = (args[2] || '').trim();
+        if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey openrouter <key>`');
+        settingsStore.set('openrouter_key', key);
+        return reply('🤖 OpenRouter key stored — free models first, Gemini as backup.');
+      }
+      if (which === 'openai') {
+        const key = (args[2] || '').trim();
+        if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey openai <key>`');
+        settingsStore.set('openai_key', key);
+        return reply('🤖 OpenAI key stored.');
+      }
       const key = (args[1] || '').trim();
-      if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey <Gemini-API-key>`');
+      if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey <Gemini-key>` or `.autochat setkey openrouter <key>`');
       settingsStore.set('gemini_key', key);
       return reply('🤖 Key stored. She has her voice now — `.autochat on` when ready.');
     }
@@ -103,7 +117,7 @@ module.exports = {
       '  ━━━━━━━━━━━━━━━━━━━━━━━',
       `  🔌 *Mode* : ${mode.toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
-      `  🧠 *AI key* : ${backend.hasKey() ? 'SET' : 'MISSING'}`,
+      `  🧠 *AI keys* : OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
       '└──────────────────────────────┘',
       '',

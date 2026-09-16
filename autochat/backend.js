@@ -9,12 +9,65 @@ function geminiKey() {
   return settingsStore.get('gemini_key', null) || process.env.GEMINI_API_KEY || null;
 }
 
+function openrouterKey() {
+  return settingsStore.get('openrouter_key', null) || process.env.OPENROUTER_API_KEY || null;
+}
+
 function openaiKey() {
   return settingsStore.get('openai_key', null) || process.env.OPENAI_API_KEY || null;
 }
 
 function hasKey() {
-  return !!(geminiKey() || openaiKey());
+  return !!(openrouterKey() || geminiKey() || openaiKey());
+}
+
+// Free models, verified live (primary first). Free tiers throttle —
+// chain order matters, first success wins.
+const OR_MODELS = [
+  'nex-agi/nex-n2.5-pro:free',
+  'google/gemma-4-31b-it:free',
+  'z-ai/glm-5.2:free',
+];
+
+async function openrouter(system, user) {
+  const key = openrouterKey();
+  if (!key) return null;
+  let axios;
+  try {
+    axios = require('axios');
+  } catch {
+    return null;
+  }
+  for (const model of OR_MODELS) {
+    try {
+      const r = await axios.post(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          max_tokens: 300,
+          temperature: 0.9,
+        },
+        {
+          timeout: 45000,
+          headers: {
+            Authorization: `Bearer ${key}`,
+            'HTTP-Referer': 'https://celestia-bot',
+            'X-Title': 'CELESTIA',
+          },
+        }
+      );
+      const text = r.data?.choices?.[0]?.message?.content;
+      if (text && text.trim()) return { text: text.trim(), engine: `openrouter/${model.split('/')[1]}` };
+    } catch (e) {
+      const detail = e.response?.data?.error?.message || e.message;
+      console.error('[autochat] openrouter failed', model, String(detail).slice(0, 100));
+    }
+  }
+  return null;
 }
 
 async function gemini(prompt) {
@@ -59,9 +112,11 @@ async function openai(system, user) {
 }
 
 // system+user split for OpenAI, merged for Gemini.
-// Patient with transient 503/overload spikes, then OpenAI. Bounded.
+// Order: OpenRouter free chain -> Gemini -> OpenAI. Patient with 503s.
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 async function complete(system, user) {
+  const or = await openrouter(system, user);
+  if (or) return or;
   const prompt = `${system}\n\n---\n\n${user}`;
   let g = await gemini(prompt);
   if (!g) {
@@ -78,4 +133,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, geminiKey: () => !!geminiKey() };
+module.exports = { complete, hasKey, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey() };
