@@ -93,18 +93,24 @@ function registerMessageHandler(sock, commands) {
         // ─── 🤖 AUTOCHAT — answers chats as the owner. Runs BEFORE the privacy
         // gate (like the vault hook) so it works in private mode too.
         // Explicit noprefix triggers (vv2 emojis…) always win over her.
+        // NOTE: the main `text` const is declared later in this loop — this
+        // block extracts its own copy so it can never throw a TDZ error.
         {
           let _acSkip = false;
+          let _acText = '';
+          try {
+            _acText = extractMessageText(msg.message).trim();
+          } catch { _acText = ''; }
           try {
             for (const cmd of new Set(commands.values())) {
-              if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(text)) { _acSkip = true; break; }
+              if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(_acText)) { _acSkip = true; break; }
             }
           } catch { /* never break flow */ }
           const _acPrefix = settingsStore.get('prefix', config.prefix) || '.';
-          if (!_acSkip && text && !text.startsWith(_acPrefix)) {
+          if (!_acSkip && _acText && !_acText.startsWith(_acPrefix)) {
             try {
               const ac = require('../autochat/index');
-              if (await ac.handleIncoming(sock, msg, text)) continue;
+              if (await ac.handleIncoming(sock, msg, _acText)) continue;
             } catch (e) {
               logger.error(`[autochat] ${e.message}`);
             }
