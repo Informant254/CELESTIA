@@ -64,16 +64,32 @@ function bareJid(jid) {
 }
 
 // True if this jid is the bot itself (PN or LID form).
+// Checks live PN, recorded owner LID, and the self-learned bot LID
+// (persisted — survives restarts, unlike the in-memory stanza list).
 function isSelfJid(jid, sock) {
   if (!jid) return false;
   const b = bareJid(jid);
   const ownPn = bareJid(sock.user?.id);
   if (b && ownPn && b === ownPn) return true;
   try {
-    const ownerLid = require('../utils/settingsStore').get('ownerLid', null);
+    const ss = require('../utils/settingsStore');
+    const ownerLid = ss.get('ownerLid', null);
     if (ownerLid && b === bareJid(ownerLid)) return true;
+    const botLid = ss.get('bot_lid', null);
+    if (botLid && b === bareJid(botLid)) return true;
   } catch { /* ignore */ }
   return false;
+}
+
+// Learn her own LID from her own group traffic (fromMe participant IS her LID).
+function learnSelfLid(msg) {
+  try {
+    const p = msg.key?.participant;
+    if (msg.key?.remoteJid?.endsWith('@g.us') && p && String(p).endsWith('@lid')) {
+      const ss = require('../utils/settingsStore');
+      if (ss.get('bot_lid', null) !== p) ss.set('bot_lid', p);
+    }
+  } catch { /* never break chat */ }
 }
 
 // Group rule: answer ONLY on reply-to-her or tag. Returns false = stay silent.
@@ -107,6 +123,7 @@ async function handleIncoming(sock, msg, text) {
 
   // Always learn from the owner's own texts (voice bank), never answer them.
   if (fromMe) {
+    learnSelfLid(msg); // her LID lives here — persist it for reply/tag matching
     if (t) {
       voice.collect(t);
       memory.push(chatId, 'me', t);
