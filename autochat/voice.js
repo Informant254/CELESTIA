@@ -19,11 +19,15 @@ function save(v) {
   } catch { /* never break chat */ }
 }
 
+// Never learn secrets: API keys pasted in chat must not enter the voice bank.
+const SECRET_RE = /\b(sk-or-v1-[A-Za-z0-9]+|AIza[0-9A-Za-z_-]{20,}|xox[bpras]-[A-Za-z0-9-]+|ghp_[A-Za-z0-9]+|gsk_[A-Za-z0-9]+|Bearer\s+[A-Za-z0-9._~-]{20,})\b/;
+
 // Harvest one outgoing owner message. Silent, cheap, capped, saved at once
 // (owner message volume is human-scale; no throttle needed).
 function collect(text) {
   const t = String(text || '').trim();
   if (!t || t.length < 2 || t.length > 280) return false;
+  if (SECRET_RE.test(t)) return false; // keys stay out of her vocabulary
   if (/^[./!#]/.test(t)) return false; // skip bot commands
   if (/^https?:\/\//.test(t)) return false; // skip bare links
   const v = all();

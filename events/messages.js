@@ -34,6 +34,22 @@ function extractMessageText(message) {
   );
 }
 
+// Baileys re-delivers notifies (reconnect replays, multi-device echoes).
+// Without this, every command can fire 2-3×. Bounded LRU-ish set.
+const seenMsgIds = new Set();
+function alreadySeen(msg) {
+  const id = msg?.key?.id;
+  if (!id) return false;
+  const k = `${msg.key.remoteJid}:${id}`;
+  if (seenMsgIds.has(k)) return true;
+  seenMsgIds.add(k);
+  if (seenMsgIds.size > 2000) {
+    const oldest = seenMsgIds.values().next().value;
+    seenMsgIds.delete(oldest);
+  }
+  return false;
+}
+
 function registerMessageHandler(sock, commands) {
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
@@ -60,6 +76,9 @@ function registerMessageHandler(sock, commands) {
         // Skip anything sent before the bot's very first boot (link-to-deploy gap only)
         const msgTimestamp = Number(msg.messageTimestamp);
         if (msgTimestamp && msgTimestamp < CUTOFF_TIME) continue;
+
+        // Drop duplicate deliveries — same message ID seen before.
+        if (alreadySeen(msg)) continue;
 
         // ═══ PRIVACY GATE — FIRST, before ANY handler or reply ═══
         // In private mode she is invisible to everyone except owner/sudo/self.
