@@ -88,10 +88,15 @@ module.exports = {
       return reply('🤖 Usage: `.autochat vibe savage|chill`');
     }
     if (sub === 'learn') {
-      const line = args.slice(1).join(' ').trim();
-      if (!line) return reply('🤖 Usage: `.autochat learn <a line in your voice>`');
-      voice.learn(line);
-      return reply(`🤖 Learned (${voice.count()} samples). She sounds a little more like you now.`);
+      // Rebuild from raw text — args splitting eats newlines, and bulk
+      // learning needs one sample per line.
+      const pfx = settingsStore.get('prefix', '.') || '.';
+      const full = msg.message?.conversation || msg.message?.extendedTextMessage?.text || '';
+      const esc = pfx.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const blob = full.replace(new RegExp(`^${esc}\\s*(autochat|ac|impersonate)\\s+learn\\s*`, 'i'), '').trim();
+      if (!blob) return reply('🤖 Paste lines in your voice after it — one per line, as many as you want.');
+      const added = voice.learn(blob);
+      return reply(added ? `🤖 Banked ${added} line${added === 1 ? '' : 's'} (${voice.count()} samples). She sounds a little more like you now.` : '🤖 Nothing new — she already knows those lines.');
     }
     if (sub === 'style') {
       return reply(`🤖 *Your voice so far (${voice.count()} samples):*\n\n${voice.styleBlock()}`);

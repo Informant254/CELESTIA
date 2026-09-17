@@ -48,6 +48,37 @@ function contactName(msg) {
   return msg.pushName || msg.verifiedBizName || null;
 }
 
+// Humans often react instead of replying. Trivial incoming → sometimes just
+// an emoji react, no text. Keeps her from over-answering like a helpdesk.
+const REACT_SET = {
+  savage: ['😂', '💀', '🔥', '😭', '👍'],
+  chill: ['😂', '❤️', '👍', '🔥'],
+};
+
+function pickReact(t) {
+  const s = String(t || '').toLowerCase();
+  let vibe = 'savage';
+  try {
+    vibe = require('../utils/settingsStore').get('autochat_vibe', 'savage') === 'chill' ? 'chill' : 'savage';
+  } catch { /* default */ }
+  if (/lol|haha|funny|dead|😂|🤣/.test(s)) return '😂';
+  if (/thank|asante|shukran/.test(s)) return vibe === 'chill' ? '❤️' : '🙏';
+  if (/^(ok|okay|sawa|poa|yeah|yes|bet)\b/.test(s)) return '👍';
+  if (/sorry|pole/.test(s)) return '🥺';
+  if (/happy|birthday|congrats|hongera/.test(s)) return '🎉';
+  const set = REACT_SET[vibe] || REACT_SET.savage;
+  return set[Math.floor(Math.random() * set.length)];
+}
+
+function shouldReact(t) {
+  const s = String(t || '').trim();
+  if (!s || s.length > 15) return false;
+  if (s.includes('?')) return false;
+  if (/https?:\/\//.test(s)) return false;
+  if (/^\d{1,2}$/.test(s)) return false;
+  return Math.random() < 0.25;
+}
+
 // Message IDs she sent per chat (cap 50) — reply-to-her detection that
 // survives LID/PN addressing mismatches.
 const sentIds = new Map(); // chatId -> array of msg ids
@@ -166,6 +197,15 @@ async function handleIncoming(sock, msg, text) {
 
   // Incoming from a contact: buffer it, think, answer like the owner.
   memory.push(chatId, 'them', t);
+  // ...unless a react says it better. No text, no machinery, just human.
+  if (shouldReact(t)) {
+    try {
+      const emoji = pickReact(t);
+      await sock.sendMessage(chatId, { react: { text: emoji, key: msg.key } });
+      memory.push(chatId, 'me', `[reacted ${emoji}]`);
+      return true;
+    } catch { /* fall through to a text reply */ }
+  }
   try {
     const { system, user } = persona.build({
       chatId,

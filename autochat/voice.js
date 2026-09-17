@@ -39,12 +39,19 @@ function collect(text) {
 }
 
 function learn(line) {
-  const t = String(line || '').trim().slice(0, 280);
-  if (!t) return false;
+  // Bulk-friendly: paste many lines at once, each becomes a sample.
+  const lines = String(line || '').split('\n').map((l) => l.trim().slice(0, 280)).filter(Boolean);
+  if (!lines.length) return 0;
   const v = all();
-  v.push(t);
+  let added = 0;
+  for (const t of lines) {
+    if (v.includes(t)) continue;
+    v.push(t);
+    added += 1;
+  }
+  while (v.length > CAP) v.splice(0, v.length - CAP);
   save(v);
-  return true;
+  return added;
 }
 
 function forget() {
@@ -61,7 +68,7 @@ function count() {
 function styleBlock() {
   const v = all();
   if (!v.length) return 'No voice samples yet — write naturally and I will pick up the style.';
-  const sample = v.slice(-8);
+  const sample = v.slice(-12);
   const avgLen = Math.round(v.reduce((a, l) => a + l.length, 0) / v.length);
   const emojiLines = v.filter((l) => /\p{Emoji}/u.test(l)).length;
   return [
