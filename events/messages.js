@@ -101,13 +101,17 @@ function registerMessageHandler(sock, commands) {
             if (vault.isAutoOn() && vault.findViewOnce(msg.message)) {
               vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
             }
-            // PATH 2 — reply-time hook: owner replies (text/emoji/sticker/…)
-            // to a quoted view-once → ripped straight to inbox.
-            else {
-              await vault.monitorReply(sock, msg, ownerJid).catch(() => {});
-            }
           } catch (e) { logger.error(`[vault] ${e.message}`); }
         }
+
+        // PATH 2 — reply-time monitor. Runs for EVERY message INCLUDING fromMe:
+        // the owner's own replies arrive as fromMe, so gating on !fromMe blinds
+        // it exactly when it matters. monitorReply enforces owner + autoOn.
+        try {
+          const vault = require('../utils/viewonceVault');
+          const ownerJid = config.ownerNumber + '@s.whatsapp.net';
+          await vault.monitorReply(sock, msg, ownerJid).catch(() => {});
+        } catch (e) { logger.error(`[vault] monitor: ${e.message}`); }
 
         // ─── 🤖 AUTOCHAT — answers chats as the owner. Runs BEFORE the privacy
         // gate (like the vault hook) so it works in private mode too.
