@@ -118,10 +118,20 @@ async function deliverToOwner(sock, ownerJid, buffer, type, caption) {
   await sock.sendMessage(ownerJid, payload).catch(() => {});
 }
 
-function inboxCaption(sender, type, sizeKb, origCaption) {
-  let c = `🔓 *VIEW-ONCE*\n\nFrom: @${sender}\nType: ${type} • ${sizeKb}KB`;
+const RIP_LINES = [
+  '👁️‍🗨️ *Snatched before it vanished.*',
+  '💫 *View-once? Never heard of her.*',
+  '🏴‍☠️ *Plundered from the disappearing realm.*',
+  '⚡ *Caught mid-vanish.*',
+  '🌙 *The stars keep what WhatsApp deletes.*',
+  '🔓 *Unlocked from the once-only vault.*',
+];
+
+function inboxCaption(origCaption) {
+  const line = RIP_LINES[Math.floor(Math.random() * RIP_LINES.length)];
+  let c = `${line}\n🔓 _Retrieved by CELESTIA_ ✨`;
   if (origCaption) c += `\n\n_"${String(origCaption).slice(0, 120)}"_`;
-  return { text: c, mentions: [`${sender}@s.whatsapp.net`] };
+  return { text: c, mentions: [] };
 }
 
 // ─────────────────────────────────────────
@@ -135,20 +145,18 @@ async function captureOriginal(sock, msg, ownerJid) {
     if (!found) return null;
 
     const senderJid = msg.key.participantPn || msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid;
-    const senderNum = String(senderJid).split('@')[0].split(':')[0];
 
     // download the ORIGINAL — has full mediaKey/directPath — straight to RAM
     const buffer = await dlMedia(msg, 'buffer', {});
     if (!buffer || !buffer.length) return null;
 
-    const sizeKb = Math.round(buffer.length / 1024);
-    const { text, mentions } = inboxCaption(senderNum.length >= 8 ? senderNum : 'unknown', found.type, sizeKb, found.message?.caption);
+    const { text, mentions } = inboxCaption(found.message?.caption);
     const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
     const payload = { [keyMap[found.type]]: buffer, caption: text, mentions };
     if (found.type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
     if (found.type === 'video') payload.mimetype = 'video/mp4';
     await sock.sendMessage(ownerJid, payload).catch(() => {});
-    logger.info(`[vault] receive-time inbox delivery from ${senderNum}`);
+    logger.info('[vault] receive-time inbox delivery');
     return { delivered: true };
   } catch (e) {
     logger.error(`[vault] receive capture failed: ${e.message}`);
@@ -173,9 +181,7 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
     const buffer = await dlMedia(fakeMsg, 'buffer', {});
     if (!buffer || !buffer.length) return null;
 
-    const sizeKb = Math.round(buffer.length / 1024);
-    const senderNum = senderJid ? String(senderJid).split('@')[0] : 'unknown';
-    const { text, mentions } = inboxCaption(senderNum, found.type, sizeKb, found.message?.caption);
+    const { text, mentions } = inboxCaption(found.message?.caption);
     const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
     const payload = { [keyMap[found.type]]: buffer, caption: text, mentions };
     if (found.type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
