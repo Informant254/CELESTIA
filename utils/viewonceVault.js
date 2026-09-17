@@ -55,10 +55,15 @@ function classifyMedia(unwrapped) {
 }
 
 // Does a message (or its quoted content) contain a view-once?
+// Handles BOTH shapes: wrapped (viewOnceMessageV2…) AND direct-flag
+// (imageMessage.viewOnce — the form real quotes arrive in).
 function findViewOnce(message) {
   const unwrapped = unwrapViewOnce(message);
-  if (!unwrapped) return null;
-  return classifyMedia(unwrapped);
+  if (unwrapped) return classifyMedia(unwrapped);
+  if (message?.imageMessage?.viewOnce) return { type: 'image', message: message.imageMessage, wa: 'image' };
+  if (message?.videoMessage?.viewOnce) return { type: 'video', message: message.videoMessage, wa: 'video' };
+  if (message?.audioMessage?.viewOnce) return { type: 'audio', message: message.audioMessage, wa: 'audio' };
+  return null;
 }
 
 // ─────────────────────────────────────────
