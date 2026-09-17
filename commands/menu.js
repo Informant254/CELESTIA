@@ -480,6 +480,20 @@ module.exports = {
       }
     };
 
+    // Her spoken intro — pre-built opus voice note with music bed.
+    // File-gated: silently skipped if missing. Quoted so it threads under her menu.
+    const sendVoiceNote = async () => {
+      const voicePath = path.join(__dirname, '../assets/menu-voice.opus');
+      if (!fs.existsSync(voicePath)) return;
+      try {
+        await sock.sendMessage(jid, {
+          audio: fs.readFileSync(voicePath),
+          mimetype: 'audio/ogg; codecs=opus',
+          ptt: true,
+        }, { quoted: msg });
+      } catch { /* voice intro is a bonus — menu already delivered */ }
+    };
+
     // ─── .menu theme — show theme picker (native list) ───
     if (arg0 === 'theme' || arg0 === 'style' || arg0 === 'appearance') {
       try {
@@ -566,9 +580,12 @@ module.exports = {
     }
 
     // ─── bare .menu — themed index ───
-    // Boxed face: banner image + full menu as ONE captioned message.
+    // Boxed face: banner image + full menu as ONE captioned message,
+    // then her spoken intro as a voice note.
     if (theme.key === 'boxed') {
-      return sendBoxed(theme.index(prefix, commands, total));
+      await sendBoxed(theme.index(prefix, commands, total));
+      await sendVoiceNote();
+      return;
     }
     const idx = theme.index(prefix, commands, total);
     return send(idx);
