@@ -195,8 +195,11 @@ async function handleIncoming(sock, msg, text) {
   }
   if (!backend.hasKey()) return false; // silent without a key — status shows why
 
-  // Incoming from a contact: buffer it, think, answer like the owner.
+  // Incoming from a contact: buffer it, learn their street language, answer.
   memory.push(chatId, 'them', t);
+  try {
+    require('./dialect').harvest(chatId, t);
+  } catch { /* dialect never breaks chat */ }
   // ...unless a react says it better. No text, no machinery, just human.
   if (shouldReact(t)) {
     try {

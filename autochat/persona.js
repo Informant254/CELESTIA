@@ -5,6 +5,7 @@
 const config = require('../config/config');
 const settingsStore = require('../utils/settingsStore');
 const voice = require('./voice');
+const dialect = require('./dialect');
 const memory = require('./memory');
 
 const VIBE_KEY = 'autochat_vibe'; // savage | chill
@@ -36,6 +37,8 @@ ${BANNED}
 
 VOICE (copy this exactly — cadence, slang, emoji habits, length):
 ${voice.styleBlock()}
+
+${dialect.block(chatId) || 'No street samples from them yet — mirror whatever language they use as it arrives.'}
 
 RULES:
 - WhatsApp energy: 5-25 words typical, 40 words MAX unless they asked for depth. Under-respond — never answer more than asked.
