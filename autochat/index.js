@@ -237,7 +237,9 @@ async function handleIncoming(sock, msg, text) {
       } catch { /* cosmetic */ }
       await human.sleep(human.typeDelayMs(parts[i].length));
       try {
-        const sentMsg = await sock.sendMessage(chatId, { text: parts[i] }, { quoted: i === 0 ? msg : undefined });
+        // Never quote-reply in autochat: humans answer bare 90% of the time,
+        // and stacked quote bubbles are a classic bot tell.
+        const sentMsg = await sock.sendMessage(chatId, { text: parts[i] });
         noteSent(chatId, sentMsg?.key?.id);
       } catch (e) {
         console.error('[autochat] send failed:', String(e.message).slice(0, 100));
