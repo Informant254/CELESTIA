@@ -307,8 +307,10 @@ function restoreSessionFromEnv() {
 
   try {
     if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
-    // Support both CELESTIA:~ and wolf / CELESTIA prefixes, plus raw base64
-    const cleaned = String(raw).trim().replace(/^(CELESTIA:~|WOLF:~|CELESTIA:~|MERGED:~|CELESTIA:~)/, '');
+    // Support CELESTIA:~, WOLFBOT:~, WOLF:~, CELESTIA:~, MERGED:~, CELESTIA:~
+    // prefixes, plus raw base64. Generic PREFIX:~ strip so future
+    // pairing-site formats never hit the "decoded but not valid" trap.
+    const cleaned = String(raw).trim().replace(/^[A-Za-z0-9_]+:~/, '');
     const buffer = Buffer.from(cleaned, 'base64');
     fs.writeFileSync(credsPath, buffer);
 
