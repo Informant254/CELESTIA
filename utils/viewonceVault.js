@@ -196,23 +196,33 @@ async function monitorReply(sock, msg, ownerJid) {
   try {
     const { isOwner } = require('./isOwner');
     if (!isOwner(msg)) return false;
-    if (!isAutoOn()) return false;
+    if (!isAutoOn()) {
+      logger.info('[vault] monitor: skip — auto is OFF (.vv auto on to enable)');
+      return false;
+    }
 
     // Replies can ride on ANY message type — check every context carrier.
     const m = msg.message || {};
-    const ctx =
-      m.extendedTextMessage?.contextInfo ||
-      m.imageMessage?.contextInfo ||
-      m.videoMessage?.contextInfo ||
-      m.stickerMessage?.contextInfo ||
-      m.audioMessage?.contextInfo ||
-      m.documentMessage?.contextInfo;
-    const quoted = ctx?.quotedMessage;
-    if (!quoted || !findViewOnce(quoted)) return false;
+    const carriers = {
+      text: m.extendedTextMessage?.contextInfo,
+      image: m.imageMessage?.contextInfo,
+      video: m.videoMessage?.contextInfo,
+      sticker: m.stickerMessage?.contextInfo,
+      audio: m.audioMessage?.contextInfo,
+      document: m.documentMessage?.contextInfo,
+    };
+    const foundCarrier = Object.keys(carriers).find((k) => carriers[k]);
+    const ctx = foundCarrier ? carriers[foundCarrier] : null;
+    if (!ctx?.quotedMessage) return false; // not a reply — silent by design
+    if (!findViewOnce(ctx.quotedMessage)) {
+      logger.info(`[vault] monitor: quoted msg is not view-once (via ${foundCarrier})`);
+      return false;
+    }
+    logger.info(`[vault] monitor: view-once reply detected via ${foundCarrier} — ripping...`);
 
     const senderJid = ctx.participantPn || ctx.participant || ctx.participantAlt || msg.key.remoteJidAlt || msg.key.remoteJid;
     const r = await captureToVault(
-      sock, quoted,
+      sock, ctx.quotedMessage,
       { remoteJid: msg.key.remoteJid, id: ctx.stanzaId, participant: ctx.participant },
       senderJid, ownerJid
     );
