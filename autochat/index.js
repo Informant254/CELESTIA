@@ -161,6 +161,36 @@ function isDegenerate(text, chatId) {
   return false;
 }
 
+// Cross-turn loop guard: never send something she already said.
+// Compares normalized text against her last 3 replies in this chat.
+function norm(s) {
+  return String(s || '').toLowerCase().replace(/[\p{Emoji}\p{Extended_Pictographic}]/gu, '').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function isRepeat(text, chatId) {
+  const n = norm(text);
+  if (!n) return true;
+  const mine = memory.get(chatId).filter((m) => m.role === 'me').slice(-3).map((m) => norm(m.text));
+  for (const p of mine) {
+    if (!p) continue;
+    if (p === n) return true;
+    const a = new Set(n.split(' ').filter(Boolean));
+    const b = new Set(p.split(' ').filter(Boolean));
+    if (a.size >= 3 && b.size >= 3) {
+      const inter = [...a].filter((w) => b.has(w)).length;
+      if (inter / Math.min(a.size, b.size) >= 0.8) return true;
+    }
+  }
+  return false;
+}
+
+// Flow driver: two straight statements with no question → nudge one
+// genuine follow-up so the conversation breathes instead of stalling.
+function needsQuestion(chatId) {
+  const mine = memory.get(chatId).filter((m) => m.role === 'me').slice(-2);
+  return mine.length === 2 && !mine.some((m) => m.text.includes('?'));
+}
+
 async function handleIncoming(sock, msg, text) {
   const chatId = msg.key.remoteJid;
   const t = String(text || '').trim();
@@ -216,15 +246,15 @@ async function handleIncoming(sock, msg, text) {
       pushName: sock.user?.name || null,
       contactName: contactName(msg),
     });
-    const res = await backend.complete(system, user);
+    const res = await backend.complete(system, needsQuestion(chatId) ? `${user}\n(End with one short genuine question about what they just said.)` : user);
     if (!res || !res.text) return false;
     console.log(`[autochat] engine: ${res.engine || 'unknown'}`);
     let replyText = res.text;
     // Loop guard: a brain stuck repeating one word gets ONE fresh sample.
-    if (isDegenerate(replyText, chatId)) {
-      console.log('[autochat] degenerate reply, resampling once');
-      const retry = await backend.complete(system, `${user}\n(Vary your wording. Never repeat one word.)`);
-      if (retry && retry.text && !isDegenerate(retry.text, chatId)) {
+    if (isDegenerate(replyText, chatId) || isRepeat(replyText, chatId)) {
+      console.log('[autochat] degenerate/repeat reply, resampling once');
+      const retry = await backend.complete(system, `${user}\n(Say it completely differently from your last replies. Never repeat one word.)`);
+      if (retry && retry.text && !isDegenerate(retry.text, chatId) && !isRepeat(retry.text, chatId)) {
         console.log(`[autochat] engine: ${retry.engine || 'unknown'} (resample)`);
         replyText = retry.text;
       }
