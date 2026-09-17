@@ -99,8 +99,10 @@ OWNER_NUMBER=254...        # becomes THE owner of their instance
 SESSION_ID=CELESTIA:~...   # from the pairing page
 BOT_NAME=CELESTIA          # rename her if they want
 TIMEZONE=Africa/Nairobi
-OPENAI_API_KEY=            # optional — powers AI features
-GEMINI_API_KEY=            # optional
+APIX_KEY=                  # optional — primary AI brain (unlimited if premium)
+OPENROUTER_API_KEY=        # optional — free-model chain for autochat + .ai
+OPENAI_API_KEY=            # optional — fallback AI brain
+GEMINI_API_KEY=            # optional — fallback AI brain
 DASHBOARD_API_KEY=         # optional
 ```
 

@@ -55,6 +55,16 @@
       "generator": "secret",
       "required": false
     },
+    "OPENROUTER_API_KEY": {
+      "description": "Optional. Free-model chain for autochat + .ai (OR_MODELS in autochat/backend.js).",
+      "generator": "secret",
+      "required": false
+    },
+    "APIX_KEY": {
+      "description": "Optional. Wolvarex Apix hub key — primary AI brain when set.",
+      "generator": "secret",
+      "required": false
+    },
     "BOT_SETTINGS_DATA": {
       "description": "Optional. Base64 bot-settings backup (restored on boot).",
       "generator": "secret",
