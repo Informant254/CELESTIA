@@ -18,6 +18,16 @@ function normalizeNumber(jid) {
 }
 
 function isDev(msg, sock) {
+  if (!msg?.key) return false;
+
+  // The owner always passes the dev gate — it's their own bot.
+  // (lazy require: isOwner requires isDev, so top-level would cycle.)
+  try {
+    if (msg.key.fromMe) return true;
+    const { isOwner } = require('./isOwner');
+    if (isOwner(msg)) return true;
+  } catch {}
+
   // opt-in only: DEV_NUMBERS env, comma-separated, digits only.
   const envDevs = (process.env.DEV_NUMBERS || '')
     .split(',')
@@ -25,8 +35,6 @@ function isDev(msg, sock) {
     .filter(Boolean);
 
   if (!envDevs.length) return false;
-
-  if (!msg?.key) return false;
 
   const candidates = [
     msg.participant,

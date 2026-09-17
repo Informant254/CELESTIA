@@ -16,7 +16,7 @@ module.exports = {
     const jid = msg.key.remoteJid;
 
     if (!isDev(msg, sock)) {
-      return sock.sendMessage(jid, { text: '❌ Only the dev, ᴾᴬᴾᴾᴵ ᴵˢᴬᴬᶜ can execute this command dumbass.' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '🔒 _Restricted — owner only._' }, { quoted: msg });
     }
 
     const code = args.join(' ');

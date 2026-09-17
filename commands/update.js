@@ -133,7 +133,7 @@ module.exports = [
 
       const { isOwner } = require('../utils/isOwner');
       if (!isOwner(msg)) {
-        return sock.sendMessage(jid, { text: '❌ Only the owner can run this dumbass.' }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '🔒 _Restricted — owner only._' }, { quoted: msg });
       }
 
       // --- Real git checkout (Termux / VPS) ---

@@ -12,7 +12,7 @@ module.exports = {
     const jid = msg.key.remoteJid;
 
     if (!isDev(msg, sock)) {
-      return sock.sendMessage(jid, { text: '❌ This command is restricted to my developer fucker.' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '🔒 _Restricted — owner only._' }, { quoted: msg });
     }
 
     const rel = args.join(' ');

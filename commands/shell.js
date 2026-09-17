@@ -9,7 +9,7 @@ module.exports = {
     const jid = msg.key.remoteJid;
 
     if (!isDev(msg, sock)) {
-      return sock.sendMessage(jid, { text: '❌ Bitch this command is restricted to ᴾᴬᴾᴾᴵ ᴵˢᴬᴬᶜ only.' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '🔒 _Restricted — owner only._' }, { quoted: msg });
     }
 
     const cmd = args.join(' ');
