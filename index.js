@@ -229,6 +229,9 @@ healthApp.get('/qr.png', async (req, res) => {
   }
 });
 healthApp.get('/wolftech', (req, res) => res.json({ tribute: wolfTech.tribute, lore: wolfTech.lore }));
+// AI relay for friend deploys: GET /api/ai/:model?q=... with x-api-key: <their token>.
+// Real Apix key never leaves this server (see utils/aiRelay.js).
+healthApp.get('/api/ai/:model', (req, res) => require('./utils/aiRelay').handleRelay(req, res));
 const HEALTH_PORT = config.dashboardPort;
 healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`ðŸŒ CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech ðŸº`));
 

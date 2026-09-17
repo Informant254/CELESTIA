@@ -114,6 +114,29 @@ DASHBOARD_API_KEY=         # optional
 
 ---
 
+## Free AI for friend deploys (Apix relay)
+
+Friend instances don't need their own AI keys. The owner's server shares its
+Apix key **blind** — deployers never see it:
+
+1. Owner, on your own bot: `.aitoken new <their-name>` → you get a
+   `celestia_...` token (shown once — send it to them).
+2. They set two env vars, nothing else:
+   ```env
+   APIX_BASE=https://<owner-public-base>
+   APIX_KEY=<their celestia_... token>
+   ```
+   then `.autochat on` just works — their bot's existing Apix client needs
+   zero code changes (same path, same header, same reply shape).
+3. Guardrails (all server-side, owner controls):
+   - per-token hourly cap (default 120, `RELAY_RPH` to change)
+   - chat-model allowlist, only the `q` param crosses the relay
+   - `.aitoken` lists usage, `.aitoken revoke <name>` kills a token instantly
+   - upstream errors are sanitized; the real key is never logged or returned
+   - set `AI_RELAY=off` to shut the whole relay down
+
+---
+
 ## Security notes
 - `.env`, `auth_info_baileys/`, `data/`, `vault/` are gitignored — never committed
 - Pairing station: 5 attempts/hour per IP, session dirs hashed, auto-cleanup
