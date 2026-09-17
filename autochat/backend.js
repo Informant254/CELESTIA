@@ -13,16 +13,50 @@ function openrouterKey() {
   return settingsStore.get('openrouter_key', null) || process.env.OPENROUTER_API_KEY || null;
 }
 
+function apixKey() {
+  return settingsStore.get('apix_key', null) || process.env.APIX_KEY || null;
+}
+
 function openaiKey() {
   return settingsStore.get('openai_key', null) || process.env.OPENAI_API_KEY || null;
 }
 
 function hasKey() {
-  return !!(openrouterKey() || geminiKey() || openaiKey());
+  return !!(apixKey() || openrouterKey() || geminiKey() || openaiKey());
 }
 
-// Free models, verified live (primary first). Free tiers throttle —
-// chain order matters, first success wins.
+// Apix (Wolvarex hub, unlimited premium): GET /api/ai/{model}?q=...
+// Models in voice order. Single text query, so the persona ships compressed.
+const APIX_BASE = process.env.APIX_BASE || 'https://apix.wolvarex.com';
+const APIX_MODELS = ['gemini', 'gpt', 'claude'];
+
+async function apix(system, user) {
+  const key = apixKey();
+  if (!key) return null;
+  let axios;
+  try {
+    axios = require('axios');
+  } catch {
+    return null;
+  }
+  const q = `${user}\n\n[Reply like a chill teenager texting: 1-2 very short sentences, slang ok.]`.slice(0, 1500);
+  for (const model of APIX_MODELS) {
+    try {
+      const r = await axios.get(`${APIX_BASE}/api/ai/${model}`, {
+        params: { q },
+        timeout: 60000,
+        headers: { 'x-api-key': key },
+      });
+      const text = r.data?.result;
+      if (r.data?.status && text && String(text).trim()) {
+        return { text: String(text).trim(), engine: `apix/${model}` };
+      }
+    } catch (e) {
+      console.error('[autochat] apix failed', model, String(e.response?.data?.error?.message || e.message).slice(0, 100));
+    }
+  }
+  return null;
+}
 const OR_MODELS = [
   'z-ai/glm-5.2:free',
   'nex-agi/nex-n2.5-pro:free',
@@ -115,9 +149,11 @@ async function openai(system, user) {
 }
 
 // system+user split for OpenAI, merged for Gemini.
-// Order: OpenRouter free chain -> Gemini -> OpenAI. Patient with 503s.
+// Order: Apix (unlimited) -> OpenRouter free chain -> Gemini -> local -> OpenAI.
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 async function complete(system, user) {
+  const ax = await apix(system, user);
+  if (ax) return ax;
   const or = await openrouter(system, user);
   if (or) return or;
   const prompt = `${system}\n\n---\n\n${user}`;
@@ -144,4 +180,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey() };
+module.exports = { complete, hasKey, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), apixKey: () => !!apixKey() };

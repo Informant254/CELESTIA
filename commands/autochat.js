@@ -103,7 +103,13 @@ module.exports = {
     }
     if (sub === 'setkey') {
       const which = (args[1] || '').toLowerCase();
-      // .autochat setkey openrouter <key> | .autochat setkey <gemini-key>
+      // .autochat setkey apix <key> | openrouter | openai | <gemini-key>
+      if (which === 'apix') {
+        const key = (args[2] || '').trim();
+        if (!key || key.length < 5) return reply('🤖 Usage: `.autochat setkey apix <key>`');
+        settingsStore.set('apix_key', key);
+        return reply('🤖 Apix key stored — unlimited brain first in line.');
+      }
       if (which === 'openrouter' || which === 'or') {
         const key = (args[2] || '').trim();
         if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey openrouter <key>`');
@@ -139,7 +145,7 @@ module.exports = {
       `  🔌 *Mode* : ${mode.toUpperCase()}`,
       `  🎭 *Vibe* : ${(settingsStore.get('autochat_vibe', 'savage') || 'savage').toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
-      `  🧠 *AI keys* : OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'}`,
+      `  🧠 *AI keys* : Apix ${backend.apixKey() ? 'SET' : '—'} · OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'}`,
       `  🏠 *Local* : ${require('../autochat/local').status().enabled ? 'ON' : 'OFF'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
       '└──────────────────────────────┘',
