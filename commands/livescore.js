@@ -10,9 +10,6 @@ const MAJOR = [
   "world cup", "euro", "nations league", "afcon",
 ];
 
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
-
 function statusEmoji(s) {
   const st = String(s || "").toUpperCase();
   if (st === "FT" || st.includes("FINISH") || st.includes("FULL")) return "✅";
@@ -43,8 +40,9 @@ module.exports = {
       const games = Array.isArray(data?.livescore) ? data.livescore : [];
 
       if (!games.length) {
+        const header = "⚽ *LIVE SCORES*";
         return sock.sendMessage(jid, {
-          text: box("⚽ LIVE SCORES", ["📭 No live matches right now.", "Check back later."]),
+          text: `${header}\n📭 No live matches right now.\nCheck back later.`,
           edit: loading.key,
         });
       }
@@ -54,24 +52,31 @@ module.exports = {
       );
       const list = (major.length ? major : games).slice(0, 15);
 
-      const lines = [];
-      lines.push(major.length ? "Showing major-league matches:" : "Showing live matches:");
-      lines.push("");
-      for (const g of list) {
+      const rows = list.map((g) => {
         const emoji = statusEmoji(g.strStatus);
-        lines.push(`${emoji} *${g.strHomeTeam}* ${g.intHomeScore ?? "?"} - ${g.intAwayScore ?? "?"} *${g.strAwayTeam}*`);
-        lines.push(`⏱ ${g.strStatus || "LIVE"} — ${g.strLeague || "Soccer"}`);
-        lines.push("");
-      }
-      if (games.length > 15) lines.push(`Showing 15 of ${games.length} live matches.`);
+        const home = String(g.strHomeTeam || "?").slice(0, 15).padEnd(15);
+        const away = String(g.strAwayTeam || "?").slice(0, 15).padEnd(15);
+        const hs = String(g.intHomeScore ?? "?").padStart(2);
+        const as = String(g.intAwayScore ?? "?").padStart(2);
+        const status = String(g.strStatus || "LIVE").slice(0, 8).padEnd(8);
+        const league = String(g.strLeague || "Soccer").slice(0, 18).padEnd(18);
+        return `${emoji} ${home} ${hs}-${as} ${away} ⏱ ${status} ${league}`;
+      });
+
+      const header = "⚽ *LIVE SCORES*";
+      const body = "```\n" + rows.join("\n") + "\n```";
+      const scopeNote = major.length ? "Showing major-league matches." : "Showing live matches.";
+      const countNote = games.length > 15 ? ` Showing 15 of ${games.length} live matches.` : "";
+      const footer = `_${scopeNote}${countNote}_`;
 
       await sock.sendMessage(jid, {
-        text: box("⚽ LIVE SCORES", lines),
+        text: `${header}\n${body}\n${footer}`,
         edit: loading.key,
       });
     } catch (err) {
+      const header = "⚽ *LIVE SCORES*";
       await sock.sendMessage(jid, {
-        text: box("⚽ LIVE SCORES", ["❌ Live scores unavailable right now.", "Please try again later."]),
+        text: `${header}\n❌ Live scores unavailable right now.\nPlease try again later.`,
         edit: loading.key,
       });
     }

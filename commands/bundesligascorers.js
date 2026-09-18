@@ -4,9 +4,6 @@ const axios = require("axios");
 // getgoalgetters/bl1 returns Bundesliga top scorers (e.g. H. Kane 36 goals).
 const SEASONS = [2025, 2024, 2026];
 
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
-
 async function fetchScorers() {
   for (const season of SEASONS) {
     try {
@@ -42,20 +39,25 @@ module.exports = {
         throw new Error("Scorers unavailable right now.");
       }
 
-      const lines = res.rows.slice(0, 10).map((s, i) => {
-        const goals = s.goalCount === 1 ? "1 goal" : `${s.goalCount} goals`;
-        return `${i + 1}. ${s.goalGetterName} — ${goals}`;
+      const rows = res.rows.slice(0, 10).map((s, i) => {
+        const rank = String(i + 1).padStart(2);
+        const name = String(s.goalGetterName).slice(0, 20).padEnd(20);
+        const goalsText = (s.goalCount === 1 ? "1 goal" : `${s.goalCount} goals`).padEnd(8);
+        return `${rank}. ${name} — ${goalsText}`;
       });
-      lines.push("");
-      lines.push(`Season ${res.season}/${res.season + 1} via OpenLigaDB.`);
+
+      const header = "⚽ *BUNDESLIGA TOP SCORERS*";
+      const body = "```\n" + rows.join("\n") + "\n```";
+      const footer = `_Season ${res.season}/${res.season + 1} via OpenLigaDB._`;
 
       await sock.sendMessage(jid, {
-        text: box("⚽ BUNDESLIGA TOP SCORERS", lines),
+        text: `${header}\n${body}\n${footer}`,
         edit: loading.key,
       });
     } catch (err) {
+      const header = "⚽ *BUNDESLIGA TOP SCORERS*";
       await sock.sendMessage(jid, {
-        text: box("⚽ BUNDESLIGA TOP SCORERS", ["❌ Top scorers unavailable right now.", "Please try again later."]),
+        text: `${header}\n❌ Top scorers unavailable right now.\nPlease try again later.`,
         edit: loading.key,
       });
     }

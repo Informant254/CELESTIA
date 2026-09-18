@@ -1,6 +1,3 @@
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
-
 // No free keyless API with EPL top-scorer data could be verified live,
 // so this command answers honestly instead of showing stale or fake numbers.
 module.exports = {
@@ -16,12 +13,10 @@ module.exports = {
       { quoted: msg }
     );
 
+    const header = "⚽ *EPL TOP SCORERS*";
+
     await sock.sendMessage(jid, {
-      text: box("⚽ EPL TOP SCORERS", [
-        "❌ Top-scorer data unavailable right now.",
-        "No free data source covers EPL scorers.",
-        "Please try again later.",
-      ]),
+      text: `${header}\n❌ Top-scorer data unavailable right now.\nNo free data source covers EPL scorers.\nPlease try again later.`,
       edit: loading.key,
     });
   },

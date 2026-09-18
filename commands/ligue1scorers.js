@@ -1,6 +1,3 @@
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
-
 // No free keyless API with Ligue 1 top-scorer data could be verified live,
 // so this command answers honestly instead of showing stale or fake numbers.
 module.exports = {
@@ -16,12 +13,10 @@ module.exports = {
       { quoted: msg }
     );
 
+    const header = "⚽ *LIGUE 1 TOP SCORERS*";
+
     await sock.sendMessage(jid, {
-      text: box("⚽ LIGUE 1 TOP SCORERS", [
-        "❌ Top-scorer data unavailable right now.",
-        "No free data source covers Ligue 1 scorers.",
-        "Please try again later.",
-      ]),
+      text: `${header}\n❌ Top-scorer data unavailable right now.\nNo free data source covers Ligue 1 scorers.\nPlease try again later.`,
       edit: loading.key,
     });
   },

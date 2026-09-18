@@ -2,8 +2,6 @@ const axios = require("axios");
 
 // Free, keyless source (verified live): OpenLigaDB.
 // getbltable/wm2026/2026 returns the World Cup 2026 group-stage table.
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
 module.exports = {
   name: "fifa",
@@ -32,22 +30,28 @@ module.exports = {
         (a, b) => b.points - a.points || b.goalDiff - a.goalDiff || b.goals - a.goals
       );
 
-      const lines = sorted.slice(0, 12).map((t, i) => {
+      const rows = sorted.slice(0, 12).map((t, i) => {
+        const rank = String(i + 1).padStart(2);
         const name = String(t.teamName).slice(0, 16).padEnd(16);
-        const gd = Number(t.goalDiff) >= 0 ? "+" + t.goalDiff : String(t.goalDiff);
-        return `${String(i + 1).padStart(2)}. ${name} P${t.matches} GD${gd} ${t.points}pts`;
+        const p = String(t.matches).padStart(2);
+        const gdRaw = Number(t.goalDiff) >= 0 ? "+" + t.goalDiff : String(t.goalDiff);
+        const gd = gdRaw.padStart(3);
+        const pts = String(t.points).padStart(2);
+        return `${rank}. ${name} P${p} GD${gd} ${pts}pts`;
       });
-      lines.push("");
-      lines.push("World Cup 2026 (USA) — group stage, top 12.");
-      lines.push("Source: OpenLigaDB.");
+
+      const header = "🏆 *FIFA WORLD CUP TABLE*";
+      const body = "```\n" + rows.join("\n") + "\n```";
+      const footer = "_World Cup 2026 (USA) — group stage, top 12._\n_Source: OpenLigaDB._";
 
       await sock.sendMessage(jid, {
-        text: box("🏆 FIFA WORLD CUP TABLE", lines),
+        text: `${header}\n${body}\n${footer}`,
         edit: loading.key,
       });
     } catch (err) {
+      const header = "🏆 *FIFA WORLD CUP TABLE*";
       await sock.sendMessage(jid, {
-        text: box("🏆 FIFA WORLD CUP TABLE", ["❌ Table unavailable right now.", "Please try again later."]),
+        text: `${header}\n❌ Table unavailable right now.\nPlease try again later.`,
         edit: loading.key,
       });
     }

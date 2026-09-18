@@ -6,9 +6,6 @@ const LEAGUE_ID = "4332";
 const LEAGUE_LABEL = "SERIE A";
 const SEASONS = ["2026-2027", "2025-2026", "2024-2025"];
 
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
-
 async function fetchTable() {
   for (const season of SEASONS) {
     try {
@@ -44,23 +41,28 @@ module.exports = {
         throw new Error("Table unavailable right now.");
       }
 
-      const lines = table.rows.map((t) => {
+      const rows = table.rows.map((t) => {
         const rank = String(t.intRank).padStart(2);
         const name = String(t.strTeam).slice(0, 18).padEnd(18);
         const p = String(t.intPlayed).padStart(2);
-        const gd = Number(t.intGoalDifference) >= 0 ? "+" + t.intGoalDifference : String(t.intGoalDifference);
-        return `${rank}. ${name} P${p} GD${gd} ${t.intPoints}pts`;
+        const gdRaw = Number(t.intGoalDifference) >= 0 ? "+" + t.intGoalDifference : String(t.intGoalDifference);
+        const gd = gdRaw.padStart(3);
+        const pts = String(t.intPoints).padStart(2);
+        return `${rank}. ${name} P${p} GD${gd} ${pts}pts`;
       });
-      lines.push("");
-      lines.push(`Season ${table.season} — top ${table.rows.length} shown (free source).`);
+
+      const header = `🇮🇹 *${LEAGUE_LABEL} TABLE*`;
+      const body = "```\n" + rows.join("\n") + "\n```";
+      const footer = `_Season ${table.season} — top ${table.rows.length} shown (free source)._`;
 
       await sock.sendMessage(jid, {
-        text: box(`🇮🇹 ${LEAGUE_LABEL} TABLE`, lines),
+        text: `${header}\n${body}\n${footer}`,
         edit: loading.key,
       });
     } catch (err) {
+      const header = "🇮🇹 *SERIE A TABLE*";
       await sock.sendMessage(jid, {
-        text: box("🇮🇹 SERIE A TABLE", ["❌ Table unavailable right now.", "Please try again later."]),
+        text: `${header}\n❌ Table unavailable right now.\nPlease try again later.`,
         edit: loading.key,
       });
     }

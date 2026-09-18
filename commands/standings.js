@@ -2,8 +2,6 @@ const axios = require("axios");
 
 // Free, keyless source (verified live): TheSportsDB free tier.
 // eventsnextleague.php returns upcoming fixtures per league id.
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
 module.exports = {
   name: "standings",
@@ -23,18 +21,11 @@ module.exports = {
     };
 
     if (!args[0] || !leagues[args[0].toLowerCase()]) {
+      const header = "⚽ *UPCOMING MATCHES*";
       return await sock.sendMessage(
         jid,
         {
-          text: box("⚽ UPCOMING MATCHES", [
-            "Usage:",
-            ".standings epl",
-            ".standings bundesliga",
-            ".standings laliga",
-            ".standings seriea",
-            ".standings ligue1",
-            ".standings ucl",
-          ]),
+          text: `${header}\nUsage:\n.standings epl\n.standings bundesliga\n.standings laliga\n.standings seriea\n.standings ligue1\n.standings ucl`,
         },
         { quoted: msg }
       );
@@ -51,19 +42,17 @@ module.exports = {
       const fixtures = Array.isArray(data?.events) ? data.events : [];
 
       if (!fixtures.length) {
+        const header = `${league.emoji} *${league.label}*`;
         return await sock.sendMessage(
           jid,
           {
-            text: box(`${league.emoji} ${league.label}`, [
-              "❌ No upcoming matches found.",
-              "Please try again later.",
-            ]),
+            text: `${header}\n❌ No upcoming matches found.\nPlease try again later.`,
           },
           { quoted: msg }
         );
       }
 
-      const lines = [];
+      const rows = [];
       for (const m of fixtures.slice(0, 8)) {
         let when = m.strTimestamp || m.dateEvent || "TBA";
         const d = new Date(when);
@@ -73,24 +62,27 @@ module.exports = {
             " " +
             d.toLocaleTimeString("en-GB", { hour: "numeric", minute: "2-digit", hour12: true });
         }
-        lines.push(`⚽ *${m.strHomeTeam || "?"}* vs *${m.strAwayTeam || "?"}*`);
-        lines.push(`🗓️ ${when}`);
-        lines.push("");
+        const home = String(m.strHomeTeam || "?").slice(0, 15).padEnd(15);
+        const away = String(m.strAwayTeam || "?").slice(0, 15).padEnd(15);
+        const date = String(when).slice(0, 22).padEnd(22);
+        rows.push(`⚽ ${home} vs ${away} 🗓️ ${date}`);
       }
+
+      const header = `${league.emoji} *${league.label} — UPCOMING*`;
+      const body = "```\n" + rows.join("\n") + "\n```";
+      const footer = `_Upcoming fixtures via free source._`;
 
       await sock.sendMessage(
         jid,
-        { text: box(`${league.emoji} ${league.label} — UPCOMING`, lines) },
+        { text: `${header}\n${body}\n${footer}` },
         { quoted: msg }
       );
     } catch (err) {
+      const header = `${league.emoji} *${league.label}*`;
       await sock.sendMessage(
         jid,
         {
-          text: box(`${league.emoji} ${league.label}`, [
-            "❌ Failed to fetch upcoming matches.",
-            "Please try again later.",
-          ]),
+          text: `${header}\n❌ Failed to fetch upcoming matches.\nPlease try again later.`,
         },
         { quoted: msg }
       );

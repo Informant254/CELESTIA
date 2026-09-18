@@ -1,6 +1,3 @@
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
-
 // No free keyless API with Champions League top-scorer data could be verified
 // live, so this command answers honestly instead of showing stale/fake numbers.
 module.exports = {
@@ -16,12 +13,10 @@ module.exports = {
       { quoted: msg }
     );
 
+    const header = "⚽ *CHAMPIONS LEAGUE TOP SCORERS*";
+
     await sock.sendMessage(jid, {
-      text: box("⚽ CHAMPIONS LEAGUE TOP SCORERS", [
-        "❌ Top-scorer data unavailable right now.",
-        "No free data source covers UCL scorers.",
-        "Please try again later.",
-      ]),
+      text: `${header}\n❌ Top-scorer data unavailable right now.\nNo free data source covers UCL scorers.\nPlease try again later.`,
       edit: loading.key,
     });
   },
