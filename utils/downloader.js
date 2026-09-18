@@ -90,28 +90,53 @@ async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video') {
 
 // Recursively find the first http(s) string in an unknown API payload.
 function firstMediaUrl(node, depth = 0) {
-  if (depth > 4 || node == null) return null;
-  if (typeof node === 'string' && /^https?:\/\//.test(node)) return node;
+  const all = collectMediaUrls(node);
+  return all.length ? all[0].url : null;
+}
+
+// Collect EVERY candidate URL with its field-name context, ranked so clean
+// files beat watermarked/thumbnail/preview variants.
+function collectMediaUrls(node, key = '', depth = 0, out = []) {
+  if (depth > 5 || node == null) return out;
+  if (typeof node === 'string' && /^https?:\/\//.test(node)) {
+    out.push({ url: node, key: String(key || '').toLowerCase() });
+    return out;
+  }
   if (Array.isArray(node)) {
-    for (const v of node) {
-      const f = firstMediaUrl(v, depth + 1);
-      if (f) return f;
-    }
-    return null;
+    for (const v of node) collectMediaUrls(v, key, depth + 1, out);
+    return out;
   }
   if (typeof node === 'object') {
     for (const k of ['url', 'downloadUrl', 'download_url', 'video', 'videoUrl', 'hd', 'sd', 'play', 'wmplay', 'media', 'src', 'link', 'BK9']) {
-      if (node[k] !== undefined) {
-        const f = firstMediaUrl(node[k], depth + 1);
-        if (f) return f;
-      }
+      if (node[k] !== undefined) collectMediaUrls(node[k], k, depth + 1, out);
     }
-    for (const v of Object.values(node)) {
-      const f = firstMediaUrl(v, depth + 1);
-      if (f) return f;
+    for (const [k, v] of Object.entries(node)) {
+      if (['url', 'downloadUrl', 'download_url', 'video', 'videoUrl', 'hd', 'sd', 'play', 'wmplay', 'media', 'src', 'link', 'BK9'].includes(k)) continue;
+      collectMediaUrls(v, k, depth + 1, out);
     }
   }
-  return null;
+  return out;
+}
+
+function rankMediaUrl(c) {
+  const k = c.key;
+  const u = c.url.toLowerCase();
+  // watermark / preview / thumbnail signals — always last
+  if (/wm|watermark/.test(k) || /watermark/.test(u)) return 100;
+  if (/thumb|preview|poster|cover|image_preview/.test(k)) return 90;
+  if (/\.(jpg|jpeg|png|webp)(\?|$)/.test(u) && !/\.(mp4|mov|webm)(\?|$)/.test(u)) return 80;
+  // clean video signals first
+  if (/^(hd|downloadurl|download_url|video|videourl|play|no_wm|nowm|nologo)$/.test(k)) return 0;
+  if (/\.(mp4|mov|webm)(\?|$)/.test(u)) return 10;
+  return 50;
+}
+
+// Best clean candidate: lowest rank wins (stable for ties).
+function pickCleanUrl(payload) {
+  const all = collectMediaUrls(payload);
+  if (!all.length) return null;
+  all.sort((a, b) => rankMediaUrl(a) - rankMediaUrl(b));
+  return all[0].url;
 }
 
 async function bk9Social(kind, pageUrl) {
@@ -121,7 +146,7 @@ async function bk9Social(kind, pageUrl) {
     { timeout: TIMEOUT }
   );
   const payload = r.data?.BK9 ?? r.data;
-  const url = firstMediaUrl(payload);
+  const url = pickCleanUrl(payload);
   if (!url) throw new Error('Could not extract media from that link. It may be private or invalid.');
   return { url };
 }
@@ -130,4 +155,4 @@ function cleanName(s, ext) {
   return String(s || 'media').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 80) + ext;
 }
 
-module.exports = { ytSearch, ytAudio, ytVideo, bk9Social, firstMediaUrl, cleanName };
+module.exports = { ytSearch, ytAudio, ytVideo, bk9Social, firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName };
