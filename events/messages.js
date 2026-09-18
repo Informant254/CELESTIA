@@ -34,6 +34,10 @@ function extractMessageText(message) {
   );
 }
 
+function containsLink(text) {
+  return /(?:https?:\s*\/\s*\/|www\.|chat\.whatsapp\.com\/|whatsapp\.com\/(?:channel|invite)\/|wa\.me\/|(?:[a-z0-9-]+\.)+(?:com|net|org|io|co|me|app|dev|xyz|info|biz|link|gg)(?:\/\S*)?)/i.test(String(text || ''));
+}
+
 // Baileys re-delivers notifies (reconnect replays, multi-device echoes).
 // Without this, every command can fire 2-3×. Bounded LRU-ish set.
 const seenMsgIds = new Set();
@@ -444,14 +448,21 @@ function registerMessageHandler(sock, commands) {
             antilinkMode = 'on';
           }
 
-          const linkRegex = /(https?:\/\/|www\.|chat\.whatsapp\.com\/|wa\.me\/)\S+/i;
-
-          if (antilinkMode !== 'off' && linkRegex.test(text)) {
+          if (antilinkMode !== 'off' && containsLink(text) && !msg.key.fromMe) {
             const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-            const metadata = await sock.groupMetadata(msg.key.remoteJid);
-            const senderJid = msg.key.participant || msg.key.remoteJid;
+            let metadata;
+            try {
+              metadata = await sock.groupMetadata(msg.key.remoteJid);
+            } catch (e) {
+              logger.error(`[antilink] Could not load group metadata: ${e.message}`);
+              continue;
+            }
+            const senderJid = msg.key.participant || msg.key.participantPn || msg.key.participantAlt || msg.key.remoteJid;
+            const senderIsAdmin = isSenderAdmin(metadata, senderJid);
 
-            if (!isSenderAdmin(metadata, senderJid)) {
+            // `on` is strict delete-only protection, including admin links.
+            // `warn` and `kick` continue to exempt admins from punishment.
+            if (!senderIsAdmin || antilinkMode === 'on') {
               if (isBotAdmin(sock, metadata)) {
                 try {
                   await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
@@ -494,6 +505,10 @@ function registerMessageHandler(sock, commands) {
                     });
                   }
                 }
+              } else {
+                await sock.sendMessage(msg.key.remoteJid, {
+                  text: '⚠️ Antilink detected a link, but I must be a group admin to delete it.',
+                }, { quoted: msg }).catch(() => {});
               }
               continue;
             }
@@ -753,4 +768,4 @@ function registerMessageHandler(sock, commands) {
   });
 }
 
-module.exports = { registerMessageHandler };
+module.exports = { registerMessageHandler, containsLink };

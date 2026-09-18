@@ -1,6 +1,6 @@
 const groupSettingsStore = require('../utils/groupSettingsStore');
 const { isOwner } = require('../utils/isOwner');
-const { isSenderAdmin } = require('../utils/isAdmin');
+const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
 
 async function checkAdminPerms(sock, msg) {
   const jid = msg.key.remoteJid;
@@ -11,7 +11,7 @@ async function checkAdminPerms(sock, msg) {
     await sock.sendMessage(jid, { text: '❌ Only group admins can use this command.' }, { quoted: msg });
     return false;
   }
-  return true;
+  return metadata;
 }
 
 function makeToggleCommand(name, settingKey, label, emoji) {
@@ -24,7 +24,8 @@ function makeToggleCommand(name, settingKey, label, emoji) {
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
-      if (!(await checkAdminPerms(sock, msg))) return;
+      const metadata = await checkAdminPerms(sock, msg);
+      if (!metadata) return;
 
       const mode = args[0]?.toLowerCase();
       if (mode !== 'on' && mode !== 'off') {
@@ -50,7 +51,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ Is this a group ? This command only works in groups.' }, { quoted: msg });
       }
 
-      if (!(await checkAdminPerms(sock, msg))) return;
+      const metadata = await checkAdminPerms(sock, msg);
+      if (!metadata) return;
 
       const mode = args[0]?.toLowerCase();
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {
@@ -72,11 +74,18 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
-      if (!(await checkAdminPerms(sock, msg))) return;
+      const metadata = await checkAdminPerms(sock, msg);
+      if (!metadata) return;
 
       const mode = args[0]?.toLowerCase();
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {
         return sock.sendMessage(jid, { text: '❌ Usage: .antilink off / on / kick / warn' }, { quoted: msg });
+      }
+
+      if (mode !== 'off' && !isBotAdmin(sock, metadata)) {
+        return sock.sendMessage(jid, {
+          text: '❌ Make me a group admin first. WhatsApp only lets group admins delete other people’s links.',
+        }, { quoted: msg });
       }
 
       groupSettingsStore.set(jid, 'antilink', mode);
