@@ -378,22 +378,48 @@ function restoreSettingsFromEnv() {
   }
 }
 
-function isValidCredsFile(credsPath) {
-  // A usable Baileys creds.json must parse as JSON and carry identity keys.
+function isValidCredsObject(parsed) {
+  return !!parsed && typeof parsed === 'object' &&
+    !!(parsed.noiseKey || parsed.signedIdentityKey) &&
+    parsed.registrationId !== undefined;
+}
+
+function readCredsFile(credsPath) {
   try {
-    if (!fs.existsSync(credsPath)) return false;
+    if (!fs.existsSync(credsPath)) return null;
     const parsed = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
-    return !!parsed && typeof parsed === 'object' &&
-      !!(parsed.noiseKey || parsed.signedIdentityKey) &&
-      parsed.registrationId !== undefined;
+    return isValidCredsObject(parsed) ? parsed : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isValidCredsFile(credsPath) {
+  return !!readCredsFile(credsPath);
+}
+
+function sessionIdentity(creds) {
+  if (!isValidCredsObject(creds)) return '';
+  return nodeCrypto.createHash('sha256').update(JSON.stringify({
+    registrationId: creds.registrationId,
+    noiseKey: creds.noiseKey,
+    signedIdentityKey: creds.signedIdentityKey,
+    me: creds.me?.id || null,
+  })).digest('hex');
+}
+
+function decodeSession(raw) {
+  const cleaned = String(raw || '').trim().replace(/^[A-Za-z0-9_]+:~/, '');
+  const buffer = Buffer.from(cleaned, 'base64');
+  const creds = JSON.parse(buffer.toString('utf8'));
+  if (!isValidCredsObject(creds)) throw new Error('missing identity keys');
+  return { buffer, creds };
 }
 
 function restoreSessionFromEnv() {
   const authDir = path.join(__dirname, config.authFolder);
   const credsPath = path.join(authDir, 'creds.json');
+  let raw = config.sessionId || process.env.SESSION_ID || process.env.WOLF_SESSION || '';
 
   // A corrupt creds.json from a bad SESSION_ID paste is worse than none:
   // quarantine it so we retry from env instead of looping on garbage.
@@ -405,9 +431,19 @@ function restoreSessionFromEnv() {
     } catch {}
   }
 
-  if (fs.existsSync(credsPath)) return; // already have a session, nothing to restore
-
-  let raw = config.sessionId || process.env.SESSION_ID || process.env.WOLF_SESSION || '';
+  if (fs.existsSync(credsPath)) {
+    if (!raw) return;
+    try {
+      const current = readCredsFile(credsPath);
+      const incoming = decodeSession(raw);
+      if (current && sessionIdentity(current) === sessionIdentity(incoming.creds)) return;
+      fs.rmSync(authDir, { recursive: true, force: true });
+      logger.warn('[restoreSession] SESSION_ID belongs to a different pairing; replaced the complete Signal key store.');
+    } catch (error) {
+      logger.error(`[restoreSession] Refusing invalid SESSION_ID: ${error.message}`);
+      return;
+    }
+  }
 
   // If last session was logged out, reject that exact credential until it is replaced.
   try {
@@ -441,11 +477,8 @@ function restoreSessionFromEnv() {
 
   try {
     if (!fs.existsSync(authDir)) fs.mkdirSync(authDir, { recursive: true });
-    // Support CELESTIA:~, WOLFBOT:~, WOLF:~, CELESTIA:~, MERGED:~, CELESTIA:~
-    // prefixes, plus raw base64. Generic PREFIX:~ strip so future
-    // pairing-site formats never hit the "decoded but not valid" trap.
-    const cleaned = String(raw).trim().replace(/^[A-Za-z0-9_]+:~/, '');
-    const buffer = Buffer.from(cleaned, 'base64');
+    // Generic PREFIX:~ stripping keeps current and future pairing sites compatible.
+    const { buffer } = decodeSession(raw);
     fs.writeFileSync(credsPath, buffer);
 
     // Validate BEFORE boot: garbage in = silent death loop. Refuse it loudly.
@@ -699,13 +732,7 @@ async function startBotOnce() {
 
     sock.ev.on('groups.update', async (events) => {
       for (const event of events) {
-        try {
-          if (!event?.id) continue;
-          const metadata = await sock.groupMetadata(event.id);
-          groupCache.set(event.id, metadata);
-        } catch (error) {
-          logger.error(`[groupCache] Failed to update metadata for ${event?.id}: ${error.message}`);
-        }
+        if (event?.id) groupCache.del(event.id);
       }
     });
 
