@@ -1,24 +1,20 @@
-const axios = require('axios');
-const FormData = require('form-data');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { KEITH_BASE } = require('../config/apis');
+const backend = require('../autochat/backend');
 
-const API = KEITH_BASE;
-
-async function uploadToCatbox(buffer, filename) {
-  const form = new FormData();
-  form.append('reqtype', 'fileupload');
-  form.append('fileToUpload', buffer, { filename });
-  const res = await axios.post('https://catbox.moe/user/api.php', form, { headers: form.getHeaders() });
-  return res.data;
-}
+const OFFLINE_FALLBACK =
+  '🎵 I cannot split vocals from audio in chat — that needs the actual audio file plus a stem-separation tool on a computer.\n\n' +
+  'How to do it locally:\n' +
+  '1. Save the audio (e.g. song.mp3) to your computer.\n' +
+  '2. Install Demucs: `pip install demucs`\n' +
+  '3. Run: `demucs song.mp3` (vocals land in `separated/htdemucs/song/vocals.wav`)\n' +
+  'Alternative (ffmpeg karaoke-style center-cut, rough): `ffmpeg -i song.mp3 -af pan="stereo|c0=c0-c1|c1=c1-c0" instrumental.mp3`\n\n' +
+  'If you tell me what the audio is for (karaoke, remix, lyrics), I can help with that part here.';
 
 module.exports = {
   name: 'vocalremover',
   aliases: ['removevocal', 'aivocal', 'extractvocal'],
   description: 'Extract vocals from quoted audio or video',
 
-  async execute(sock, msg) {
+  async execute(sock, msg, args) {
     const rawJid = msg.key.remoteJid;
     const jid = rawJid.endsWith('@lid') && msg.key.remoteJidAlt ? msg.key.remoteJidAlt : rawJid;
 
@@ -39,41 +35,30 @@ module.exports = {
     const thinkingMsg = await sock.sendMessage(jid, { text: '🎵 *Extracting vocals...*' }, { quoted: msg });
 
     try {
-      const buffer = await downloadMediaMessage(
-        { key: { remoteJid: jid, id: ctx.stanzaId, fromMe: false, participant: ctx.participant }, message: quoted },
-        'buffer',
-        {},
-        { reuploadRequest: sock.updateMediaMessage }
+      // A chat LLM cannot separate audio stems. Be honest: explain + give local steps.
+      // Still consult the backend so the reply can be tailored to any extra user note.
+      const extra = (args || []).join(' ').trim();
+      const res = await backend.complete(
+        'You are an audio-engineering helper inside WhatsApp. You cannot process audio files here: no stem separation, no file output. Explain briefly that vocal removal needs the audio file plus a tool like Demucs/Spleeter or ffmpeg on a computer, then give concise local steps (Demucs install + command, plus the rough ffmpeg center-cut fallback). Never claim you processed or heard the audio. WhatsApp-friendly formatting, keep it practical.',
+        extra
+          ? `A user replied to an audio/video message asking for vocal removal. Extra note from them: "${extra}". Explain you cannot do the separation in chat and give the local steps.`
+          : 'A user replied to an audio/video message asking for vocal removal. Explain you cannot do the separation in chat and give the local steps.'
       );
 
-      const ext = audioMsg ? 'mp3' : 'mp4';
-      const mediaUrl = await uploadToCatbox(buffer, `media.${ext}`);
-
-      const { data } = await axios.get(`${API}/ai/vocalremover?url=${encodeURIComponent(mediaUrl)}`, { timeout: 180000 });
-
-      if (!data?.status || !data?.result?.vocal) {
-        throw new Error('No vocal track found.');
-      }
+      const body = (res && res.text) ? res.text.trim() : OFFLINE_FALLBACK;
 
       await sock.sendMessage(
         jid,
-        {
-          audio: { url: data.result.vocal },
-          mimetype: 'audio/mp4',
-          ptt: false
-        },
+        { text: body, edit: thinkingMsg.key },
         { quoted: msg }
       );
-
-      await sock.sendMessage(jid, { delete: thinkingMsg.key }).catch(() => {});
     } catch (err) {
-      console.error('[VOCALREMOVER ERROR]', err);
+      console.error('[VOCALREMOVER ERROR]', err.message);
       await sock.sendMessage(
         jid,
-        { text: `❌ Failed to extract vocals: ${err.message}`, edit: thinkingMsg.key },
+        { text: OFFLINE_FALLBACK, edit: thinkingMsg.key },
         { quoted: msg }
       );
     }
   },
 };
-

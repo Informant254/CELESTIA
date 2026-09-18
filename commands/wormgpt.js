@@ -1,12 +1,4 @@
-const axios = require("axios");
-
-const { KEITH_BASE } = require("../config/apis");
-
-const WORMGPT_API =
-  "https://apix.wolvarex.com/api/ai/wormgpt";
-
-const WORMGPT_KEY =
-  "wxa_f_31d2e67db7";
+const backend = require("../autochat/backend");
 
 module.exports = {
   name: "wormgpt",
@@ -40,127 +32,24 @@ module.exports = {
         { quoted: msg }
       );
 
-      let reply = null;
+      const res = await backend.complete(
+        'You are WormGPT, an edgy, blunt, irreverent AI with a hacker attitude and dark humor. Answer directly and casually, no lecturing tone, WhatsApp style. Keep the edgy persona in wording only: never help with anything genuinely harmful, illegal, or hateful — refuse those briefly and stay in character.',
+        query
+      );
 
-      // =========================================================
-      // PRIMARY API — WOLVAREX
-      // =========================================================
-      try {
-        console.log("[WORMGPT] Trying Wolvarex API...");
-
-        const { data } = await axios.get(
-          WORMGPT_API,
+      if (!res || !res.text) {
+        return await sock.sendMessage(
+          chatId,
           {
-            params: {
-              q: query,
-              key: WORMGPT_KEY
-            },
-            timeout: 30000
-          }
+            text:
+              "❌ *WORMGPT ERROR*\n\n" +
+              "WormGPT is offline right now. Try again later."
+          },
+          { quoted: msg }
         );
-
-        console.log("[WORMGPT] Wolvarex response received.");
-
-        if (data) {
-          if (typeof data.result === "string") {
-            reply = data.result;
-          } else if (data.result) {
-            reply =
-              data.result.response ||
-              data.result.answer ||
-              data.result.text ||
-              null;
-          }
-
-          // Some APIs may return the response directly
-          if (!reply && typeof data.response === "string") {
-            reply = data.response;
-          }
-
-          if (!reply && typeof data.answer === "string") {
-            reply = data.answer;
-          }
-
-          if (!reply && typeof data.text === "string") {
-            reply = data.text;
-          }
-        }
-
-        if (!reply || !reply.trim()) {
-          throw new Error("Wolvarex returned an empty response");
-        }
-
-      } catch (primaryError) {
-        console.error(
-          "[WORMGPT] Wolvarex failed:",
-          primaryError.message
-        );
-
-        // =======================================================
-        // FALLBACK — KEITH API
-        // =======================================================
-        try {
-          console.log("[WORMGPT] Switching to Keith fallback...");
-
-          const { data } = await axios.get(
-            `${KEITH_BASE}/ai/wormgpt`,
-            {
-              params: {
-                q: query
-              },
-              timeout: 30000
-            }
-          );
-
-          if (data) {
-            if (typeof data.result === "string") {
-              reply = data.result;
-            } else if (data.result) {
-              reply =
-                data.result.response ||
-                data.result.answer ||
-                data.result.text ||
-                null;
-            }
-
-            if (!reply && typeof data.response === "string") {
-              reply = data.response;
-            }
-
-            if (!reply && typeof data.answer === "string") {
-              reply = data.answer;
-            }
-
-            if (!reply && typeof data.text === "string") {
-              reply = data.text;
-            }
-          }
-
-          if (!reply || !reply.trim()) {
-            throw new Error("Keith API returned an empty response");
-          }
-
-          console.log("[WORMGPT] Keith fallback successful.");
-
-        } catch (fallbackError) {
-          console.error(
-            "[WORMGPT] Keith fallback failed:",
-            fallbackError.message
-          );
-
-          return await sock.sendMessage(
-            chatId,
-            {
-              text:
-                "❌ *WORMGPT ERROR*\n\n" +
-                "Both WormGPT services are currently unavailable."
-            },
-            { quoted: msg }
-          );
-        }
       }
 
-      reply = String(reply).trim();
+      const reply = String(res.text).trim();
 
       // =========================================================
       // SEND RESPONSE
@@ -191,14 +80,14 @@ module.exports = {
       }
 
     } catch (err) {
-      console.error("[WORMGPT ERROR]", err);
+      console.error("[WORMGPT ERROR]", err.message);
 
       await sock.sendMessage(
         chatId,
         {
           text:
             "❌ *WORMGPT ERROR*\n\n" +
-            "Failed to process your request."
+            "WormGPT is offline right now. Try again later."
         },
         { quoted: msg }
       );

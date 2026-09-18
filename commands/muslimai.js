@@ -1,7 +1,4 @@
-const axios = require('axios');
-const { KEITH_BASE } = require('../config/apis');
-
-const API = KEITH_BASE;
+const backend = require('../autochat/backend');
 
 module.exports = {
   name: 'muslimai',
@@ -24,25 +21,16 @@ module.exports = {
     const thinkingMsg = await sock.sendMessage(jid, { text: '📖 *Searching Qur\'anic references...*' }, { quoted: msg });
 
     try {
-      const { data } = await axios.get(`${API}/ai/muslim?q=${encodeURIComponent(query)}`, { timeout: 120000 });
+      const res = await backend.complete(
+        'You are MuslimAI, a respectful Islamic knowledge assistant. Answer from an authentic Islamic perspective: cite the Qur\'an with surah name, surah number and verse number, plus relevant hadith where fitting. Respectful, sincere tone, WhatsApp-friendly formatting. If you are unsure of exact wording or numbering, paraphrase honestly instead of inventing references.',
+        query
+      );
 
-      if (!data?.status || !data?.result) {
-        throw new Error('MuslimAI API returned an invalid response.');
+      if (!res || !res.text) {
+        throw new Error('brain offline');
       }
 
-      const results = data.result.results;
-      if (!results || results.length === 0) {
-        return sock.sendMessage(
-          jid,
-          { text: 'ℹ️ No relevant verses found.', edit: thinkingMsg.key },
-          { quoted: msg }
-        );
-      }
-
-      let output = `📖 *MuslimAI Results for:* ${data.result.query || query}\n\n`;
-      results.slice(0, 3).forEach((r, i) => {
-        output += `*${i + 1}. Surah ${r.surah_title}*\n${r.content.trim()}\n🔗 ${r.surah_url}\n\n`;
-      });
+      const output = `📖 *MuslimAI Results for:* ${query}\n\n${res.text.trim()}`;
 
       await sock.sendMessage(
         jid,
@@ -50,13 +38,12 @@ module.exports = {
         { quoted: msg }
       );
     } catch (err) {
-      console.error('[MUSLIMAI ERROR]', err);
+      console.error('[MUSLIMAI ERROR]', err.message);
       await sock.sendMessage(
         jid,
-        { text: `❌ Failed to fetch response: ${err.message}`, edit: thinkingMsg.key },
+        { text: '❌ MuslimAI is offline right now. Please try again later.', edit: thinkingMsg.key },
         { quoted: msg }
       );
     }
   },
 };
-

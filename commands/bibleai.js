@@ -1,7 +1,4 @@
-const axios = require('axios');
-const { KEITH_BASE } = require('../config/apis');
-
-const API = KEITH_BASE;
+const backend = require('../autochat/backend');
 
 module.exports = {
   name: 'bibleai',
@@ -24,25 +21,17 @@ module.exports = {
     const thinkingMsg = await sock.sendMessage(jid, { text: '📖 *Searching Scripture...*' }, { quoted: msg });
 
     try {
-      const { data } = await axios.get(`${API}/ai/bible?q=${encodeURIComponent(query)}`, { timeout: 120000 });
+      const res = await backend.complete(
+        'You are BibleAI, a knowledgeable Bible study assistant. Answer from a Christian biblical perspective: quote relevant Scripture with book, chapter and verse references, add brief context and practical meaning. Warm pastoral tone, WhatsApp-friendly formatting. If you are unsure of exact verse wording, paraphrase honestly instead of inventing quotes.',
+        query
+      );
 
-      if (!data?.status || !data?.result?.results?.data?.answer) {
-        throw new Error('No Bible answer found.');
+      if (!res || !res.text) {
+        throw new Error('brain offline');
       }
 
-      const answer = data.result.results.data.answer;
-      const sources = data.result.results.data.sources || [];
-
-      let caption = `📖 *${query}*\n\n${answer}`;
-
-      if (sources.length > 0) {
-        caption += `\n\n📌 *Sources:*\n` +
-          sources.map((src, i) => {
-            if (src.type === 'verse') return `${i + 1}. 📜 ${src.text}`;
-            if (src.type === 'article') return `${i + 1}. 📘 ${src.title}`;
-            return `${i + 1}. ${src.text || src.title}`;
-          }).join('\n');
-      }
+      const answer = res.text.trim();
+      const caption = `📖 *${query}*\n\n${answer}`;
 
       await sock.sendMessage(
         jid,
@@ -50,13 +39,12 @@ module.exports = {
         { quoted: msg }
       );
     } catch (err) {
-      console.error('[BIBLEAI ERROR]', err);
+      console.error('[BIBLEAI ERROR]', err.message);
       await sock.sendMessage(
         jid,
-        { text: `❌ Error fetching Bible answer: ${err.message}`, edit: thinkingMsg.key },
+        { text: '❌ Bible AI is offline right now. Please try again later.', edit: thinkingMsg.key },
         { quoted: msg }
       );
     }
   },
 };
-

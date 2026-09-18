@@ -1,21 +1,25 @@
 const axios = require("axios");
 
-const { KEITH_BASE } = require('../config/apis');
-const API = `${KEITH_BASE}/livescore`;
-
-const MAJOR_CATEGORIES = [
-  "england", "spain", "italy", "germany", "france", 
-  "turkey", "netherlands", "portugal", "saudi arabia", 
-  "europe", "world", "international", "usa", "brazil", "argentina"
+// Free, keyless source (verified live): TheSportsDB free tier.
+// livescore.php?s=Soccer returns currently-live soccer matches.
+const MAJOR = [
+  "premier league", "la liga", "serie a", "bundesliga", "ligue 1",
+  "champions league", "europa league", "conference league", "fa cup",
+  "copa del rey", "coppa italia", "dfb-pokal", "eredivisie",
+  "primeira liga", "saudi", "mls", "major league soccer",
+  "world cup", "euro", "nations league", "afcon",
 ];
 
-const MAJOR_LEAGUES = [
-  "premier league", "championship", "la liga", "laliga", "serie a", 
-  "bundesliga", "ligue 1", "super lig", "süper lig", "eredivisie", 
-  "primeira liga", "champions league", "europa league", "conference league", 
-  "super cup", "copa libertadores", "saudi pro league", "mls", 
-  "world cup", "euros", "afcon", "nations league", "fa cup", "copa del rey"
-];
+const box = (title, lines) =>
+  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
+
+function statusEmoji(s) {
+  const st = String(s || "").toUpperCase();
+  if (st === "FT" || st.includes("FINISH") || st.includes("FULL")) return "✅";
+  if (st === "HT") return "⏸️";
+  if (st === "NS" || st === "" || st.includes("SCHED")) return "⏳";
+  return "🔴";
+}
 
 module.exports = {
   name: "livescore",
@@ -31,80 +35,45 @@ module.exports = {
     );
 
     try {
-      const { data } = await axios.get(API);
+      const { data } = await axios.get(
+        "https://www.thesportsdb.com/api/v1/json/3/livescore.php?s=Soccer",
+        { timeout: 20000, headers: { "User-Agent": "Mozilla/5.0" } }
+      );
 
-      if (!data.status || !data.result || !data.result.games) {
-        return sock.sendMessage(
-          jid,
-          {
-            text: "❌ Failed to fetch live scores.",
-            edit: loading.key
-          }
-        );
+      const games = Array.isArray(data?.livescore) ? data.livescore : [];
+
+      if (!games.length) {
+        return sock.sendMessage(jid, {
+          text: box("⚽ LIVE SCORES", ["📭 No live matches right now.", "Check back later."]),
+          edit: loading.key,
+        });
       }
 
-      const allGames = Object.values(data.result.games);
+      const major = games.filter((g) =>
+        MAJOR.some((m) => String(g.strLeague || "").toLowerCase().includes(m))
+      );
+      const list = (major.length ? major : games).slice(0, 15);
 
-      if (!allGames.length) {
-        return sock.sendMessage(
-          jid,
-          {
-            text: "📭 No matches found.",
-            edit: loading.key
-          }
-        );
+      const lines = [];
+      lines.push(major.length ? "Showing major-league matches:" : "Showing live matches:");
+      lines.push("");
+      for (const g of list) {
+        const emoji = statusEmoji(g.strStatus);
+        lines.push(`${emoji} *${g.strHomeTeam}* ${g.intHomeScore ?? "?"} - ${g.intAwayScore ?? "?"} *${g.strAwayTeam}*`);
+        lines.push(`⏱ ${g.strStatus || "LIVE"} — ${g.strLeague || "Soccer"}`);
+        lines.push("");
       }
-
-      const filteredGames = allGames.filter(game => {
-        const country = (game.cn || "").toLowerCase();
-        const league = (game.L || game.league || game.sn || "").toLowerCase();
-        const fullStr = `${country} ${league}`;
-
-        const isMajorCategory = MAJOR_CATEGORIES.some(cat => country.includes(cat));
-        const isExplicitLeague = MAJOR_LEAGUES.some(l => fullStr.includes(l));
-
-        return isExplicitLeague || (isMajorCategory && !league.includes("division") && !league.includes("reserve") && !league.includes("u19") && !league.includes("u21"));
-      });
-
-      const gamesToShow = filteredGames.length > 0 ? filteredGames : allGames;
-      const isTopMatches = filteredGames.length > 0;
-
-      let text = isTopMatches 
-        ? "⚽ *LIVE SCORES (MAJOR LEAGUES)*\n\n" 
-        : "⚽ *LIVE SCORES (OTHER MATCHES)*\n\n";
-
-      for (const game of gamesToShow.slice(0, 50)) {
-        const status = game.R?.st || "NS";
-        const home = game.p1;
-        const away = game.p2;
-        const score1 = game.R?.r1 ?? "0";
-        const score2 = game.R?.r2 ?? "0";
-
-        let emoji = "⏳";
-
-        if (status === "FT") emoji = "✅";
-        else if (status === "2T" || status === "1T") emoji = "🔴";
-
-        text += `${emoji} *${home}* ${score1} - ${score2} *${away}*\n`;
-        text += `⏱ ${status}\n\n`;
-      }
-
-      if (gamesToShow.length > 50) {
-        text += `📄 Showing 50 of ${gamesToShow.length} matches.`;
-      }
+      if (games.length > 15) lines.push(`Showing 15 of ${games.length} live matches.`);
 
       await sock.sendMessage(jid, {
-        text,
-        edit: loading.key
+        text: box("⚽ LIVE SCORES", lines),
+        edit: loading.key,
       });
-
     } catch (err) {
-      console.error(err);
-
       await sock.sendMessage(jid, {
-        text: "❌ Failed to fetch live scores.",
-        edit: loading.key
+        text: box("⚽ LIVE SCORES", ["❌ Live scores unavailable right now.", "Please try again later."]),
+        edit: loading.key,
       });
     }
-  }
+  },
 };

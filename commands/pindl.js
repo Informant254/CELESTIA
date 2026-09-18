@@ -1,6 +1,4 @@
 const axios = require('axios');
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
 
 module.exports = {
   name: 'pindl',
@@ -18,21 +16,30 @@ module.exports = {
       await sock.sendMessage(jid, { text: '⏳ Fetching Pinterest media...' }, { quoted: msg });
       await sock.sendMessage(jid, { react: { text: '📌', key: msg.key } });
 
-      const res = await axios.get(`${API}/download/pindl2?url=${encodeURIComponent(text)}`, { timeout: 100000 });
-      const result = res.data?.result;
+      const res = await axios.get(`https://api.bk9.dev/download/pinterest?url=${encodeURIComponent(text)}`, { timeout: 60000 });
+      const payload = res.data?.BK9 ?? res.data?.result ?? res.data;
 
-      if (!result?.success || !Array.isArray(result.medias)) {
+      // Normalize: bk9 shape, legacy medias shape, or any bare URL in payload.
+      let title = payload?.title || 'Pinterest Media';
+      let medias = [];
+      if (payload && Array.isArray(payload.medias)) {
+        medias = payload.medias;
+      } else {
+        const { pickCleanUrl, collectMediaUrls } = require('../utils/downloader');
+        const cands = collectMediaUrls(payload).filter((c) => !/thumb|preview|poster/i.test(c.key));
+        medias = cands.map((c) => ({ url: c.url, extension: /\.mp4(\?|$)/i.test(c.url) ? 'mp4' : 'jpg' }));
+      }
+
+      if (!medias.length) {
         return sock.sendMessage(jid, { text: '❌ Failed to fetch Pinterest media.' }, { quoted: msg });
       }
 
-      const title = result.title || 'Pinterest Media';
-
-      for (const media of result.medias) {
+      for (const media of medias.slice(0, 5)) {
         const { url, extension, videoAvailable } = media;
         if (!url) continue;
 
         try {
-          const bufferRes = await axios.get(url, { responseType: 'arraybuffer' });
+          const bufferRes = await axios.get(url, { responseType: 'arraybuffer', timeout: 120000 });
           const size = bufferRes.headers['content-length'];
           if (size && parseInt(size) > 100 * 1024 * 1024) {
             await sock.sendMessage(jid, { text: '⚠️ Skipped large file.' }, { quoted: msg });
@@ -40,6 +47,7 @@ module.exports = {
           }
 
           const buffer = Buffer.from(bufferRes.data);
+          if (!buffer.length) continue;
           const fileName = `${title}.${extension || 'jpg'}`.replace(/[^\w\s.-]/gi, '');
 
           if (videoAvailable || extension === 'mp4') {
@@ -50,6 +58,7 @@ module.exports = {
         } catch (err) {}
       }
     } catch (err) {
+      console.error('[PINDL ERROR]', err.message);
       await sock.sendMessage(jid, { text: '❌ Error downloading Pinterest media.' }, { quoted: msg });
     }
   },

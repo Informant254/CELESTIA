@@ -1,5 +1,9 @@
 const axios = require("axios");
-const { KEITH_BASE } = require('../config/apis');
+
+// Free, keyless source (verified live): TheSportsDB free tier.
+// searchteams.php returns team info (verified: Arsenal -> Emirates Stadium).
+const box = (title, lines) =>
+  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
 module.exports = {
   name: "teamsearch",
@@ -13,7 +17,7 @@ module.exports = {
       return sock.sendMessage(
         chatId,
         {
-          text: "⚽ *TEAM SEARCH*\n\nExample:\n.teamsearch Arsenal"
+          text: box("⚽ TEAM SEARCH", ["Example:", ".teamsearch Arsenal"]),
         },
         { quoted: msg }
       );
@@ -29,50 +33,47 @@ module.exports = {
       );
 
       const { data } = await axios.get(
-        `${KEITH_BASE}/sport/teamsearch?q=${encodeURIComponent(query)}`
+        `https://www.thesportsdb.com/api/v1/json/3/searchteams.php?t=${encodeURIComponent(query)}`,
+        { timeout: 20000, headers: { "User-Agent": "Mozilla/5.0" } }
       );
 
-      if (!data.status || !data.result) {
+      const team = Array.isArray(data?.teams) ? data.teams[0] : null;
+
+      if (!team) {
         return sock.sendMessage(chatId, {
-          text: "❌ Team not found.",
-          edit: loading.key
+          text: box("⚽ TEAM SEARCH", [`❌ No team found for "${query}".`, "Check the spelling and try again."]),
+          edit: loading.key,
         });
       }
 
-      const team = Array.isArray(data.result)
-        ? data.result[0]
-        : data.result;
+      const lines = [];
+      if (team.strTeam) lines.push(`🏟️ *Name:* ${team.strTeam}`);
+      if (team.strTeamShort) lines.push(`🪧 *Short:* ${team.strTeamShort}`);
+      if (team.strCountry) lines.push(`🌍 *Country:* ${team.strCountry}`);
+      if (team.strLeague) lines.push(`🏆 *League:* ${team.strLeague}`);
+      if (team.intFormedYear) lines.push(`📅 *Founded:* ${team.intFormedYear}`);
+      if (team.strStadium) lines.push(`🏟️ *Stadium:* ${team.strStadium}`);
+      if (team.intStadiumCapacity) lines.push(`👥 *Capacity:* ${team.intStadiumCapacity}`);
+      if (team.strWebsite) lines.push(`🌐 *Website:* ${team.strWebsite}`);
 
-      let text = `⚽ *TEAM INFORMATION*\n\n`;
+      const text = box("⚽ TEAM INFORMATION", lines.length ? lines : ["❌ No details available."]);
+      const badge = team.strBadge || team.strLogo;
 
-      if (team.name) text += `🏟️ *Name:* ${team.name}\n`;
-      if (team.country) text += `🌍 *Country:* ${team.country}\n`;
-      if (team.league) text += `🏆 *League:* ${team.league}\n`;
-      if (team.founded) text += `📅 *Founded:* ${team.founded}\n`;
-      if (team.stadium) text += `🏟️ *Stadium:* ${team.stadium}\n`;
-      if (team.coach) text += `👔 *Coach:* ${team.coach}\n`;
-      if (team.website) text += `🌐 *Website:* ${team.website}\n`;
-
-      if (team.logo) {
-        await sock.sendMessage(chatId, {
-          image: { url: team.logo },
-          caption: text,
-          edit: loading.key
-        });
-      } else {
-        await sock.sendMessage(chatId, {
-          text,
-          edit: loading.key
-        });
+      if (badge) {
+        try {
+          await sock.sendMessage(chatId, {
+            image: { url: badge },
+            caption: text,
+          });
+          return;
+        } catch (e) { /* fall through to text */ }
       }
-
+      await sock.sendMessage(chatId, { text, edit: loading.key });
     } catch (err) {
-      console.error("[TEAMSEARCH ERROR]", err);
-
       await sock.sendMessage(chatId, {
-        text: "❌ Failed to search team.",
-        edit: loading?.key
+        text: box("⚽ TEAM SEARCH", ["❌ Failed to search team.", "Please try again later."]),
+        edit: loading?.key,
       });
     }
-  }
+  },
 };

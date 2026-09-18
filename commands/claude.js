@@ -1,7 +1,4 @@
-const axios = require("axios");
-
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
+const backend = require('../autochat/backend');
 
 module.exports = {
   name: "claude",
@@ -32,23 +29,19 @@ module.exports = {
         { quoted: msg }
       );
 
-      const { data } = await axios.get(
-        `${API}/ai/claudeai?q=${encodeURIComponent(query)}`
+      const res = await backend.complete(
+        'You are Claude, a thoughtful, careful and articulate AI assistant. Give clear, well-reasoned, genuinely helpful answers in a calm friendly tone. WhatsApp-friendly formatting, no excessive headers.',
+        query
       );
 
-      if (!data.status || !data.result) {
+      if (!res || !res.text) {
         return await sock.sendMessage(chatId, {
-          text: "❌ Claude couldn't generate a response.",
+          text: "❌ Claude AI is offline right now. Please try again later.",
           edit: loading.key
         });
       }
 
-      const reply =
-        typeof data.result === "string"
-          ? data.result
-          : data.result.response ||
-            data.result.answer ||
-            JSON.stringify(data.result, null, 2);
+      const reply = res.text.trim();
 
       // Split long responses
       if (reply.length <= 4000) {
@@ -70,10 +63,10 @@ module.exports = {
       }
 
     } catch (err) {
-      console.error("[CLAUDE ERROR]", err);
+      console.error("[CLAUDE ERROR]", err.message);
 
       await sock.sendMessage(chatId, {
-        text: "❌ Failed to get a response from Claude AI.",
+        text: "❌ Claude AI is offline right now. Please try again later.",
         edit: loading?.key
       });
     }

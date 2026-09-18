@@ -1,28 +1,4 @@
-const axios = require('axios');
-const FormData = require('form-data');
-const mime = require('mime-types');
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { KEITH_BASE } = require('../config/apis');
-
-async function uploadToUguu(buffer, filename) {
-  const mimeType = mime.lookup(filename) || 'image/jpeg';
-  const form = new FormData();
-  form.append('files[]', buffer, { filename, contentType: mimeType });
-
-  const res = await axios.post('https://uguu.se/upload.php', form, {
-    headers: {
-      ...form.getHeaders(),
-      origin: 'https://uguu.se',
-      referer: 'https://uguu.se/',
-      'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    },
-  });
-
-  if (res.data?.success && res.data?.files?.[0]?.url) {
-    return res.data.files[0].url;
-  }
-  throw new Error('Media upload failed');
-}
+const backend = require('../autochat/backend');
 
 module.exports = {
   name: 'vision2',
@@ -62,52 +38,28 @@ module.exports = {
     );
 
     try {
-      const buffer = await downloadMediaMessage(
-        { key: { remoteJid: jid, id: ctx.stanzaId, fromMe: false, participant: ctx.participant }, message: quoted },
-        'buffer',
-        {},
-        { reuploadRequest: sock.updateMediaMessage }
+      // Text-only backend: image bytes cannot be understood. Never hallucinate contents.
+      const res = await backend.complete(
+        'You are Vision AI, an image-analysis assistant whose image input is currently unavailable. The user asked a question about an image you cannot see. Briefly explain you cannot see the image right now, do NOT invent or guess what is in it, and give the most useful general guidance you can from the question text alone. Invite them to describe the image in words so you can help. Keep it short and WhatsApp-friendly.',
+        `The user asked this about an image I cannot see: "${question}". Explain image understanding is unavailable and help as best you can without guessing the image contents.`
       );
 
-      const imageUrl = await uploadToUguu(buffer, 'image.jpg');
-
-      const res = await axios.get(
-        `${KEITH_BASE}/ai/vision?image=${encodeURIComponent(imageUrl)}&q=${encodeURIComponent(question)}`,
-        {
-          timeout: 120000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*'
-          }
-        }
-      );
-      const result = res.data;
-
-      if (!result?.status || !result?.result) {
-        return await sock.sendMessage(
-          jid,
-          { text: '❌ No response from Vision AI. Try again.', edit: thinkingMsg.key },
-          { quoted: msg }
-        );
-      }
-
-      const responseText = typeof result.result === 'string'
-        ? result.result
-        : result.result.response || result.result.text || JSON.stringify(result.result);
+      const body = (res && res.text)
+        ? res.text.trim()
+        : 'Image understanding is unavailable right now, so I cannot see this image. Describe what is in it with words and I will do my best to help with your question.';
 
       await sock.sendMessage(
         jid,
-        { text: `👁️ *Vision Analysis*\n\n${responseText}`, edit: thinkingMsg.key },
+        { text: `👁️ *Vision Analysis*\n\n${body}`, edit: thinkingMsg.key },
         { quoted: msg }
       );
     } catch (error) {
-      console.error('[VISION2 ERROR]', error);
+      console.error('[VISION2 ERROR]', error.message);
       await sock.sendMessage(
         jid,
-        { text: `❌ Failed to analyze image: ${error.message}`, edit: thinkingMsg.key },
+        { text: '❌ Vision AI is offline right now. Please try again later.', edit: thinkingMsg.key },
         { quoted: msg }
       );
     }
   },
 };
-

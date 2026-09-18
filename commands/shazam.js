@@ -10,9 +10,6 @@ const { promisify } = require('util');
 const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static') || 'ffmpeg';
 const execFileAsync = promisify(execFile);
 
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
-
 const ACR_HOST = process.env.ACR_HOST || 'identify-eu-west-1.acrcloud.com';
 const ACR_ACCESS_KEY = process.env.ACR_ACCESS_KEY || '678eed85d47920b4737382eff9adfe46';
 const ACR_ACCESS_SECRET = process.env.ACR_ACCESS_SECRET || 'l70euTw5vrswSmnKk4T0EglrtPfpUhSzVi04Evea';
@@ -175,24 +172,13 @@ module.exports = {
 
       await sock.sendMessage(jid, { text: `🎧 Downloading *${query}*...` }, { quoted: msg });
 
-      const search = await axios.get(`${API}/search/yts?query=${encodeURIComponent(query)}`);
-      const videos = search.data?.result;
-
-      if (!Array.isArray(videos) || videos.length === 0) {
-        throw new Error('Could not find the song on YouTube.');
-      }
-
-      const videoUrl = videos[0].url;
-      const download = await axios.get(`${API}/download/audio?url=${encodeURIComponent(videoUrl)}`);
-      const audioUrl = download.data?.result;
-
-      if (!audioUrl) {
-        throw new Error('Failed to download audio.');
-      }
+      const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
+      const found = await ytSearch(query);
+      const { url: audioUrl, title: finalTitle } = await ytAudio(found.url, `${title} - ${artist}`);
 
       await sock.sendMessage(
         jid,
-        { audio: { url: audioUrl }, mimetype: 'audio/mpeg', fileName: `${title}.mp3`, ptt: false },
+        { audio: { url: audioUrl }, mimetype: 'audio/mpeg', fileName: cleanName(finalTitle, '.mp3'), ptt: false },
         { quoted: msg }
       );
     } catch (error) {

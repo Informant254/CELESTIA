@@ -1,7 +1,38 @@
 const axios = require("axios");
 
-const { KEITH_BASE } = require('../config/apis');
-const API = `${KEITH_BASE}/football/news`;
+// Free, keyless source (verified live): BBC Sport Football RSS feed.
+const FEED_URL = "https://feeds.bbci.co.uk/sport/football/rss.xml";
+
+const box = (title, lines) =>
+  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
+
+function clean(s) {
+  return String(s || "")
+    .replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+}
+
+function parseRss(xml) {
+  const items = [];
+  const re = /<item>([\s\S]*?)<\/item>/g;
+  let m;
+  while ((m = re.exec(xml)) && items.length < 8) {
+    const body = m[1];
+    const t = body.match(/<title>([\s\S]*?)<\/title>/);
+    const l = body.match(/<link>([\s\S]*?)<\/link>/);
+    const d = body.match(/<pubDate>([\s\S]*?)<\/pubDate>/);
+    const title = clean(t && t[1]);
+    if (!title) continue;
+    items.push({ title, link: clean(l && l[1]), date: clean(d && d[1]) });
+  }
+  return items;
+}
 
 module.exports = {
   name: "news",
@@ -17,40 +48,38 @@ module.exports = {
         { quoted: msg }
       );
 
-      const { data } = await axios.get(API);
+      const { data } = await axios.get(FEED_URL, {
+        timeout: 20000,
+        headers: { "User-Agent": "Mozilla/5.0" },
+        responseType: "text",
+      });
 
-      if (!data.status || !Array.isArray(data.result) || data.result.length === 0) {
-        return await sock.sendMessage(
-          chatId,
-          { text: "❌ No football news found." },
-          { quoted: msg }
-        );
+      const news = parseRss(String(data));
+
+      if (!news.length) {
+        return await sock.sendMessage(chatId, {
+          text: box("📰 FOOTBALL NEWS", ["❌ No football news found.", "Please try again later."]),
+          edit: loading.key,
+        });
       }
 
-      const news = data.result.slice(0, 10);
-
-      let text = "📰 *LATEST FOOTBALL NEWS*\n\n";
-
+      const lines = [];
       news.forEach((item, i) => {
-        text += `*${i + 1}. ${item.title}*\n`;
-        if (item.date) text += `📅 ${item.date}\n`;
-        if (item.source) text += `📰 ${item.source}\n`;
-        if (item.link) text += `🔗 ${item.link}\n`;
-        text += "\n";
+        lines.push(`*${i + 1}. ${item.title}*`);
+        if (item.date) lines.push(`📅 ${item.date}`);
+        if (item.link) lines.push(`🔗 ${item.link}`);
+        lines.push("");
       });
+      lines.push("Source: BBC Sport.");
 
       await sock.sendMessage(chatId, {
-        text,
-        edit: loading.key
+        text: box("📰 LATEST FOOTBALL NEWS", lines),
+        edit: loading.key,
       });
-
     } catch (err) {
-      console.error(err);
-
       await sock.sendMessage(chatId, {
-        text: "❌ Failed to fetch football news.",
-        edit: loading?.key
+        text: box("📰 FOOTBALL NEWS", ["❌ Failed to fetch football news.", "Please try again later."]),
       });
     }
-  }
+  },
 };

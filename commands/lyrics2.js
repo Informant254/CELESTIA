@@ -1,8 +1,5 @@
 const axios = require("axios");
 
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
-
 module.exports = {
   name: "lyrics2",
   description: "Search song lyrics. Usage: .lyrics2 <song name>",
@@ -33,26 +30,25 @@ module.exports = {
       );
 
       const { data } = await axios.get(
-        `${API}/search/lyrics?query=${encodeURIComponent(query)}`
+        `https://api.popcat.xyz/v2/lyrics?song=${encodeURIComponent(query)}`,
+        { timeout: 30000 }
       );
 
-      if (!data.status || !data.result) {
+      const song = data?.message;
+      if (data?.error || !song?.lyrics) {
         return await sock.sendMessage(chatId, {
           text: "❌ Lyrics not found.",
           edit: loading.key
         });
       }
 
-      const song = data.result;
-
       let text = `🎵 *SONG LYRICS*\n\n`;
 
       if (song.title) text += `🎧 *Title:* ${song.title}\n`;
       if (song.artist) text += `👤 *Artist:* ${song.artist}\n`;
-      if (song.album) text += `💿 *Album:* ${song.album}\n`;
 
       text += `\n📜 *Lyrics:*\n\n`;
-      text += song.lyrics || song.lyric || "No lyrics available.";
+      text += song.lyrics || "No lyrics available.";
 
       // WhatsApp has a message limit, so split if necessary
       if (text.length <= 4000) {
@@ -74,7 +70,7 @@ module.exports = {
       }
 
     } catch (err) {
-      console.error("[LYRICS ERROR]", err);
+      console.error("[LYRICS ERROR]", err.message);
 
       await sock.sendMessage(chatId, {
         text: "❌ Failed to fetch lyrics.",

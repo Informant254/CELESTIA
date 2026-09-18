@@ -1,7 +1,26 @@
 const axios = require("axios");
 
-const { KEITH_BASE } = require('../config/apis');
-const API = KEITH_BASE;
+// Free, keyless source (verified live): OpenLigaDB.
+// getbltable/bl1 returns the full Bundesliga standings (18 teams).
+const SEASONS = [2026, 2025, 2024];
+
+const box = (title, lines) =>
+  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
+
+async function fetchTable() {
+  for (const season of SEASONS) {
+    try {
+      const { data } = await axios.get(
+        `https://api.openligadb.de/getbltable/bl1/${season}`,
+        { timeout: 20000 }
+      );
+      if (Array.isArray(data) && data.length) {
+        return { rows: data, season };
+      }
+    } catch (e) { /* try next season */ }
+  }
+  return null;
+}
 
 module.exports = {
   name: "bundesliga",
@@ -17,51 +36,29 @@ module.exports = {
     );
 
     try {
-      const { data } = await axios.get(`${API}/bundesliga/standings`);
+      const table = await fetchTable();
 
-      if (!data.status || !data.result?.standings) {
-        throw new Error("No standings available.");
+      if (!table) {
+        throw new Error("Table unavailable right now.");
       }
 
-      const standings = data.result.standings;
-
-      let text = `🇩🇪 *${data.result.competition}*\n`;
-      text += "```";
-      text += "\nPos Team               P  GD Pts\n";
-      text += "───────────────────────────────\n";
-
-      standings.forEach((team) => {
-        const pos = String(team.position).padEnd(3);
-
-        const name = team.team
-          .replace(" FC", "")
-          .replace(" AFC", "")
-          .slice(0, 18)
-          .padEnd(18);
-
-        const played = String(team.played).padEnd(3);
-
-        const gd = String(
-          team.goalDifference >= 0
-            ? "+" + team.goalDifference
-            : team.goalDifference
-        ).padEnd(4);
-
-        const pts = String(team.points).padStart(3);
-
-        text += `${pos}${name}${played}${gd}${pts}\n`;
+      const lines = table.rows.map((t, i) => {
+        const rank = String(i + 1).padStart(2);
+        const name = String(t.teamName).slice(0, 18).padEnd(18);
+        const p = String(t.matches).padStart(2);
+        const gd = Number(t.goalDiff) >= 0 ? "+" + t.goalDiff : String(t.goalDiff);
+        return `${rank}. ${name} P${p} GD${gd} ${t.points}pts`;
       });
-
-      text += "```";
+      lines.push("");
+      lines.push(`Season ${table.season}/${table.season + 1} — full table via OpenLigaDB.`);
 
       await sock.sendMessage(jid, {
-        text,
+        text: box("🇩🇪 BUNDESLIGA TABLE", lines),
         edit: loading.key,
       });
-
     } catch (err) {
       await sock.sendMessage(jid, {
-        text: `❌ Failed to fetch Bundesliga standings.\n\n${err.message}`,
+        text: box("🇩🇪 BUNDESLIGA TABLE", ["❌ Table unavailable right now.", "Please try again later."]),
         edit: loading.key,
       });
     }

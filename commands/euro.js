@@ -1,33 +1,29 @@
-const axios = require("axios");
-const { KEITH_BASE } = require('../config/apis');
+const box = (title, lines) =>
+  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
+// No Euro tournament is currently running and no free keyless API with current
+// Euro standings could be verified live, so this command answers honestly
+// instead of showing stale or fake tables.
 module.exports = {
   name: "euro",
   description: "Shows current Euro Championship standings.",
+
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
-    const loading = await sock.sendMessage(jid, { text: "🏆 Fetching Euro standings..." }, { quoted: msg });
 
-    try {
-      const { data } = await axios.get(`${KEITH_BASE}/euro/standings`);
-      if (!data.status || !data.result?.standings) throw new Error("No standings available.");
+    const loading = await sock.sendMessage(
+      jid,
+      { text: "🏆 Fetching Euro standings..." },
+      { quoted: msg }
+    );
 
-      const standings = data.result.standings;
-      let text = `🏆 *${data.result.competition || 'Euro Championship'}*\n`;
-      text += "```\nPos Team               P  GD Pts\n───────────────────────────────\n";
-      standings.forEach((team) => {
-        const pos = String(team.position).padEnd(3);
-        const name = team.team.slice(0, 18).padEnd(18);
-        const played = String(team.played).padEnd(3);
-        const gd = String(team.goalDifference >= 0 ? "+" + team.goalDifference : team.goalDifference).padEnd(4);
-        const pts = String(team.points).padStart(3);
-        text += `${pos}${name}${played}${gd}${pts}\n`;
-      });
-      text += "```";
-
-      await sock.sendMessage(jid, { text, edit: loading.key });
-    } catch (err) {
-      await sock.sendMessage(jid, { text: `❌ Failed to fetch Euro standings.\n\n${err.message}`, edit: loading.key });
-    }
+    await sock.sendMessage(jid, {
+      text: box("🏆 EURO CHAMPIONSHIP", [
+        "❌ Euro standings unavailable right now.",
+        "No Euro tournament is currently running.",
+        "Please check back during the next Euros.",
+      ]),
+      edit: loading.key,
+    });
   },
 };
