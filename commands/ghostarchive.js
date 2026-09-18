@@ -39,11 +39,11 @@ module.exports = {
     // ─── clear ───
     if (sub === 'clear') {
       const n = ghost.clearArchive();
-      return reply(`👻 Archive emptied — ${n} entr${n === 1 ? 'y' : 'ies'} released. (Files stay in vault/statuses.)`);
+      return reply(`👻 Archive emptied — ${n} entr${n === 1 ? 'y' : 'ies'} released.`);
     }
 
     // ─── re-send by number ───
-    if (/^\d+$/.test(sub)) {
+    if (/^\d{1,3}$/.test(sub)) {
       const got = ghost.getEntry(parseInt(sub, 10));
       if (!got) return reply(`👻 No entry #${sub}. \`.ghostarchive\` lists them.`);
       try {
@@ -77,8 +77,7 @@ module.exports = {
     }
 
     const L = [title, ''];
-    list.slice(-15).reverse().forEach((e, i) => {
-      const n = all.length - list.slice(-15).length + i + 1;
+    list.slice(-15).map(e => ({ e, n: all.indexOf(e) + 1 })).reverse().forEach(({ e, n }) => {
       const icon = { image: '🖼️', video: '🎬', audio: '🎙️', text: '📝', sticker: '✨' }[e.type] || '📎';
       const when = new Date(e.ts).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
       L.push(`${n}. ${icon} *${e.poster}* — ${when}${e.deleted ? ' ⚠️*deleted*' : ''}`);

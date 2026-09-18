@@ -9,6 +9,8 @@
  * Every function resolves to { url, title } or throws a human-readable Error.
  */
 const axios = require('axios');
+const dns = require('dns').promises;
+const net = require('net');
 
 let yts = null;
 try {
@@ -18,6 +20,79 @@ try {
 }
 
 const TIMEOUT = 60000;
+
+function isPublicIp(address) {
+  const ip = String(address || '').replace(/^\[|\]$/g, '').split('%')[0];
+  const family = net.isIP(ip);
+  if (family === 4) {
+    const n = ip.split('.').reduce((v, part) => (v * 256) + Number(part), 0) >>> 0;
+    return ![
+      [0x00000000, 8], [0x0a000000, 8], [0x64400000, 10], [0x7f000000, 8],
+      [0xa9fe0000, 16], [0xac100000, 12], [0xc0000000, 24], [0xc0000200, 24],
+      [0xc0586300, 24], [0xc0a80000, 16], [0xc6120000, 15], [0xc6336400, 24], [0xcb007100, 24],
+      [0xe0000000, 4], [0xf0000000, 4],
+    ].some(([base, bits]) => (n >>> (32 - bits)) === (base >>> (32 - bits)));
+  }
+  if (family === 6) {
+    const lower = ip.toLowerCase();
+    const mapped = lower.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (mapped) return isPublicIp(mapped[1]);
+    if (lower === '::' || lower === '::1') return false;
+    const parts = lower.split(':');
+    const first = parseInt(parts[0] || '0', 16);
+    const second = parseInt(parts[1] || '0', 16);
+    if ((first & 0xe000) !== 0x2000) return false; // only global-unicast 2000::/3
+    if (first === 0x2001 && (second <= 0x01ff || second === 0x0db8)) return false;
+    return !(first === 0x3fff && second <= 0x0fff);
+  }
+  return false;
+}
+
+async function validateDownloadUrl(value) {
+  let parsed;
+  try { parsed = new URL(value); } catch { throw new Error('Provider returned an invalid download URL.'); }
+  if (!['https:', 'http:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('Provider returned an unsafe download URL.');
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  const addresses = net.isIP(host) ? [{ address: host }] : await dns.lookup(host, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some(({ address }) => !isPublicIp(address))) {
+    throw new Error('Provider download URL resolves to a private or reserved address.');
+  }
+  return parsed.toString();
+}
+
+async function downloadBuffer(value, maxBytes, timeout = 120000, redirects = 5) {
+  const url = await validateDownloadUrl(value);
+  const res = await axios.get(url, {
+    responseType: 'stream', timeout, maxRedirects: 0,
+    validateStatus: (status) => status >= 200 && status < 400,
+  });
+  if (res.status >= 300) {
+    res.data.resume();
+    if (!res.headers.location || redirects <= 0) throw new Error('Too many or invalid download redirects.');
+    return downloadBuffer(new URL(res.headers.location, url).toString(), maxBytes, timeout, redirects - 1);
+  }
+  const declared = Number(res.headers['content-length']);
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    res.data.destroy();
+    throw new Error(`Fallback file is too large (over the configured ${maxBytes} byte limit).`);
+  }
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    res.data.on('data', (chunk) => {
+      total += chunk.length;
+      if (total > maxBytes) {
+        res.data.destroy(new Error(`Fallback file is too large (over the configured ${maxBytes} byte limit).`));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    res.data.on('end', () => resolve(Buffer.concat(chunks, total)));
+    res.data.on('error', reject);
+  });
+}
 
 async function ytSearch(query) {
   try {
@@ -49,7 +124,7 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
     );
     const res = r.data?.result;
     if (r.data?.success && res?.download_url) {
-      return { url: res.download_url, title: res.title || fallbackTitle };
+      return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle };
     }
     throw new Error('no audio link');
   } catch (e) {
@@ -63,7 +138,7 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
     );
     const b = r.data?.BK9;
     if (r.data?.status && b?.downloadUrl) {
-      return { url: b.downloadUrl, title: b.title || fallbackTitle };
+      return { url: await validateDownloadUrl(b.downloadUrl), title: b.title || fallbackTitle };
     }
     throw new Error('no audio link');
   } catch (e) {
@@ -80,7 +155,7 @@ async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video') {
     );
     const res = r.data?.result;
     if (r.data?.success && res?.download_url) {
-      return { url: res.download_url, title: res.title || fallbackTitle, quality: res.quality || '' };
+      return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle, quality: res.quality || '' };
     }
     throw new Error(res?.message || 'no video link');
   } catch (e) {
@@ -148,11 +223,11 @@ async function bk9Social(kind, pageUrl) {
   const payload = r.data?.BK9 ?? r.data;
   const url = pickCleanUrl(payload);
   if (!url) throw new Error('Could not extract media from that link. It may be private or invalid.');
-  return { url };
+  return { url: await validateDownloadUrl(url) };
 }
 
 function cleanName(s, ext) {
   return String(s || 'media').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 80) + ext;
 }
 
-module.exports = { ytSearch, ytAudio, ytVideo, bk9Social, firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName };
+module.exports = { ytSearch, ytAudio, ytVideo, bk9Social, firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName, isPublicIp, validateDownloadUrl, downloadBuffer };

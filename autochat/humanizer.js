@@ -30,7 +30,6 @@ function chunk(text) {
     } else {
       cur = (cur + ' ' + s).trim();
     }
-    if (parts.length === 2) break;
   }
   if (cur.trim()) parts.push(cur.trim());
   if (parts.length > 3) {

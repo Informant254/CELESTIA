@@ -1,6 +1,5 @@
 const { node } = require('compile-run');
 const { isOwner } = require('../utils/isOwner');
-const { isSudo } = require('../utils/isSudo');
 
 module.exports = {
   name: 'compile-js',
@@ -8,7 +7,7 @@ module.exports = {
   description: 'Run JavaScript code. Usage: .run-js <code> (or reply to a message containing code)',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
-    if (!isOwner(msg) && !isSudo(msg)) {
+    if (!isOwner(msg)) {
       return sock.sendMessage(jid, { text: '*Command meant for the owner*' }, { quoted: msg });
     }
 

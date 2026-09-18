@@ -16,8 +16,7 @@
   "scripts": {},
   "env": {
     "SESSION_ID": {
-      "description": "WhatsApp session string (CELESTIA:~... format). Get it from the pairing site or the bot's first-link DM backup. Treat like a password.",
-      "generator": "secret",
+      "description": "Required: manually paste a valid WhatsApp session string (CELESTIA:~... format) from the pairing site or the bot's first-link DM backup. Treat it like a password; a generated random secret will not work.",
       "required": true
     },
     "OWNER_NUMBER": {
@@ -43,6 +42,10 @@
     "PAIR_MODE": {
       "description": "Set to 'true' for cloud pairing: the app prints a pairing code in the logs instead of booting the bot. Link it, then flip back to 'false' and redeploy.",
       "value": "false",
+      "required": false
+    },
+    "QR_ACCESS_TOKEN": {
+      "description": "Optional. Required to open /qr or /qr.png; send it as a Bearer token or ?token= value.",
       "required": false
     },
     "OPENAI_API_KEY": {

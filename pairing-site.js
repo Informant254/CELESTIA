@@ -10,7 +10,7 @@
  *   3. Enter it in their WhatsApp
  *   4. Receive their SESSION_STRING (paste into deployment env)
  *
- * Port: PAIRING_PORT (default 3001)
+ * Port: PORT, then PAIRING_PORT (default 3001)
  * This is how other people deploy and use her.
  */
 require('dotenv').config();
@@ -28,8 +28,9 @@ const {
 const app = express();
 // Railway/Render inject PORT; use it when present (single-service deployments).
 // Local/Docker: PAIRING_PORT keeps the station separate from the bot.
-const PORT = process.env.PAIRING_PORT || process.env.PORT || 3001;
+const PORT = process.env.PORT || process.env.PAIRING_PORT || 3001;
 const PAIRING_DIR = path.join(__dirname, 'pairing_sessions');
+const SESSION_TTL_MS = 10 * 60 * 1000;
 if (!fs.existsSync(PAIRING_DIR)) fs.mkdirSync(PAIRING_DIR, { recursive: true });
 
 const silentLogger = {
@@ -37,39 +38,43 @@ const silentLogger = {
   child: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {} }),
 };
 
-const activeSockets = new Map(); // phone -> sock
+const activeSockets = new Map(); // phone -> session
+const pairingLocks = new Map();
 
-async function getSocket(phone) {
-  if (activeSockets.has(phone)) {
-    const existing = activeSockets.get(phone);
-    if (existing.ready) return existing;
-  }
-  return null;
+async function disposeSession(phone, session) {
+  if (!session || session.disposed) return;
+  session.disposed = true;
+  if (activeSockets.get(phone) === session) activeSockets.delete(phone);
+  for (const timer of session.timers || []) clearTimeout(timer);
+  try { session.sock?.ev?.removeAllListeners(); } catch {}
+  try { session.sock?.end(undefined); } catch {}
+  try { await session.credsSaveChain; } catch {}
+  try { await fs.promises.rm(session.sessionDir, { recursive: true, force: true }); } catch {}
 }
 
-async function startPairingSession(phone) {
+async function startPairingSession(phone, requestToken) {
   // retry loop: sockets flap during pairing attempts; never give up on flap
   const MAX_TRIES = 4;
   let lastErr = 'unknown';
 
   for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
     try {
-      const result = await startPairingAttempt(phone, attempt);
+      const result = await startPairingAttempt(phone, requestToken);
       if (result) return result;
       // linked=true resolves via status polling; code attempt returns session
     } catch (e) {
       lastErr = e?.message || 'unknown';
       // clean any partial state before retry
-      const sessionDir = path.join(PAIRING_DIR, crypto.createHash('sha256').update(phone).digest('hex').slice(0, 16));
-      try { fs.rmSync(sessionDir, { recursive: true, force: true }); } catch {}
+      const session = activeSockets.get(phone);
+      if (session?.requestToken === requestToken) await disposeSession(phone, session);
       await new Promise(r => setTimeout(r, 2500 * attempt));
     }
   }
   throw new Error(lastErr);
 }
 
-async function startPairingAttempt(phone, attemptNo) {
-  const sessionDir = path.join(PAIRING_DIR, crypto.createHash('sha256').update(phone).digest('hex').slice(0, 16));
+async function startPairingAttempt(phone, requestToken) {
+  const sessionDir = path.join(PAIRING_DIR, crypto.createHash('sha256').update(phone + requestToken).digest('hex').slice(0, 24));
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
   const { version } = await fetchLatestBaileysVersion();
 
@@ -83,8 +88,22 @@ async function startPairingAttempt(phone, attemptNo) {
     shouldSyncHistoryMessage: () => false,
   });
 
-  const session = { sock, ready: false, code: null, linked: false, sessionDir, saveCreds };
-  sock.ev.on('creds.update', saveCreds);
+  const session = {
+    sock,
+    ready: false,
+    code: null,
+    linked: false,
+    sessionDir,
+    requestToken,
+    expiresAt: Date.now() + SESSION_TTL_MS,
+    timers: new Set(),
+    credsSaveChain: Promise.resolve(),
+  };
+  const queueCredsSave = () => {
+    session.credsSaveChain = session.credsSaveChain.catch(() => {}).then(() => saveCreds());
+    return session.credsSaveChain;
+  };
+  sock.ev.on('creds.update', () => { queueCredsSave().catch(() => {}); });
   activeSockets.set(phone, session);
 
   return new Promise((resolve, reject) => {
@@ -96,6 +115,7 @@ async function startPairingAttempt(phone, attemptNo) {
     const timer = setTimeout(() => {
       if (!session.ready) finishErr('timeout waiting for code â€” WhatsApp may be rate-limiting this number; wait 10 min and try again');
     }, 30000);
+    session.timers.add(timer);
 
     sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect } = update;
@@ -104,7 +124,7 @@ async function startPairingAttempt(phone, attemptNo) {
         // request the code once per socket, after a short settle
         if (!codeAsked) {
           codeAsked = true;
-          setTimeout(async () => {
+          const codeTimer = setTimeout(async () => {
             try {
               const code = await sock.requestPairingCode(phone);
               session.code = code;
@@ -116,17 +136,22 @@ async function startPairingAttempt(phone, attemptNo) {
               finishErr('code request failed: ' + (e?.message || 'unknown'));
             }
           }, 4000);
+          session.timers.add(codeTimer);
         }
       }
 
       if (connection === 'open') {
-        session.linked = true;
         try {
+          await queueCredsSave();
           const credsPath = path.join(sessionDir, 'creds.json');
-          if (fs.existsSync(credsPath)) {
-            session.sessionString = 'CELESTIA:~' + fs.readFileSync(credsPath).toString('base64');
-          }
-        } catch {}
+          const credsBuffer = await fs.promises.readFile(credsPath);
+          const savedCreds = JSON.parse(credsBuffer.toString('utf8'));
+          if (!state.creds.registered || !savedCreds?.registered) throw new Error('credentials are not registered');
+          session.sessionString = 'CELESTIA:~' + credsBuffer.toString('base64');
+          session.linked = true;
+        } catch (e) {
+          session.error = 'linked credentials could not be validated: ' + (e?.message || 'unknown');
+        }
       }
 
       if (connection === 'close') {
@@ -148,6 +173,17 @@ async function startPairingAttempt(phone, attemptNo) {
 
 const RATE = new Map();
 app.use(express.json());
+app.get('/', (req, res, next) => {
+  fs.readFile(path.join(__dirname, 'public', 'index.html'), 'utf8', (error, html) => {
+    if (error) return next(error);
+    const tokenAwareHtml = html
+      .replace('pollLink(phone);', 'pollLink(phone, d.requestToken);')
+      .replace('async function pollLink(phone) {', 'async function pollLink(phone, requestToken) {')
+      .replace('body: JSON.stringify({ phone })\n    });\n    const d = await r.json();\n    if (d.linked', 'body: JSON.stringify({ phone, requestToken })\n    });\n    const d = await r.json();\n    if (d.linked')
+      .replace('setTimeout(() => pollLink(phone), 3000);', 'setTimeout(() => pollLink(phone, requestToken), 3000);');
+    res.type('html').send(tokenAwareHtml);
+  });
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 function rateLimited(ip) {
@@ -155,6 +191,32 @@ function rateLimited(ip) {
   const arr = (RATE.get(ip) || []).filter(t => now - t < 60 * 60 * 1000);
   RATE.set(ip, arr);
   return arr.length >= 5; // 5 attempts/hour
+}
+
+function readCookie(req, name) {
+  const prefix = name + '=';
+  const item = String(req.headers.cookie || '').split(';').map(value => value.trim()).find(value => value.startsWith(prefix));
+  return item ? decodeURIComponent(item.slice(prefix.length)) : '';
+}
+
+function tokenMatches(actual, expected) {
+  const actualBuffer = Buffer.from(String(actual));
+  const expectedBuffer = Buffer.from(String(expected));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+async function replacePairingSession(phone, requestToken) {
+  const previous = pairingLocks.get(phone) || Promise.resolve();
+  const operation = previous.catch(() => {}).then(async () => {
+    await disposeSession(phone, activeSockets.get(phone));
+    return startPairingSession(phone, requestToken);
+  });
+  pairingLocks.set(phone, operation);
+  try {
+    return await operation;
+  } finally {
+    if (pairingLocks.get(phone) === operation) pairingLocks.delete(phone);
+  }
 }
 
 app.post('/api/pair', async (req, res) => {
@@ -169,8 +231,10 @@ app.post('/api/pair', async (req, res) => {
   RATE.get(ip).push(Date.now());
 
   try {
-    const session = await startPairingSession(phone);
-    res.json({ ok: true, code: session.code });
+    const requestToken = crypto.randomBytes(32).toString('base64url');
+    const session = await replacePairingSession(phone, requestToken);
+    res.setHeader('Set-Cookie', `pairing_request=${encodeURIComponent(requestToken)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1000}`);
+    res.json({ ok: true, code: session.code, requestToken });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -180,12 +244,33 @@ app.post('/api/status', async (req, res) => {
   const phone = String(req.body.phone || '').replace(/\D/g, '');
   const session = activeSockets.get(phone);
   if (!session) return res.status(404).json({ error: 'no session â€” start again' });
+  const requestToken = req.body.requestToken || readCookie(req, 'pairing_request');
+  if (!tokenMatches(requestToken, session.requestToken)) return res.status(403).json({ error: 'invalid request token' });
+  if (Date.now() >= session.expiresAt) {
+    await disposeSession(phone, session);
+    return res.status(410).json({ error: 'session expired â€” start again' });
+  }
+  if (session.error) {
+    const message = session.error;
+    await disposeSession(phone, session);
+    return res.status(502).json({ error: message });
+  }
   if (session.linked && session.sessionString) {
-    // cleanup session dir after handing string
-    return res.json({ ok: true, linked: true, sessionString: session.sessionString });
+    const sessionString = session.sessionString;
+    await disposeSession(phone, session);
+    res.setHeader('Set-Cookie', 'pairing_request=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
+    return res.json({ ok: true, linked: true, sessionString });
   }
   res.json({ ok: true, linked: false });
 });
+
+const expiryTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [phone, session] of activeSockets) {
+    if (now >= session.expiresAt) disposeSession(phone, session).catch(() => {});
+  }
+}, 30000);
+expiryTimer.unref();
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'celestia-pairing' }));
 

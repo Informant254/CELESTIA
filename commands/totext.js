@@ -8,10 +8,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// Shared/public key from the original snippet — kept as a fallback, but set
-// GOOGLE_STT_KEY in your .env with your own if this one gets rate-limited
-// or revoked (it's reused across many public bots).
-const GOOGLE_KEY = process.env.GOOGLE_STT_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw';
+const GOOGLE_KEY = process.env.GOOGLE_STT_KEY;
 
 module.exports = {
   name: 'totext',
@@ -19,6 +16,15 @@ module.exports = {
   description: 'Convert a quoted voice/audio message to text. Reply to a voice note with .totext',
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
+
+    if (!GOOGLE_KEY) {
+      return sock.sendMessage(
+        jid,
+        { text: '⚠️ Audio transcription is unavailable because GOOGLE_STT_KEY is not configured.' },
+        { quoted: msg }
+      );
+    }
+
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
     const quoted = ctx?.quotedMessage;
 

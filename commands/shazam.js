@@ -11,8 +11,8 @@ const ffmpegPath = process.env.FFMPEG_PATH || require('ffmpeg-static') || 'ffmpe
 const execFileAsync = promisify(execFile);
 
 const ACR_HOST = process.env.ACR_HOST || 'identify-eu-west-1.acrcloud.com';
-const ACR_ACCESS_KEY = process.env.ACR_ACCESS_KEY || '678eed85d47920b4737382eff9adfe46';
-const ACR_ACCESS_SECRET = process.env.ACR_ACCESS_SECRET || 'l70euTw5vrswSmnKk4T0EglrtPfpUhSzVi04Evea';
+const ACR_ACCESS_KEY = process.env.ACR_ACCESS_KEY;
+const ACR_ACCESS_SECRET = process.env.ACR_ACCESS_SECRET;
 function extractMediaTarget(msg) {
   const m = msg.message;
   if (m?.audioMessage) return { type: 'audio', message: m, key: msg.key };
@@ -94,6 +94,15 @@ module.exports = {
 
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
+
+    if (!ACR_ACCESS_KEY || !ACR_ACCESS_SECRET) {
+      return sock.sendMessage(
+        jid,
+        { text: '⚠️ Shazam is unavailable because ACRCloud credentials are not configured.' },
+        { quoted: msg }
+      );
+    }
+
     const target = extractMediaTarget(msg);
 
     if (!target) {
@@ -182,8 +191,8 @@ module.exports = {
         { quoted: msg }
       );
     } catch (error) {
-      console.error('[SHAZAM ERROR]', error);
-      await sock.sendMessage(jid, { text: `⚠️ ${error.message}` }, { quoted: msg });
+      console.error('[SHAZAM ERROR] Song identification or download failed.');
+      await sock.sendMessage(jid, { text: '⚠️ Shazam failed to identify or download that track.' }, { quoted: msg });
     } finally {
       [tmpInput, tmpAudio].forEach((f) => {
         if (f && fs.existsSync(f)) {

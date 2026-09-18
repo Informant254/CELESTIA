@@ -1,6 +1,5 @@
 const { cpp } = require('compile-run');
 const { isOwner } = require('../utils/isOwner');
-const { isSudo } = require('../utils/isSudo');
 
 module.exports = {
   name: 'compile-c++',
@@ -8,7 +7,7 @@ module.exports = {
   description: 'Compile and run C++ code. Usage: .run-c++ <code> (or reply to a message containing code)',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
-    if (!isOwner(msg) && !isSudo(msg)) {
+    if (!isOwner(msg)) {
       return sock.sendMessage(jid, { text: '*Command meant for the owner*' }, { quoted: msg });
     }
 

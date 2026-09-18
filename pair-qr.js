@@ -21,6 +21,7 @@ const LINKED_FILE = path.join(__dirname, 'pair-linked.txt');
 const QR_PNG = path.join(__dirname, 'pair-qr.png');
 
 (async () => {
+  try { fs.unlinkSync(LINKED_FILE); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   const { state, saveCreds } = await useMultiFileAuthState(path.join(__dirname, 'auth_info_baileys'));
   const { version } = await fetchLatestBaileysVersion();
 

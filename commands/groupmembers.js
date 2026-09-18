@@ -1,4 +1,5 @@
 const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
+const { isOwner } = require('../utils/isOwner');
 const groupSettingsStore = require('../utils/groupSettingsStore');
 
 function parseDuration(input) {
@@ -25,16 +26,16 @@ function parseDuration(input) {
   return { ms, label: `${value} ${unitLabel}` };
 }
 
-async function checkAdminPerms(sock, msg) {
+async function checkAdminPerms(sock, msg, requireBotAdmin = false) {
   const jid = msg.key.remoteJid;
   const metadata = await sock.groupMetadata(jid);
   const senderJid = msg.key.participant || msg.key.remoteJid;
 
-  if (!isSenderAdmin(metadata, senderJid)) {
+  if (!isOwner(msg) && !isSenderAdmin(metadata, senderJid)) {
     await sock.sendMessage(jid, { text: '❌ Only group admins can use this command.' }, { quoted: msg });
     return false;
   }
-  if (!isBotAdmin(sock, metadata)) {
+  if (requireBotAdmin && !isBotAdmin(sock, metadata)) {
     await sock.sendMessage(jid, { text: '❌ I need to be a group admin to change group settings.' }, { quoted: msg });
     return false;
   }
@@ -52,6 +53,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
+      if (!(await checkAdminPerms(sock, msg, true))) return;
+
       try {
         const code = await sock.groupInviteCode(jid);
         await sock.sendMessage(jid, {
@@ -68,6 +71,10 @@ module.exports = [
   description: 'Make the bot join a group via invite link. Usage: .join <link> or reply .join',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
+
+    if (!isOwner(msg)) {
+      return sock.sendMessage(jid, { text: '❌ Only the owner can use this command.' }, { quoted: msg });
+    }
 
     let link = args[0];
 
@@ -123,6 +130,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
+      if (!(await checkAdminPerms(sock, msg))) return;
+
       const mode = args[0]?.toLowerCase();
       if (mode !== 'on' && mode !== 'off') {
         return sock.sendMessage(jid, { text: '❌ Usage: .welcome on  or  .welcome off' }, { quoted: msg });
@@ -141,6 +150,8 @@ module.exports = [
       if (!jid.endsWith('@g.us')) {
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
+
+      if (!(await checkAdminPerms(sock, msg))) return;
 
       const mode = args[0]?.toLowerCase();
       if (mode !== 'on' && mode !== 'off') {
@@ -161,6 +172,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
+      if (!(await checkAdminPerms(sock, msg, true))) return;
+
       try {
         await sock.groupSettingUpdate(jid, 'not_announcement');
         await sock.sendMessage(jid, { text: '🔓 Group unmuted. Everyone can send messages now.' }, { quoted: msg });
@@ -179,6 +192,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
+      if (!(await checkAdminPerms(sock, msg, true))) return;
+
       const duration = parseDuration(args[0]);
       if (!duration) {
         return sock.sendMessage(
@@ -187,8 +202,6 @@ module.exports = [
           { quoted: msg }
         );
       }
-
-      if (!(await checkAdminPerms(sock, msg))) return;
 
       await sock.sendMessage(jid, { text: `⏳ Group will be muted in ${duration.label}.` }, { quoted: msg });
 
@@ -212,6 +225,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
 
+      if (!(await checkAdminPerms(sock, msg, true))) return;
+
       const duration = parseDuration(args[0]);
       if (!duration) {
         return sock.sendMessage(
@@ -220,8 +235,6 @@ module.exports = [
           { quoted: msg }
         );
       }
-
-      if (!(await checkAdminPerms(sock, msg))) return;
 
       await sock.sendMessage(jid, { text: `⏳ Group will be unmuted in ${duration.label}.` }, { quoted: msg });
 

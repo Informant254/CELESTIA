@@ -23,7 +23,7 @@ const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 
 module.exports = {
   name: 'ghost',
-  aliases: ['whisper', 'anon', 'anonymous'],
+  aliases: ['anon', 'anonymous'],
   description: '👻 Ghost Whisper — she delivers your message; you stay invisible',
   async execute(sock, msg, args, commands, reply) {
     if (!isOwner(msg)) return reply('👻 _Only the one she stays for can send ghosts._');

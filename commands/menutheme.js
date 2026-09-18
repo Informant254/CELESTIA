@@ -12,6 +12,7 @@
  *   .menutheme status          → current face
  */
 const settingsStore = require('../utils/settingsStore');
+const { isOwner } = require('../utils/isOwner');
 
 const THEMES = [
   { key: 'boxed', icon: '❏', name: 'IRONBOX', desc: 'banner + full menu in one message · classic quote style' },
@@ -28,6 +29,10 @@ module.exports = {
   description: '🎨 Choose her menu face — 6 appearances + native tappable mode',
   execute: async (sock, msg, args, commands, reply) => {
     const jid = msg.key.remoteJid;
+    if (!isOwner(msg)) {
+      return sock.sendMessage(jid, { text: '❌ Only the owner can use this command.' }, { quoted: msg });
+    }
+
     const prefix = settingsStore.get('prefix', '.') || '.';
     const sub = (args[0] || '').toLowerCase();
 

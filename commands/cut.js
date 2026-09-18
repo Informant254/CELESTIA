@@ -1,7 +1,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { ffmpegPath } = require('../download/engines');
 
 module.exports = {
   name: 'cut',
@@ -21,6 +23,9 @@ module.exports = {
     if (!start || !duration) {
       return sock.sendMessage(jid, { text: '❌ Usage: .cut <start> <duration>\nExample: .cut 00:00:10 15' }, { quoted: msg });
     }
+    if (!/^(?:\d{1,2}:){0,2}\d+(?:\.\d+)?$/.test(start) || !/^\d+(?:\.\d+)?$/.test(duration)) {
+      return sock.sendMessage(jid, { text: '❌ Start and duration must be valid times, e.g. .cut 00:00:10 15' }, { quoted: msg });
+    }
 
     const type = quoted.videoMessage ? 'video' : quoted.audioMessage ? 'audio' : null;
     if (!type) {
@@ -35,13 +40,14 @@ module.exports = {
     const outputPath = path.join(tmpDir, `cut_out_${Date.now()}.${ext}`);
 
     try {
-      const media = await sock.downloadMediaMessage({
-        message: quoted,
-        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant }
-      });
+      const media = await downloadMediaMessage(
+        { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } },
+        'buffer',
+        {}
+      );
       fs.writeFileSync(inputPath, media);
 
-      execSync(`ffmpeg -y -i "${inputPath}" -ss ${start} -t ${duration} -c copy "${outputPath}"`);
+      execFileSync(ffmpegPath(), ['-y', '-i', inputPath, '-ss', start, '-t', duration, '-c', 'copy', outputPath]);
 
       const outBuffer = fs.readFileSync(outputPath);
       await sock.sendMessage(jid, {

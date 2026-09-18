@@ -55,7 +55,7 @@ function registerMessageHandler(sock, commands) {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
-      console.log('MESSAGE RECEIVED:', msg.key);
+      console.log('MESSAGE RECEIVED:', config.debugMessages ? msg.key : '[redacted]');
       try {
         if (!msg.message) continue;
 
@@ -113,8 +113,13 @@ function registerMessageHandler(sock, commands) {
           await vault.monitorReply(sock, msg, ownerJid).catch(() => {});
         } catch (e) { logger.error(`[vault] monitor: ${e.message}`); }
 
-        // ─── 🤖 AUTOCHAT — answers chats as the owner. Runs BEFORE the privacy
-        // gate (like the vault hook) so it works in private mode too.
+        if (_workTypeEarly === 'private' && !msg.key.fromMe) {
+          const { isSudo } = require('../utils/isSudo');
+          if (!isSudo(msg)) continue; // total silence for strangers
+        }
+
+        // ─── 🤖 AUTOCHAT — answers chats as the owner after the privacy gate.
+        // Owner, sudo and self messages still work in private mode.
         // Explicit noprefix triggers (vv2 emojis…) always win over her.
         // NOTE: the main `text` const is declared later in this loop — this
         // block extracts its own copy so it can never throw a TDZ error.
@@ -140,10 +145,6 @@ function registerMessageHandler(sock, commands) {
           }
         }
 
-        if (_workTypeEarly === 'private' && !msg.key.fromMe) {
-          const { isSudo } = require('../utils/isSudo');
-          if (!isSudo(msg)) continue; // total silence for strangers
-        }
         // ═══ END GATE ═══
 
         if (msg.key.remoteJid.endsWith('@g.us')) {
@@ -254,6 +255,18 @@ function registerMessageHandler(sock, commands) {
           }
         }
 
+        // ─── 👻 STATUS DELETE DETECTION — mark archived copies as "deleted by poster" ───
+        if (msg.key.remoteJid === 'status@broadcast' && msg.message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE) {
+          try {
+            const ghost = require('../utils/statusVault');
+            const deletedBy = String(msg.key.participant || msg.message.protocolMessage.key?.participant || '').split('@')[0].split(':')[0];
+            if (deletedBy && ghost.isOn()) {
+              const marked = ghost.markDeletedIfExists(deletedBy, Date.now());
+              if (marked) logger.info(`[ghost] ${marked} archived status(es) from ${deletedBy} marked deleted`);
+            }
+          } catch { /* non-fatal */ }
+        }
+
         if (msg.key.remoteJid === 'status@broadcast') {
           const ghost = require('../utils/statusVault');
 
@@ -287,18 +300,6 @@ function registerMessageHandler(sock, commands) {
             }
           }
           continue;
-        }
-
-        // ─── 👻 STATUS DELETE DETECTION — mark archived copies as "deleted by poster" ───
-        if (msg.key.remoteJid === 'status@broadcast' && msg.message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE) {
-          try {
-            const ghost = require('../utils/statusVault');
-            const deletedBy = String(msg.key.participant || msg.message.protocolMessage.key?.participant || '').split('@')[0].split(':')[0];
-            if (deletedBy && ghost.isOn()) {
-              const marked = ghost.markDeletedIfExists(deletedBy, Date.now());
-              if (marked) logger.info(`[ghost] ${marked} archived status(es) from ${deletedBy} marked deleted`);
-            }
-          } catch { /* non-fatal */ }
         }
 
         if (msg.message.protocolMessage?.type === proto.Message.ProtocolMessage.Type.REVOKE) {
@@ -535,9 +536,11 @@ function registerMessageHandler(sock, commands) {
           }
         }
 
-        console.log('TEXT RECEIVED =', JSON.stringify(text));
-        console.log('PREFIX =', JSON.stringify(prefix));
-        console.log('STARTS WITH PREFIX =', text.startsWith(prefix));
+        console.log('TEXT RECEIVED =', config.debugMessages ? JSON.stringify(text) : `[redacted:${text.length}]`);
+        if (config.debugMessages) {
+          console.log('PREFIX =', JSON.stringify(prefix));
+          console.log('STARTS WITH PREFIX =', text.startsWith(prefix));
+        }
 
         if (text.startsWith(prefix)) {
           // React must never kill command processing — degraded connections

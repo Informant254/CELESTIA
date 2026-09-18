@@ -2,7 +2,7 @@ const wolfTech = require('../utils/wolfTech');
 
 module.exports = {
   name: 'wolftech',
-  aliases: ['howl', 'wolf', 'wt', 'origin', 'lineage', 'inspired'],
+  aliases: ['howl', 'wt', 'origin', 'lineage', 'inspired'],
   description: '🐺 WolfTech tribute — the origin howl behind CELESTIA',
   execute: async (sock, msg, args, commands, reply) => {
     // Sub-command: --lore or just default

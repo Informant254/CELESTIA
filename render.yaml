@@ -4,13 +4,15 @@ services:
   - type: web
     name: celestia
     runtime: node
-    buildCommand: npm install --production --ignore-scripts
+    buildCommand: npm install --production
     startCommand: node index.js
     healthCheckPath: /health
     envVars:
       - key: SESSION_ID
         sync: false
       - key: OWNER_NUMBER
+        sync: false
+      - key: QR_ACCESS_TOKEN
         sync: false
       - key: BOT_NAME
         value: CELESTIA
@@ -30,9 +32,6 @@ services:
   - type: web
     name: celestia-pairing
     runtime: node
-    buildCommand: npm install --production --ignore-scripts
+    buildCommand: npm install --production
     startCommand: node pairing-site.js
     healthCheckPath: /health
-    envVars:
-      - key: PAIRING_PORT
-        sync: false

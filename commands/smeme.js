@@ -1,13 +1,15 @@
-const Jimp = require('jimp');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { Jimp, JimpMime, loadFont, measureText } = require('jimp');
+const { SANS_32_WHITE } = require('jimp/fonts');
 // wa-sticker-formatter loads lazily inside execute() so a failed
 // install on the host can never crash the whole bot at boot.
 
 async function drawCaption(image, text, font, y) {
   if (!text) return;
   const width = image.bitmap.width;
-  const textWidth = Jimp.measureText(font, text.toUpperCase());
+  const textWidth = measureText(font, text.toUpperCase());
   const x = Math.max((width - textWidth) / 2, 4);
-  image.print(font, x, y, text.toUpperCase());
+  image.print({ font, x, y, text: text.toUpperCase() });
 }
 
 module.exports = {
@@ -36,20 +38,21 @@ module.exports = {
     }
 
     try {
-      const media = await sock.downloadMediaMessage({
-        message: quoted,
-        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant },
-      });
+      const media = await downloadMediaMessage(
+        { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } },
+        'buffer',
+        {}
+      );
 
       const image = await Jimp.read(media);
-      image.resize(512, Jimp.AUTO);
+      image.resize({ w: 512 });
 
-      const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
+      const font = await loadFont(SANS_32_WHITE);
 
       if (topText) await drawCaption(image, topText, font, 8);
       if (bottomText) await drawCaption(image, bottomText, font, image.bitmap.height - 48);
 
-      const buffer = await image.getBufferAsync(Jimp.MIME_PNG);
+      const buffer = await image.getBuffer(JimpMime.png);
 
       const sticker = new Sticker(buffer, {
         pack: 'CELESTIA',

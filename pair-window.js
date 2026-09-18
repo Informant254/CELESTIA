@@ -17,7 +17,7 @@ const {
   DisconnectReason,
 } = require('@whiskeysockets/baileys');
 
-const PHONE = process.env.OWNER_NUMBER || '254118266549';
+const PHONE = String(process.env.OWNER_NUMBER || '').replace(/\D/g, '');
 const AUTH = path.join(__dirname, 'auth_info_baileys');
 const LINKED = path.join(__dirname, 'pair-linked.txt');
 
@@ -25,6 +25,7 @@ const bigLine = (c) => console.log('██████████████�
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function start() {
+  if (!PHONE) throw new Error('OWNER_NUMBER is required for pairing-code setup.');
   if (fs.existsSync(LINKED)) fs.unlinkSync(LINKED);
   const { state, saveCreds } = await useMultiFileAuthState(AUTH);
   const { version } = await fetchLatestBaileysVersion();

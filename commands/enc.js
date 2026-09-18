@@ -19,8 +19,17 @@ module.exports = {
       return sock.sendMessage(jid, { text: 'Quote/Tag a valid JavaScript code to encrypt!' }, { quoted: msg });
     }
 
+    let Obf;
     try {
-      const Obf = require('javascript-obfuscator');
+      Obf = require('javascript-obfuscator');
+    } catch (err) {
+      console.error('[ENC ERROR]', err.message);
+      return sock.sendMessage(jid, {
+        text: '❌ Obfuscation dependency is unavailable. Install dependencies with `npm install` and try again.'
+      }, { quoted: msg });
+    }
+
+    try {
       const result = Obf.obfuscate(quotedText, {
         compact: true,
         controlFlowFlattening: true,

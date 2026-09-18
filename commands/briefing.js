@@ -24,7 +24,7 @@ const { isOwner } = require('../utils/isOwner');
 
 module.exports = {
   name: 'briefing',
-  aliases: ['herald', 'morning', 'daily'],
+  aliases: ['herald'],
   description: '📰 The Herald — your morning briefing: weather, prayers, markets, trending, habits',
   execute: async (sock, msg, args, commands, reply) => {
     const ownerJid = config.ownerNumber + '@s.whatsapp.net';

@@ -4,10 +4,29 @@ const logger = require('./logger');
 
 function loadCommands(commandsPath) {
   const commands = new Map();
+  const registrations = new Map();
 
   const commandFiles = fs
     .readdirSync(commandsPath)
-    .filter((file) => file.endsWith('.js'));
+    .filter((file) => file.endsWith('.js'))
+    .sort();
+
+  function register(key, cmd, file, type) {
+    const normalizedKey = key.trim().toLowerCase();
+    const existing = registrations.get(normalizedKey);
+
+    if (existing) {
+      logger.error(
+        `[commandLoader] Collision for "${normalizedKey}": ${type} from "${file}" (${cmd.name}) ` +
+        `conflicts with ${existing.type} from "${existing.file}" (${existing.command.name}); skipping.`,
+      );
+      return false;
+    }
+
+    commands.set(normalizedKey, cmd);
+    registrations.set(normalizedKey, { command: cmd, file, type });
+    return true;
+  }
 
   for (const file of commandFiles) {
     const filePath = path.join(commandsPath, file);
@@ -18,23 +37,20 @@ function loadCommands(commandsPath) {
       const commandList = Array.isArray(command) ? command : [command];
 
       for (const cmd of commandList) {
-        if (!cmd || !cmd.name || typeof cmd.execute !== 'function') {
+        if (!cmd || typeof cmd.name !== 'string' || !cmd.name.trim() || typeof cmd.execute !== 'function') {
           logger.warn(`[commandLoader] Skipping entry in "${file}" — must have { name, execute }.`);
           continue;
         }
-        commands.set(cmd.name.toLowerCase(), cmd);
-        logger.info(`[commandLoader] Loaded command: ${cmd.name}`);
+        if (register(cmd.name, cmd, file, 'primary command')) {
+          logger.info(`[commandLoader] Loaded command: ${cmd.name}`);
+        }
 
         if (Array.isArray(cmd.aliases)) {
           for (const alias of cmd.aliases) {
             if (typeof alias !== 'string' || !alias.trim()) continue;
-            const key = alias.toLowerCase();
-            if (commands.has(key)) {
-              logger.warn(`[commandLoader] Alias "${key}" from "${file}" conflicts with an existing command/alias — skipping.`);
-              continue;
+            if (register(alias, cmd, file, 'alias')) {
+              logger.info(`[commandLoader] Registered alias: ${alias} -> ${cmd.name}`);
             }
-            commands.set(key, cmd);
-            logger.info(`[commandLoader] Registered alias: ${alias} -> ${cmd.name}`);
           }
         }
       }

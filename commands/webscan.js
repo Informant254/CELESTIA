@@ -1,21 +1,43 @@
 const https = require('https');
 const http = require('http');
+const dns = require('dns').promises;
+const net = require('net');
 const { URL } = require('url');
+const { isPublicIp } = require('../utils/downloader');
 
-function scanSite(targetUrl) {
+async function scanSite(targetUrl) {
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    throw new Error('Invalid URL');
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new Error('Only HTTP and HTTPS URLs are supported');
+  }
+  if (parsed.username || parsed.password) throw new Error('URLs with credentials are not supported');
+
+  const host = parsed.hostname.replace(/^\[|\]$/g, '');
+  const addresses = net.isIP(host) ? [{ address: host, family: net.isIP(host) }] : await dns.lookup(host, { all: true, verbatim: true });
+  if (!addresses.length || addresses.some(({ address }) => !isPublicIp(address))) {
+    throw new Error('Private or reserved network addresses are not allowed');
+  }
+  const target = addresses[0];
+
   return new Promise((resolve, reject) => {
-    let parsed;
-    try {
-      parsed = new URL(targetUrl);
-    } catch {
-      return reject(new Error('Invalid URL'));
-    }
-
     const client = parsed.protocol === 'https:' ? https : http;
     const start = Date.now();
 
     const req = client.request(
-      { hostname: parsed.hostname, path: parsed.pathname || '/', method: 'GET', timeout: 10000 },
+      {
+        hostname: parsed.hostname,
+        port: parsed.port,
+        path: `${parsed.pathname || '/'}${parsed.search}`,
+        method: 'GET',
+        timeout: 10000,
+        lookup: (hostname, options, callback) => callback(null, target.address, target.family),
+      },
       (res) => {
         const responseTime = Date.now() - start;
         res.resume(); // drain body, we only need headers/status
@@ -52,7 +74,7 @@ module.exports = {
       }, { quoted: msg });
     }
 
-    if (!url.startsWith('http')) {
+    if (!/^[a-z][a-z\d+.-]*:/i.test(url)) {
       url = 'https://' + url;
     }
 

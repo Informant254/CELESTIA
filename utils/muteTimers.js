@@ -3,6 +3,9 @@ const fs = require('fs');
 
 // Persistent store for auto-unmute timers: { [groupJid]: unmuteAtMs }
 const TIMERS_FILE = path.join(__dirname, '..', 'data', 'muteTimers.json');
+const MAX_DELAY = 2 ** 31 - 1;
+
+try { fs.mkdirSync(path.dirname(TIMERS_FILE), { recursive: true }); } catch { /* handled by saveTimers */ }
 
 function loadTimers() {
   try {
@@ -12,10 +15,13 @@ function loadTimers() {
 }
 
 function saveTimers(t) {
-  try { fs.writeFileSync(TIMERS_FILE, JSON.stringify(t, null, 2)); } catch { /* best effort */ }
+  try {
+    fs.mkdirSync(path.dirname(TIMERS_FILE), { recursive: true });
+    fs.writeFileSync(TIMERS_FILE, JSON.stringify(t, null, 2));
+  } catch { /* best effort */ }
 }
 
-const RUNNING = new Set(); // groupJids with an active in-memory timer this boot
+const RUNNING = new Map(); // groupJid -> active timeout handle
 
 /**
  * Parses "90", "90s", "5m", "2h", "1d", "1h30m", "2d 12h" into milliseconds.
@@ -61,54 +67,65 @@ function formatDuration(ms) {
   return parts.join(' ');
 }
 
-function unmarshal(sock, jid) {
-  // unmute now + clean up bookkeeping + announce
-  const timers = loadTimers();
-  delete timers[jid];
-  saveTimers(timers);
+async function unmarshal(sock, jid, expectedAt) {
   RUNNING.delete(jid);
-  sock.groupSettingUpdate(jid, 'not_announcement')
-    .then(() => sock.sendMessage(jid, { text: '⏰ *Mute expired* — group unmuted automatically. Welcome back.' }).catch(() => {}))
-    .catch(() => { // couldn't unmute (lost admin, etc) - drop the timer so it doesn't loop forever
-      sock.sendMessage(jid, { text: '⚠️ Timer ended but I could not unmute — am I still admin?' }).catch(() => {});
-    });
+  try {
+    await sock.groupSettingUpdate(jid, 'not_announcement');
+    const timers = loadTimers();
+    if (timers[jid] === expectedAt) {
+      delete timers[jid];
+      saveTimers(timers);
+    }
+    await sock.sendMessage(jid, { text: '⏰ *Mute expired* — group unmuted automatically. Welcome back.' }).catch(() => {});
+  } catch {
+    // Keep the persisted record so a reconnect/restart can retry with a fresh socket.
+    await sock.sendMessage(jid, { text: '⚠️ Timer ended but I could not unmute — am I still admin?' }).catch(() => {});
+  }
+}
+
+function armTimer(sock, jid, at) {
+  const previous = RUNNING.get(jid);
+  if (previous) clearTimeout(previous);
+
+  const remaining = at - Date.now();
+  const delay = Math.max(0, Math.min(remaining, MAX_DELAY));
+  const handle = setTimeout(() => {
+    if (at - Date.now() > 0) armTimer(sock, jid, at);
+    else void unmarshal(sock, jid, at);
+  }, delay);
+  RUNNING.set(jid, handle);
 }
 
 function scheduleUnmute(sock, jid, ms) {
   const timers = loadTimers();
-  timers[jid] = Date.now() + ms;
+  const at = Date.now() + ms;
+  timers[jid] = at;
   saveTimers(timers);
+  armTimer(sock, jid, at);
+}
 
-  if (RUNNING.has(jid)) return; // a live timer already covers this group this boot
-  RUNNING.add(jid);
-  const fire = () => {
-    const t = loadTimers();
-    const at = t[jid];
-    if (!at) { RUNNING.delete(jid); return; }
-    const wait = at - Date.now();
-    if (wait <= 0) { unmarshal(sock, jid); return; }
-    setTimeout(fire, wait);
-  };
-  fire();
+function cancelUnmute(jid) {
+  const handle = RUNNING.get(jid);
+  if (handle) clearTimeout(handle);
+  RUNNING.delete(jid);
+
+  const timers = loadTimers();
+  if (jid in timers) {
+    delete timers[jid];
+    saveTimers(timers);
+  }
 }
 
 /** Called once at boot from index.js: resume any timers that survived a restart. */
 function resumeAll(sock) {
+  for (const handle of RUNNING.values()) clearTimeout(handle);
+  RUNNING.clear();
+
   const timers = loadTimers();
-  const now = Date.now();
-  let due = 0;
-  for (const jid of Object.keys(timers)) {
-    const at = timers[jid];
-    if (!at || at <= now) { due++; continue; } // fires immediately below
-    scheduleUnmute(sock, jid, at - now);
+  for (const [jid, at] of Object.entries(timers)) {
+    if (Number.isFinite(at) && at > 0) armTimer(sock, jid, at);
   }
-  // expired while offline -> unmute right away
-  if (due) {
-    const stale = Object.keys(timers).filter(jid => !timers[jid] || timers[jid] <= now);
-    for (const jid of stale) unmarshal(sock, jid);
-  }
-  const active = Object.keys(loadTimers()).length;
-  return active;
+  return RUNNING.size;
 }
 
-module.exports = { parseDuration, formatDuration, scheduleUnmute, resumeAll };
+module.exports = { parseDuration, formatDuration, scheduleUnmute, cancelUnmute, resumeAll };

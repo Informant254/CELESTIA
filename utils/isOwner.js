@@ -56,7 +56,7 @@ function isOwner(msg) {
 
   const candidates = collectCandidates(msg);
 
-  // owner phone number (e.g. 254118266549)
+  // owner phone number (digits only, including country code)
   const ownerPn = normalize(config.ownerNumber || '');
   if (ownerPn && candidates.includes(ownerPn)) return true;
 

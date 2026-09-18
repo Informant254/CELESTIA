@@ -4,6 +4,13 @@
  * Returns reply text or null (never throws to callers).
  */
 const settingsStore = require('../utils/settingsStore');
+const AUTH_FAILURE = Symbol('auth failure');
+
+function isAuthFailure(error) {
+  const status = error?.status || error?.response?.status;
+  const detail = String(error?.response?.data?.error?.message || error?.message || '');
+  return status === 401 || status === 403 || /\b(?:401|403|unauthorized|forbidden|invalid api key|authentication)\b/i.test(detail);
+}
 
 function geminiKey() {
   return settingsStore.get('gemini_key', null) || process.env.GEMINI_API_KEY || null;
@@ -53,6 +60,7 @@ async function apix(system, user) {
       }
     } catch (e) {
       console.error('[autochat] apix failed', model, String(e.response?.data?.error?.message || e.message).slice(0, 100));
+      if (isAuthFailure(e)) break;
     }
   }
   return null;
@@ -99,6 +107,7 @@ async function openrouter(system, user) {
     } catch (e) {
       const detail = e.response?.data?.error?.message || e.message;
       console.error('[autochat] openrouter failed', model, String(detail).slice(0, 100));
+      if (isAuthFailure(e)) break;
     }
   }
   return null;
@@ -107,20 +116,23 @@ async function openrouter(system, user) {
 async function gemini(prompt) {
   const key = geminiKey();
   if (!key) return null;
+  let timer;
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(key);
     const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
     const result = await Promise.race([
       model.generateContent(prompt),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('gemini timeout')), 60000)),
+      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('gemini timeout')), 60000); }),
     ]);
     const text = result.response?.text?.();
     if (text && text.trim()) return text.trim();
     return null;
   } catch (e) {
     console.error('[autochat] gemini failed:', String(e.message).slice(0, 120));
-    return null;
+    return isAuthFailure(e) ? AUTH_FAILURE : null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -129,7 +141,7 @@ async function openai(system, user) {
   if (!key) return null;
   try {
     const { default: OpenAI } = require('openai');
-    const oa = new OpenAI({ apiKey: key });
+    const oa = new OpenAI({ apiKey: key, timeout: 60000 });
     const res = await oa.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
@@ -166,6 +178,7 @@ async function complete(system, user) {
     await nap(8000);
     g = await gemini(prompt);
   }
+  if (g === AUTH_FAILURE) g = null;
   if (g) return { text: g, engine: 'gemini' };
   // On-server model: free, always awake, dumber — the safety net.
   try {

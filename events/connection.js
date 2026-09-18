@@ -10,18 +10,19 @@ const { autoJoinGroupOnce } = require('../utils/autoJoin');
  * Registers the connection update listener on the given socket.
  *
  * @param {object} sock - the Baileys socket instance
- * @param {Function} startBot - reference to the bot startup function,
- *                              used to reconnect automatically when needed
+ * @param {object} lifecycle - reconnect/state/shutdown callbacks owned by index.js
  */
-function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
+function registerConnectionHandler(sock, lifecycle, wasAlreadyRegistered) {
   // Live-QR state shared with the health server (declared in index.js)
   globalThis.__lastQR = null;
   globalThis.__lastQRAt = 0;
 
   sock.ev.on('connection.update', async (update) => {
+    if (!lifecycle.isCurrent()) return;
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
+      lifecycle.setState('pairing');
       globalThis.__lastQR = qr;
       globalThis.__lastQRAt = Date.now();
       logger.info('Scan the QR code below with WhatsApp to log in:');
@@ -37,10 +38,12 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
     }
 
     if (connection === 'connecting') {
+      lifecycle.setState('connecting');
       logger.info('Connecting to WhatsApp...');
     }
 
     if (connection === 'open') {
+  lifecycle.setState('open');
   logger.info('âœ… Connected to WhatsApp successfully!');
 
   try {
@@ -116,62 +119,47 @@ function registerConnectionHandler(sock, startBot, wasAlreadyRegistered) {
 
     if (connection === 'close') {
     const statusCode = lastDisconnect?.error?.output?.statusCode;
-
-    // Reconnect circuit breaker: replayed close events (or a tight
-    // die-loop) must never hot-loop startBot and starve the event loop.
-    // Past 5 restarts in 60s, back off 30s before the next attempt.
-    const now = Date.now();
-    globalThis.__restartTimes = (globalThis.__restartTimes || []).filter(t => now - t < 60_000);
-    const storm = globalThis.__restartTimes.length >= 5;
-    const delayedStart = () => {
-      globalThis.__restartTimes.push(Date.now());
-      if (storm) {
-        logger.warn('[reconnect] storm detected (5+ restarts/min) â€” backing off 30s.');
-        setTimeout(() => { try { startBot(); } catch {} }, 30_000);
-      } else {
-        try { startBot(); } catch {}
-      }
-    };
+    lifecycle.setState('closed');
 
     switch (statusCode) {
       case DisconnectReason.badSession:
         logger.error('âŒ Bad session file. Delete the auth folder and restart to re-link.');
-        process.exit(1);
+        lifecycle.shutdown(1, 'bad session');
         break;
 
       case DisconnectReason.loggedOut:
         logger.error('âŒ Device logged out. Delete the auth folder / SESSION_ID and re-scan to re-link.');
-        process.exit(1);
+        lifecycle.shutdown(1, 'logged out');
         break;
 
       case DisconnectReason.connectionReplaced:
         logger.error('âŒ Connection replaced â€” another session was opened elsewhere. Not auto-reconnecting.');
-        process.exit(1);
+        lifecycle.shutdown(1, 'connection replaced');
         break;
 
       case DisconnectReason.connectionClosed:
         logger.warn('âš ï¸ Connection closed. Reconnecting...');
-        delayedStart();
+        lifecycle.scheduleReconnect();
         break;
 
       case DisconnectReason.connectionLost:
         logger.warn('âš ï¸ Connection lost from server. Reconnecting...');
-        delayedStart();
+        lifecycle.scheduleReconnect();
         break;
 
       case DisconnectReason.restartRequired:
         logger.warn('ðŸ”„ Restart required by WhatsApp. Reconnecting...');
-        delayedStart();
+        lifecycle.scheduleReconnect();
         break;
 
       case DisconnectReason.timedOut:
         logger.warn('âš ï¸ Connection timed out. Reconnecting...');
-        delayedStart();
+        lifecycle.scheduleReconnect();
         break;
 
       default:
         logger.warn(`âš ï¸ Connection closed (reason: ${statusCode || 'unknown'}). Reconnecting...`);
-        delayedStart();
+        lifecycle.scheduleReconnect();
     }
   }
   });

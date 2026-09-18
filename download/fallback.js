@@ -6,7 +6,6 @@
  */
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const cfg = require('./config');
 const ytdlp = require('./ytdlp');
 const ffmpeg = require('./ffmpeg');
@@ -38,13 +37,14 @@ async function validateFile(file, isAudio) {
 
 async function downloadWithFallback({ url, title, quality, isAudio, workDir, onProgress, maxBytes, tag }) {
   const strategies = isAudio ? audioStrategies() : videoStrategies(quality);
+  const byteLimit = maxBytes || (isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES);
   let lastErr = null;
 
   for (const s of strategies) {
     try {
       const r = await ytdlp.attempt({
         url, selector: s.selector, extra: s.extra, audio: isAudio,
-        workDir, onProgress, maxBytes,
+        workDir, onProgress, maxBytes: byteLimit,
       });
       await validateFile(r.file, isAudio);
       logger.download({ tag, strategy: s.name, status: 'success' });
@@ -67,8 +67,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     const r = isAudio
       ? await api.ytAudio(url, title)
       : await api.ytVideo(url, title);
-    const dl = await axios.get(r.url, { responseType: 'arraybuffer', timeout: 120000 });
-    const buf = Buffer.from(dl.data);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
     if (!buf.length) throw new Error('Fallback download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
     fs.writeFileSync(file, buf);

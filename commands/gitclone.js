@@ -13,19 +13,24 @@ module.exports = {
       return await sock.sendMessage(jid, { text: 'Where is the link?' }, { quoted: msg });
     }
 
-    if (!text.includes('github.com')) {
-      return await sock.sendMessage(jid, { text: 'Is that a GitHub repo link?' }, { quoted: msg });
-    }
-
-    const regex = /(?:https|git)(?::\/\/|@)github\.com[\/:]([^\/:]+)\/(.+)/i;
-    const match = text.match(regex);
-
-    if (!match) {
+    let parsed;
+    try {
+      parsed = new URL(text);
+    } catch {
       return await sock.sendMessage(jid, { text: '❌ Could not parse that GitHub link.' }, { quoted: msg });
     }
 
-    const [, user, repoRaw] = match;
-    const repo = repoRaw.replace(/\.git$/, '').replace(/\/$/, '');
+    if (!['http:', 'https:'].includes(parsed.protocol) || !['github.com', 'www.github.com'].includes(parsed.hostname.toLowerCase())) {
+      return await sock.sendMessage(jid, { text: 'Is that a GitHub repo link?' }, { quoted: msg });
+    }
+
+    const parts = parsed.pathname.split('/').filter(Boolean);
+    const user = parts[0];
+    const repo = parts[1]?.replace(/\.git$/i, '');
+    if (!user || !repo) {
+      return await sock.sendMessage(jid, { text: '❌ Could not parse that GitHub link.' }, { quoted: msg });
+    }
+
     const url = `https://api.github.com/repos/${user}/${repo}/zipball`;
 
     try {

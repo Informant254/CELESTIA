@@ -5,17 +5,25 @@ module.exports = {
     const jid = msg.key.remoteJid;
     const text = args.join(' ').trim();
 
+    if (!process.env.LOLHUMAN_API_KEY) {
+      return sock.sendMessage(
+        jid,
+        { text: '⚠️ Animated text stickers are unavailable because LOLHUMAN_API_KEY is not configured.' },
+        { quoted: msg }
+      );
+    }
+
     if (!text) {
       return sock.sendMessage(jid, { text: 'Provide text. E.g: .attp Hello World' }, { quoted: msg });
     }
 
     try {
       await sock.sendMessage(jid, {
-        sticker: { url: `https://api.lolhuman.xyz/api/attp?apikey=cde5404984da80591a2692b6&text=${encodeURIComponent(text)}` }
+        sticker: { url: `https://api.lolhuman.xyz/api/attp?apikey=${encodeURIComponent(process.env.LOLHUMAN_API_KEY)}&text=${encodeURIComponent(text)}` }
       }, { quoted: msg });
-    } catch (err) {
-      console.error('[ATTP ERROR]', err.message);
-      await sock.sendMessage(jid, { text: '❌ Failed to create sticker: ' + err.message }, { quoted: msg });
+    } catch {
+      console.error('[ATTP ERROR] Sticker request failed.');
+      await sock.sendMessage(jid, { text: '❌ Failed to create the animated text sticker.' }, { quoted: msg });
     }
   },
 };

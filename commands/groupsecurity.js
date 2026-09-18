@@ -1,5 +1,18 @@
 const groupSettingsStore = require('../utils/groupSettingsStore');
 const { isOwner } = require('../utils/isOwner');
+const { isSenderAdmin } = require('../utils/isAdmin');
+
+async function checkAdminPerms(sock, msg) {
+  const jid = msg.key.remoteJid;
+  const metadata = await sock.groupMetadata(jid);
+  const senderJid = msg.key.participant || jid;
+
+  if (!isOwner(msg) && !isSenderAdmin(metadata, senderJid)) {
+    await sock.sendMessage(jid, { text: '❌ Only group admins can use this command.' }, { quoted: msg });
+    return false;
+  }
+  return true;
+}
 
 function makeToggleCommand(name, settingKey, label, emoji) {
   return {
@@ -10,6 +23,8 @@ function makeToggleCommand(name, settingKey, label, emoji) {
       if (!jid.endsWith('@g.us')) {
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
+
+      if (!(await checkAdminPerms(sock, msg))) return;
 
       const mode = args[0]?.toLowerCase();
       if (mode !== 'on' && mode !== 'off') {
@@ -35,6 +50,8 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ Is this a group ? This command only works in groups.' }, { quoted: msg });
       }
 
+      if (!(await checkAdminPerms(sock, msg))) return;
+
       const mode = args[0]?.toLowerCase();
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {
         return sock.sendMessage(jid, { text: '❌ Usage: .antigm off / on / kick / warn' }, { quoted: msg });
@@ -54,6 +71,8 @@ module.exports = [
       if (!jid.endsWith('@g.us')) {
         return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
       }
+
+      if (!(await checkAdminPerms(sock, msg))) return;
 
       const mode = args[0]?.toLowerCase();
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {

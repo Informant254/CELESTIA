@@ -1,10 +1,15 @@
 const settingsStore = require('../utils/settingsStore');
+const { isOwner } = require('../utils/isOwner');
 
 module.exports = {
   name: 'autoview',
   description: 'Toggles auto-viewing of statuses (default: on). Usage: .autoview on | off',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
+    if (!isOwner(msg)) {
+      return sock.sendMessage(jid, { text: '❌ Only the owner can use this command.' }, { quoted: msg });
+    }
+
     const mode = (args[0] || '').toLowerCase();
 
     if (mode !== 'on' && mode !== 'off') {

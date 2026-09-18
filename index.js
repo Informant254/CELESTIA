@@ -1,11 +1,102 @@
-﻿globalThis.crypto = require('node:crypto').webcrypto;
+﻿const nodeCrypto = require('node:crypto');
+globalThis.crypto = nodeCrypto.webcrypto;
 require('dotenv').config();
+
+let guardian = null;
+let currentSocket = null;
+let healthServer = null;
+let releaseInstanceLock = () => {};
+let lockAcquired = false;
+let shuttingDown = false;
+let reconnectTimer = null;
+let appLogger = console;
+const runtimeState = {
+  settingsReady: process.env.PAIR_MODE === 'true',
+  connection: 'starting',
+};
+
+function authorizeQr(req, res) {
+  const configured = process.env.QR_ACCESS_TOKEN || '';
+  if (!configured) {
+    res.sendStatus(404);
+    return false;
+  }
+
+  const match = String(req.get('authorization') || '').match(/^Bearer\s+(.+)$/i);
+  const supplied = match?.[1] || (typeof req.query?.token === 'string' ? req.query.token : '');
+  const expectedHash = nodeCrypto.createHash('sha256').update(configured).digest();
+  const suppliedHash = nodeCrypto.createHash('sha256').update(supplied).digest();
+  if (!nodeCrypto.timingSafeEqual(expectedHash, suppliedHash)) {
+    res.status(401).json({ ok: false });
+    return false;
+  }
+
+  res.set('Cache-Control', 'no-store');
+  return true;
+}
+
+function disposeSocket(socket, reason = 'socket replaced') {
+  if (!socket) return;
+  try { socket.ev?.removeAllListeners?.(); } catch {}
+  try { socket.end?.(new Error(reason)); } catch {}
+}
+
+function replaceCurrentSocket(socket) {
+  if (currentSocket && currentSocket !== socket) disposeSocket(currentSocket);
+  currentSocket = socket;
+}
+
+async function shutdown(exitCode = 0, reason = 'shutdown') {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  runtimeState.connection = 'shutting_down';
+  const fallback = setTimeout(() => process.exit(exitCode), 5_000);
+
+  try { appLogger.info?.(`[shutdown] ${reason}`); } catch {}
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  try { guardian?.backupNow(); } catch {}
+
+  const socket = currentSocket;
+  currentSocket = null;
+  disposeSocket(socket, reason);
+
+  if (lockAcquired) {
+    try { releaseInstanceLock(); } catch {}
+    lockAcquired = false;
+  }
+  if (healthServer) {
+    const server = healthServer;
+    healthServer = null;
+    await new Promise((resolve) => {
+      try {
+        server.close(() => resolve());
+        server.closeAllConnections?.();
+      } catch { resolve(); }
+    });
+  }
+
+  clearTimeout(fallback);
+  process.exit(exitCode);
+}
+
+process.once('SIGTERM', () => { void shutdown(0, 'SIGTERM'); });
+process.once('SIGINT', () => { void shutdown(0, 'SIGINT'); });
+process.on('uncaughtException', (error) => {
+  try { appLogger.error?.(`[uncaughtException] ${error.stack || error.message}`); } catch {}
+  void shutdown(1, 'uncaught exception');
+});
+process.on('unhandledRejection', (reason) => {
+  try { appLogger.error?.(`[unhandledRejection] ${reason?.stack || reason}`); } catch {}
+});
 
 // 🛡️ Settings guardian FIRST — restore anything a panel restart wiped,
 // then keep rolling backups so the next kill loses nothing.
 // (utils/settingsGuardian.js — restore fills gaps only, never clobbers.)
 try {
-  const guardian = require('./utils/settingsGuardian');
+  guardian = require('./utils/settingsGuardian');
   guardian.restoreMissing();
   guardian.startGuardian();
 } catch {}
@@ -33,7 +124,7 @@ const {
 //     redeploy, and she boots fully with the session.
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 if (process.env.PAIR_MODE === 'true') {
-  const PAIR_PHONE = process.env.OWNER_NUMBER || '254118266549';
+  const PAIR_PHONE = String(process.env.OWNER_NUMBER || '').replace(/\D/g, '');
   const fsPair = require('fs');
   const AUTH_DIR = path.join(__dirname, 'auth_info_baileys');
 
@@ -48,6 +139,8 @@ if (process.env.PAIR_MODE === 'true') {
   try { QRCode = require('qrcode'); } catch { QRCode = null; }
 
   async function pairLoop() {
+    if (!PAIR_PHONE) throw new Error('OWNER_NUMBER is required when PAIR_MODE=true.');
+    runtimeState.connection = 'pairing';
     pairLog('=== CELESTIA CLOUD PAIRING ===');
     pairLog('Watching for a pairing code for:', PAIR_PHONE);
     pairLog('Enter each code in: WhatsApp > Linked Devices > Link a Device > Link with phone number instead');
@@ -57,7 +150,7 @@ if (process.env.PAIR_MODE === 'true') {
     let linked = false;
     let attempts = 0;
 
-    while (!linked) {
+    while (!linked && !shuttingDown) {
       let sock = null;
       try {
         const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
@@ -73,6 +166,7 @@ if (process.env.PAIR_MODE === 'true') {
           // needs for stable sessions. Allow the first chunk, then cut the flood.
           shouldSyncHistoryMessage: (() => { let budget = 200; return () => (budget-- > 0); })(),
         });
+        replaceCurrentSocket(sock);
 
         linked = await new Promise((resolve) => {
           let settled = false;
@@ -82,7 +176,12 @@ if (process.env.PAIR_MODE === 'true') {
           sock.ev.on('creds.update', saveCreds);
 
           sock.ev.on('connection.update', async ({ connection, qr }) => {
-            if (qr) { lastQR = qr; lastQRAt = Date.now(); }
+            if (qr) {
+              lastQR = qr;
+              lastQRAt = Date.now();
+            }
+            if (connection === 'connecting' || connection === 'connected') runtimeState.connection = 'connecting';
+            if (qr) runtimeState.connection = 'pairing';
             if ((connection === 'connecting' || connection === 'connected') && !codeAsked) {
               codeAsked = true;
               setTimeout(async () => {
@@ -107,6 +206,7 @@ if (process.env.PAIR_MODE === 'true') {
             }
 
             if (connection === 'open') {
+              runtimeState.connection = 'open';
               pairLog('!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
               pairLog('!!!  LINKED SUCCESSFULLY       !!!');
               pairLog('!!!  Session saved in container !!!');
@@ -116,6 +216,7 @@ if (process.env.PAIR_MODE === 'true') {
             }
 
             if (connection === 'close') {
+              runtimeState.connection = 'closed';
               // calm: don't spam. resolve and let outer loop rest.
               setTimeout(() => done(false), 1000);
             }
@@ -125,11 +226,13 @@ if (process.env.PAIR_MODE === 'true') {
           setTimeout(() => done(false), 90000);
         });
       } catch (e) {
+        runtimeState.connection = 'error';
         pairLog('cycle error:', (e?.message || '').slice(0, 80));
       }
 
-      if (!linked) {
-        try { if (sock) sock.end(undefined); } catch {}
+      if (!linked && !shuttingDown) {
+        if (currentSocket === sock) currentSocket = null;
+        disposeSocket(sock, 'pairing cycle ended');
         // clear partial state ONLY if un-registered; if creds show registered, keep them!
         try {
           const credsP = path.join(AUTH_DIR, 'creds.json');
@@ -151,10 +254,18 @@ if (process.env.PAIR_MODE === 'true') {
   // probe /health — without this the deploy looks dead to them.
   const healthPair = require('express')();
   healthPair.get('/', (req, res) => res.json({ service: 'celestia-pairing-mode', ok: true }));
-  healthPair.get('/health', (req, res) => res.json({ ok: true, mode: 'pairing' }));
+  healthPair.get('/health', (req, res) => {
+    const ok = runtimeState.connection === 'open';
+    res.json({ ok, state: runtimeState.connection, uptime: Math.floor(process.uptime()) });
+  });
+  healthPair.get('/ready', (req, res) => {
+    const ok = runtimeState.connection === 'open';
+    res.status(ok ? 200 : 503).json({ ok, state: runtimeState.connection, uptime: Math.floor(process.uptime()) });
+  });
   // Live QR as PNG — open in a laptop browser, scan with the phone camera.
   // No typing, no 2-minute rush. Refreshes automatically with each new code.
   healthPair.get('/qr.png', async (req, res) => {
+    if (!authorizeQr(req, res)) return;
     if (!lastQR || !QRCode) {
       return res.status(404).json({ ok: false, message: 'No QR yet — wait for the next cycle (~90s) and reload.' });
     }
@@ -167,33 +278,39 @@ if (process.env.PAIR_MODE === 'true') {
       res.status(500).json({ ok: false, message: e.message });
     }
   });
-  healthPair.get('/qr', (req, res) => {
+  healthPair.get('/qr', async (req, res) => {
+    if (!authorizeQr(req, res)) return;
     const age = lastQR ? Math.round((Date.now() - lastQRAt) / 1000) : -1;
-    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>CELESTIA — Scan to Pair</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;">CELESTIA</h1><p>WhatsApp → Linked Devices → Link a Device → scan:</p>${lastQR ? `<img src="/qr.png" width="320" height="320" style="border-radius:16px;border:1px solid #00e5ff;">` : `<p>Waiting for QR… (first one lands ~90s after boot)</p>`}<p style="color:#8ea6c8;font-size:13px;">${age >= 0 ? `QR age: ${age}s — page auto-refreshes` : `codes still work too — check the deploy Logs tab`}</p></body></html>`);
+    const dataUrl = lastQR && QRCode ? await QRCode.toDataURL(lastQR, { width: 512, margin: 2 }).catch(() => null) : null;
+    res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15"><title>CELESTIA — Scan to Pair</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;">CELESTIA</h1><p>WhatsApp → Linked Devices → Link a Device → scan:</p>${dataUrl ? `<img src="${dataUrl}" width="320" height="320" style="border-radius:16px;border:1px solid #00e5ff;">` : `<p>Waiting for QR… (first one lands ~90s after boot)</p>`}<p style="color:#8ea6c8;font-size:13px;">${age >= 0 ? `QR age: ${age}s — page auto-refreshes` : `codes still work too — check the deploy Logs tab`}</p></body></html>`);
   });
-  healthPair.listen(process.env.PORT || 3000, '0.0.0.0', () => pairLog('health server up on /health'));
+  healthServer = healthPair.listen(process.env.PORT || 3000, '0.0.0.0', () => pairLog('health server up on /health'));
 
   // never crash the deploy: catch everything, keep container alive
   pairLoop().catch((e) => {
     pairLog('fatal:', e.message, '— restarting loop in 60s');
-    setTimeout(() => pairLoop().catch(() => {}), 60000);
+    if (!shuttingDown) setTimeout(() => { if (!shuttingDown) pairLoop().catch(() => {}); }, 60000);
   });
 } else {
 // â•â•â•â•â•â•â•â•â•â•â• END PAIR_MODE â€” normal boot below â•â•â•â•â•â•â•â•â•â•â•
 
 const config = require('./config/config');
 const logger = require('./utils/logger');
+appLogger = logger;
 const { loadCommands } = require('./utils/commandLoader');
 const { registerConnectionHandler } = require('./events/connection');
 const { registerMessageHandler } = require('./events/messages');
 const { fetchCore } = require('./utils/fetchCore');
-const { acquireLock, releaseLock } = require('./utils/instanceLock');
+const instanceLock = require('./utils/instanceLock');
+const { acquireLock } = instanceLock;
+releaseInstanceLock = instanceLock.releaseLock;
 const fs = require('fs');
 const express = require('express');
 
 // Prevent two instances running at the same time â€” dual instances
 // cause Bad MAC errors that corrupt the WhatsApp Signal session.
 acquireLock();
+lockAcquired = true;
 
 // --- VPS Health Server (for Docker / UptimeRobot) ---
 // ðŸº WolfTech tribute included in every heartbeat
@@ -209,14 +326,26 @@ healthApp.get('/', (req, res) => res.json({
   dna: wolfTech.tribute.dna,
   tribute: wolfTech.getHealthTribute()
 }));
-healthApp.get('/health', (req, res) => res.json({ ok: true, uptime: process.uptime(), bot: 'CELESTIA', inspiredBy: 'WolfTech ðŸº', lineage: wolfTech.tribute.tagline }));
-healthApp.get('/qr', (req, res) => {
+healthApp.get('/health', (req, res) => {
+  const ok = runtimeState.settingsReady && runtimeState.connection === 'open';
+  const state = runtimeState.settingsReady ? runtimeState.connection : 'initializing';
+  res.json({ ok, state, uptime: Math.floor(process.uptime()) });
+});
+healthApp.get('/ready', (req, res) => {
+  const ok = runtimeState.settingsReady && runtimeState.connection === 'open';
+  const state = runtimeState.settingsReady ? runtimeState.connection : 'initializing';
+  res.status(ok ? 200 : 503).json({ ok, state, uptime: Math.floor(process.uptime()) });
+});
+healthApp.get('/qr', async (req, res) => {
+  if (!authorizeQr(req, res)) return;
   const qr = globalThis.__lastQR;
   const age = qr ? Math.round((Date.now() - globalThis.__lastQRAt) / 1000) : -1;
   const fresh = qr && age <= 50;
-  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>CELESTIA — Live QR</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;margin:8px 0;">CELESTIA</h1>${fresh ? `<p style="color:#00e5ff;">● LIVE QR — ${age}s old — scan now</p><img src="/qr.png" width="340" height="340" style="border-radius:16px;border:2px solid #00e5ff;">` : `<p style="color:#ffcf6b;">Waiting for a fresh QR… (auto-refreshes every 10s)</p>`}<p style="color:#8ea6c8;font-size:13px;">WhatsApp → Linked Devices → Link a Device → scan this screen with your phone</p></body></html>`);
+  const dataUrl = fresh ? await require('qrcode').toDataURL(qr, { width: 512, margin: 2 }).catch(() => null) : null;
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>CELESTIA — Live QR</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;margin:8px 0;">CELESTIA</h1>${dataUrl ? `<p style="color:#00e5ff;">● LIVE QR — ${age}s old — scan now</p><img src="${dataUrl}" width="340" height="340" style="border-radius:16px;border:2px solid #00e5ff;">` : `<p style="color:#ffcf6b;">Waiting for a fresh QR… (auto-refreshes every 10s)</p>`}<p style="color:#8ea6c8;font-size:13px;">WhatsApp → Linked Devices → Link a Device → scan this screen with your phone</p></body></html>`);
 });
 healthApp.get('/qr.png', async (req, res) => {
+  if (!authorizeQr(req, res)) return;
   const qr = globalThis.__lastQR;
   if (!qr) return res.status(404).json({ ok: false, message: 'No QR yet — reload in a few seconds.' });
   try {
@@ -233,7 +362,7 @@ healthApp.get('/wolftech', (req, res) => res.json({ tribute: wolfTech.tribute, l
 // Real Apix key never leaves this server (see utils/aiRelay.js).
 healthApp.get('/api/ai/:model', (req, res) => require('./utils/aiRelay').handleRelay(req, res));
 const HEALTH_PORT = config.dashboardPort;
-healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`ðŸŒ CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech ðŸº`));
+healthServer = healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`ðŸŒ CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech ðŸº`));
 
 function restoreSettingsFromEnv() {
   const settingsPath = path.join(__dirname, 'config', 'botSettings.json');
@@ -278,19 +407,24 @@ function restoreSessionFromEnv() {
 
   if (fs.existsSync(credsPath)) return; // already have a session, nothing to restore
 
-  // If last session was logged out, skip restoration â€” force a fresh pair
+  let raw = config.sessionId || process.env.SESSION_ID || process.env.WOLF_SESSION || '';
+
+  // If last session was logged out, reject that exact credential until it is replaced.
   try {
     const settingsStore = require('./utils/settingsStore');
     if (settingsStore.get('_sessionLoggedOut', false)) {
-      logger.warn('[restoreSession] Last session was logged out. Skipping restoration â€” fresh pair required.');
-      settingsStore.set('_sessionLoggedOut', false); // clear flag so next restart is normal
-      return;
+      const revokedHash = settingsStore.get('_sessionRevokedHash', '');
+      const currentHash = raw ? nodeCrypto.createHash('sha256').update(String(raw).trim()).digest('hex') : '';
+      if (!raw || !revokedHash || currentHash === revokedHash) {
+        logger.warn('[restoreSession] Refusing the logged-out session. Supply a fresh SESSION_ID or pair again.');
+        return;
+      }
+      settingsStore.set('_sessionLoggedOut', false);
+      settingsStore.set('_sessionRevokedHash', null);
     }
   } catch {}
 
   // Try SESSION_ID env var first (supports both CELESTIA and CELESTIA formats)
-  let raw = config.sessionId || process.env.SESSION_ID || process.env.WOLF_SESSION || '';
-
   // Fall back to DB backup if SESSION_ID not set
   if (!raw) {
     try {
@@ -332,6 +466,44 @@ let wapresenceInterval = null;
 let autobioInterval = null;
 let soulWatchInterval = null;
 let tkInterval = null;
+let botStartPromise = null;
+let reconnectScheduled = false;
+let restartTimes = [];
+
+function setConnectionState(state) {
+  runtimeState.connection = state;
+}
+
+function scheduleReconnect() {
+  if (shuttingDown) return;
+  if (reconnectScheduled) {
+    runtimeState.connection = 'reconnecting';
+    return;
+  }
+
+  const now = Date.now();
+  restartTimes = restartTimes.filter((time) => now - time < 60_000);
+  const storm = restartTimes.length >= 5;
+  restartTimes.push(now);
+  reconnectScheduled = true;
+  runtimeState.connection = 'reconnecting';
+
+  if (storm) logger.warn('[reconnect] storm detected (5+ restarts/min) â€” backing off 30s.');
+  reconnectTimer = setTimeout(async () => {
+    reconnectTimer = null;
+    try {
+      if (botStartPromise) await botStartPromise;
+      if (!shuttingDown) await startBot();
+    } catch (error) {
+      logger.error(`[reconnect] ${error.message}`);
+    } finally {
+      reconnectScheduled = false;
+      if (!shuttingDown && (runtimeState.connection === 'closed' || runtimeState.connection === 'error')) {
+        scheduleReconnect();
+      }
+    }
+  }, storm ? 30_000 : 0);
+}
 
 function printBanner() {
   console.log(
@@ -357,7 +529,31 @@ function printBanner() {
 }
 
 async function startBot() {
+  if (shuttingDown) return;
+  if (botStartPromise) return botStartPromise;
+
+  const attempt = startBotOnce();
+  botStartPromise = attempt;
   try {
+    return await attempt;
+  } finally {
+    if (botStartPromise === attempt) botStartPromise = null;
+  }
+}
+
+async function startBotOnce() {
+  try {
+    const previousSocket = currentSocket;
+    currentSocket = null;
+    disposeSocket(previousSocket);
+    runtimeState.connection = 'connecting';
+
+    if (wapresenceInterval) clearInterval(wapresenceInterval);
+    if (autobioInterval) clearInterval(autobioInterval);
+    if (soulWatchInterval) clearInterval(soulWatchInterval);
+    if (tkInterval) clearInterval(tkInterval);
+    wapresenceInterval = autobioInterval = soulWatchInterval = tkInterval = null;
+
     restoreSessionFromEnv();
     restoreSettingsFromEnv();
 
@@ -390,7 +586,7 @@ async function startBot() {
       const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
       phoneNumber = await new Promise((resolve) => {
         rl.question(
-          'Enter your WhatsApp number with country code (e.g. 254118266549), or press Enter to use QR instead: ',
+          'Enter your WhatsApp number with country code (e.g. 254700000000), or press Enter to use QR instead: ',
           (answer) => {
             rl.close();
             resolve(answer && answer.trim() ? answer.trim() : null);
@@ -426,32 +622,40 @@ async function startBot() {
         return proto.Message.fromObject({});
       },
     });
+    if (shuttingDown) {
+      disposeSocket(sock, 'shutdown');
+      return;
+    }
+    replaceCurrentSocket(sock);
 
-    // Save credentials whenever they change
-    sock.ev.on('creds.update', saveCreds);
-
-    // Back up session to DB on every credential update so a filesystem
-    // wipe (container restart, redeploy) doesn't force a full re-pair.
+    // Serialize save + backup so the backup never reads a partially-written file.
+    let credsUpdateQueue = Promise.resolve();
     sock.ev.on('creds.update', async () => {
-      try {
+      credsUpdateQueue = credsUpdateQueue.then(async () => {
+        await saveCreds();
         const settingsStore = require('./utils/settingsStore');
         const credsPath = path.join(__dirname, config.authFolder, 'creds.json');
-        if (fs.existsSync(credsPath)) {
+        if (isValidCredsFile(credsPath)) {
           const sessionId = `CELESTIA:~${fs.readFileSync(credsPath).toString('base64')}`;
           settingsStore.set('_sessionBackup', sessionId);
+          settingsStore.set('_sessionLoggedOut', false);
+          settingsStore.set('_sessionRevokedHash', null);
         }
-      } catch (e) {
+      }).catch((e) => {
         logger.warn('[sessionBackup] Could not back up session to DB:', e.message);
-      }
+      });
+      await credsUpdateQueue;
     });
 
     let pairingCodeRequested = false;
 
     sock.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+      if (currentSocket !== sock) return;
       if (connection === 'connecting' && phoneNumber && !pairingCodeRequested) {
         pairingCodeRequested = true;
         try {
           await new Promise((resolve) => setTimeout(resolve, 3000));
+          if (currentSocket !== sock || shuttingDown) return;
           const code = await sock.requestPairingCode(phoneNumber);
           console.log('\n========================================');
           console.log(`   YOUR PAIRING CODE: ${code}`);
@@ -465,7 +669,8 @@ async function startBot() {
       if (connection === 'close') {
         const status = lastDisconnect?.error?.output?.statusCode;
         if (status === DisconnectReason.loggedOut) {
-          releaseLock();
+          releaseInstanceLock();
+          lockAcquired = false;
           // ONCE per process: the close event can replay (event-buffer) dozens
           // of times per second — without this guard rmSync hot-loops, pegs the
           // CPU, and starves the event loop (no QR, no handshake, dead health).
@@ -473,6 +678,10 @@ async function startBot() {
             global.__logoutCleaned = true;
             try {
               const settingsStore = require('./utils/settingsStore');
+              const activeSession = config.sessionId || settingsStore.get('_sessionBackup', '');
+              if (activeSession) {
+                settingsStore.set('_sessionRevokedHash', nodeCrypto.createHash('sha256').update(String(activeSession).trim()).digest('hex'));
+              }
               settingsStore.set('_sessionBackup', null); // wipe dead session from DB
               settingsStore.set('_sessionLoggedOut', true); // flag: skip restore on next start
               logger.info('[sessionBackup] DB backup cleared after logout.');
@@ -488,15 +697,24 @@ async function startBot() {
       }
     });
 
-    sock.ev.on('groups.update', async ([event]) => {
-      try {
-        if (!event?.id) return;
-        const metadata = await sock.groupMetadata(event.id);
-        groupCache.set(event.id, metadata);
-      } catch (error) {
-        logger.error(`[groupCache] Failed to update metadata for ${event?.id}: ${error.message}`);
+    sock.ev.on('groups.update', async (events) => {
+      for (const event of events) {
+        try {
+          if (!event?.id) continue;
+          const metadata = await sock.groupMetadata(event.id);
+          groupCache.set(event.id, metadata);
+        } catch (error) {
+          logger.error(`[groupCache] Failed to update metadata for ${event?.id}: ${error.message}`);
+        }
       }
     });
+
+    registerConnectionHandler(sock, {
+      isCurrent: () => currentSocket === sock,
+      setState: setConnectionState,
+      scheduleReconnect,
+      shutdown: (code, reason) => { void shutdown(code, reason); },
+    }, wasAlreadyRegistered);
 
     sock.ev.on('group-participants.update', async (event) => {
       try {
@@ -753,7 +971,6 @@ async function startBot() {
       }
     }, 20 * 1000); // every 20s â€” minute-precision delivery
 
-    registerConnectionHandler(sock, startBot, wasAlreadyRegistered);
     registerMessageHandler(sock, commands);
 
     // Resume timed mutes that survived a restart (auto-unmute timers)
@@ -772,17 +989,11 @@ async function startBot() {
       }, 6 * 60 * 60 * 1000);
     }
   } catch (error) {
+    runtimeState.connection = 'error';
     logger.error(`[startBot] Failed to start the bot: ${error.message}`);
+    scheduleReconnect();
   }
 }
-
-process.on('uncaughtException', (error) => {
-  logger.error(`[uncaughtException] ${error.stack || error.message}`);
-});
-
-process.on('unhandledRejection', (reason) => {
-  logger.error(`[unhandledRejection] ${reason}`);
-});
 
 const startupDelay = parseInt(process.env.CELESTIA_RESTART_DELAY_MS || '0', 10);
 setTimeout(async () => {
@@ -794,8 +1005,12 @@ setTimeout(async () => {
   logger.info(`   Has spam: ${commands.has('spam')} | ai: ${commands.has('ai')} | play: ${commands.has('play')} | tiktok: ${commands.has('tiktok')} | menu: ${commands.has('menu')}`);
   const { runClearCache } = require('./commands/clearcache');
   global.runClearCache = runClearCache;
-  await require('./utils/settingsStore').ready; // wait for DB before connecting
-  startBot();
+  await Promise.all([
+    require('./utils/settingsStore').ready,
+    require('./utils/groupSettingsStore').ready,
+  ]); // wait for DB-backed settings before connecting
+  runtimeState.settingsReady = true;
+  await startBot();
 }, startupDelay);
 
 } // end of else-block (normal boot when PAIR_MODE is not set)

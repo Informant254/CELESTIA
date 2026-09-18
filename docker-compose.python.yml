@@ -1,14 +1,18 @@
 version: '3.8'
 services:
   wabot:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.python
     container_name: wabot
     ports:
       - "3000:3000"
     volumes:
       - ./session:/app/session   # persist login so no QR every restart
-      - ./qr.png:/app/qr.png
+      - ./qr-state:/app/qr-state
     env_file:
       - .env
+    environment:
+      QR_PATH: /app/qr-state/qr.png
     restart: unless-stopped
     shm_size: 2gb

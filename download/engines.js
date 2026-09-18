@@ -11,13 +11,21 @@
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 
 const BIN_DIR = path.join(__dirname, 'bin');
 const TMP_DIR = path.join(__dirname, '..', 'downloads', 'tmp');
 
 const YTDLP_ASSET = { win32: 'yt-dlp.exe', linux: 'yt-dlp', darwin: 'yt-dlp_macos' }[process.platform] || 'yt-dlp';
-const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${YTDLP_ASSET}`;
+const YTDLP_VERSION = '2026.08.19';
+const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${YTDLP_ASSET}`;
+const YTDLP_SHA256 = {
+  'yt-dlp.exe': '66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a',
+  'yt-dlp': '1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6',
+  'yt-dlp_macos': '0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202',
+};
+let ensurePromise = null;
 
 function ytdlpPath() {
   return path.join(BIN_DIR, YTDLP_ASSET);
@@ -28,7 +36,7 @@ function get(url, redirects = 5) {
     https.get(url, { headers: { 'User-Agent': 'CELESTIA-Bot/2.0' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects > 0) {
         res.resume();
-        return get(res.headers.location, redirects - 1).then(resolve, reject);
+        return get(new URL(res.headers.location, url).toString(), redirects - 1).then(resolve, reject);
       }
       if (res.statusCode !== 200) {
         res.resume();
@@ -51,7 +59,7 @@ function runOnce(bin, args, timeoutMs = 20000) {
   });
 }
 
-async function ensureYtDlp() {
+async function installYtDlp() {
   const bin = ytdlpPath();
   if (fs.existsSync(bin)) {
     try {
@@ -67,6 +75,10 @@ async function ensureYtDlp() {
   if (!buf || buf.length < 1024 * 1024) {
     throw new Error('yt-dlp download looked truncated — refusing to install.');
   }
+  const digest = crypto.createHash('sha256').update(buf).digest('hex');
+  if (digest !== YTDLP_SHA256[YTDLP_ASSET]) {
+    throw new Error(`yt-dlp ${YTDLP_VERSION} failed SHA-256 verification.`);
+  }
   fs.writeFileSync(tmp, buf);
   if (process.platform !== 'win32') {
     try { fs.chmodSync(tmp, 0o755); } catch { /* best effort */ }
@@ -76,6 +88,13 @@ async function ensureYtDlp() {
   return bin;
 }
 
+function ensureYtDlp() {
+  if (!ensurePromise) {
+    ensurePromise = installYtDlp().finally(() => { ensurePromise = null; });
+  }
+  return ensurePromise;
+}
+
 function ffmpegPath() {
   // Admin override: set FFMPEG_PATH to a system binary.
   if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) return process.env.FFMPEG_PATH;
@@ -83,12 +102,20 @@ function ffmpegPath() {
   try {
     p = require('ffmpeg-static');
   } catch {
-    throw new Error('FFMPEG_MISSING: ffmpeg-static is not installed. Run: npm install ffmpeg-static');
+    p = null;
   }
-  if (!p || !fs.existsSync(p)) {
-    throw new Error('FFMPEG_MISSING: ffmpeg binary not found. Reinstall with: npm install ffmpeg-static');
+  if (p && fs.existsSync(p)) {
+    try {
+      require('child_process').execFileSync(p, ['-version'], { stdio: 'ignore', timeout: 10000 });
+      return p;
+    } catch { /* fall through to system ffmpeg */ }
   }
-  return p;
+  try {
+    require('child_process').execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 10000 });
+    return 'ffmpeg';
+  } catch {
+    throw new Error('FFMPEG_MISSING: install system ffmpeg or reinstall ffmpeg-static with install scripts enabled.');
+  }
 }
 
 function ffprobePath() {
@@ -98,12 +125,20 @@ function ffprobePath() {
   try {
     p = require('ffprobe-static').path;
   } catch {
-    throw new Error('FFPROBE_MISSING: ffprobe-static is not installed. Run: npm install ffprobe-static');
+    p = null;
   }
-  if (!p || !fs.existsSync(p)) {
-    throw new Error('FFPROBE_MISSING: ffprobe binary not found. Reinstall with: npm install ffprobe-static');
+  if (p && fs.existsSync(p)) {
+    try {
+      require('child_process').execFileSync(p, ['-version'], { stdio: 'ignore', timeout: 10000 });
+      return p;
+    } catch { /* fall through to system ffprobe */ }
   }
-  return p;
+  try {
+    require('child_process').execFileSync('ffprobe', ['-version'], { stdio: 'ignore', timeout: 10000 });
+    return 'ffprobe';
+  } catch {
+    throw new Error('FFPROBE_MISSING: install system ffprobe or reinstall ffprobe-static with install scripts enabled.');
+  }
 }
 
 let aria2cCache = null;

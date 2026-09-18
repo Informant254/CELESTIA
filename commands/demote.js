@@ -1,6 +1,5 @@
 module.exports = {
   name: 'demote',
-  aliases: ['d'],
   description: 'Demotes a mentioned admin back to a regular member (admin only).',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;

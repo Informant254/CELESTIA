@@ -30,6 +30,37 @@ const VAULT_DIR = path.join(__dirname, '../vault');
 const VAULT_KEY = 'vv_vault';
 const AUTO_KEY = 'vv_auto'; // default ON
 const MAX_VAULT = 50;
+const MAX_MEDIA_BYTES = 64 * 1024 * 1024;
+const MAX_CAPTURE_CONCURRENCY = 2;
+const MAX_CAPTURE_QUEUE = 20;
+let activeCaptures = 0;
+const captureQueue = [];
+
+function mediaLength(value) {
+  if (value == null) return null;
+  try {
+    const n = typeof value === 'bigint'
+      ? Number(value)
+      : (typeof value.toNumber === 'function' ? value.toNumber() : Number(value));
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  } catch {
+    return null;
+  }
+}
+
+function acquireCaptureSlot() {
+  function release() {
+    const next = captureQueue.shift();
+    if (next) next();
+    else activeCaptures--;
+  }
+  if (activeCaptures < MAX_CAPTURE_CONCURRENCY) {
+    activeCaptures++;
+    return Promise.resolve(release);
+  }
+  if (captureQueue.length >= MAX_CAPTURE_QUEUE) return Promise.resolve(null);
+  return new Promise((resolve) => captureQueue.push(() => resolve(release)));
+}
 
 // ─────────────────────────────────────────
 // UNWRAP — every view-once nesting WhatsApp invented
@@ -115,7 +146,8 @@ async function deliverToOwner(sock, ownerJid, buffer, type, caption) {
   if (caption) payload.caption = caption;
   if (type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
   if (type === 'video') payload.mimetype = 'video/mp4';
-  await sock.sendMessage(ownerJid, payload).catch(() => {});
+  await sock.sendMessage(ownerJid, payload);
+  return true;
 }
 
 const RIP_LINES = [
@@ -139,28 +171,45 @@ function inboxCaption(origCaption) {
 // ─────────────────────────────────────────
 
 async function captureOriginal(sock, msg, ownerJid) {
+  let release;
   try {
     // only messages addressed to the owner's chats (DMs to owner, or groups owner is in)
     const found = findViewOnce(msg.message);
     if (!found) return null;
+    const expectedSize = mediaLength(found.message?.fileLength);
+    if (expectedSize != null && expectedSize > MAX_MEDIA_BYTES) {
+      logger.error(`[vault] skipped oversized media (${expectedSize} bytes)`);
+      return null;
+    }
+
+    release = await acquireCaptureSlot();
+    if (!release) {
+      logger.error('[vault] capture queue full');
+      return null;
+    }
 
     const senderJid = msg.key.participantPn || msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid;
 
     // download the ORIGINAL — has full mediaKey/directPath — straight to RAM
     const buffer = await dlMedia(msg, 'buffer', {});
-    if (!buffer || !buffer.length) return null;
+    if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
+      if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
+      return null;
+    }
 
     const { text, mentions } = inboxCaption(found.message?.caption);
     const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
     const payload = { [keyMap[found.type]]: buffer, caption: text, mentions };
     if (found.type === 'audio') payload.mimetype = 'audio/ogg; codecs=opus';
     if (found.type === 'video') payload.mimetype = 'video/mp4';
-    await sock.sendMessage(ownerJid, payload).catch(() => {});
+    await sock.sendMessage(ownerJid, payload);
     logger.info('[vault] receive-time inbox delivery');
     return { delivered: true };
   } catch (e) {
     logger.error(`[vault] receive capture failed: ${e.message}`);
     return null;
+  } finally {
+    if (release) release();
   }
 }
 
@@ -169,9 +218,21 @@ async function captureOriginal(sock, msg, ownerJid) {
 // ─────────────────────────────────────────
 
 async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid, ownerJid) {
+  let release;
   try {
     const found = findViewOnce(rawQuotedMessage);
     if (!found) return null;
+    const expectedSize = mediaLength(found.message?.fileLength);
+    if (expectedSize != null && expectedSize > MAX_MEDIA_BYTES) {
+      logger.error(`[vault] skipped oversized media (${expectedSize} bytes)`);
+      return null;
+    }
+
+    release = await acquireCaptureSlot();
+    if (!release) {
+      logger.error('[vault] capture queue full');
+      return null;
+    }
 
     // Reconstruct a downloadable message object
     const fakeMsg = {
@@ -179,7 +240,10 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
       message: rawQuotedMessage,
     };
     const buffer = await dlMedia(fakeMsg, 'buffer', {});
-    if (!buffer || !buffer.length) return null;
+    if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
+      if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
+      return null;
+    }
 
     const { text, mentions } = inboxCaption(found.message?.caption);
     const keyMap = { image: 'image', video: 'video', audio: 'audio', sticker: 'sticker' };
@@ -188,11 +252,13 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
     if (found.type === 'video') payload.mimetype = 'video/mp4';
 
     // DM open media to owner — no disk, no archive
-    await sock.sendMessage(ownerJid, payload).catch(() => {});
+    await sock.sendMessage(ownerJid, payload);
     return { delivered: true };
   } catch (e) {
     logger.error(`[vault] capture failed: ${e.message}`);
     return null;
+  } finally {
+    if (release) release();
   }
 }
 
@@ -255,7 +321,8 @@ async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
   if (entry.type === 'audio') realPayload.mimetype = 'audio/ogg; codecs=opus';
   if (entry.type === 'video') realPayload.mimetype = 'video/mp4';
 
-  await sock.sendMessage(toJid, realPayload).catch(() => {});
+  await sock.sendMessage(toJid, realPayload);
+  return { delivered: true };
 }
 
 module.exports = {

@@ -14,8 +14,18 @@ const readline = require('readline');
 
 function decodeSessionId(raw) {
   // Same prefix support as index.js restoreSessionFromEnv
-  const cleaned = String(raw).trim().replace(/^(CELESTIA:~|WOLF:~|CELESTIA:~|MERGED:~|CELESTIA:~)/, '');
-  return Buffer.from(cleaned, 'base64');
+  const cleaned = String(raw).trim().replace(/^[A-Za-z0-9_]+:~/, '');
+  if (!cleaned || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(cleaned) || cleaned.length % 4 === 1) {
+    throw new Error('invalid base64 data');
+  }
+  const decoded = Buffer.from(cleaned, 'base64');
+  let creds;
+  try { creds = JSON.parse(decoded.toString('utf8')); } catch { throw new Error('decoded value is not credential JSON'); }
+  if (!creds || typeof creds !== 'object' || creds.registered !== true ||
+      (!creds.noiseKey && !creds.signedIdentityKey) || creds.registrationId === undefined) {
+    throw new Error('credentials are incomplete or not registered');
+  }
+  return decoded;
 }
 
 function saveSessionFromId(raw) {
@@ -42,13 +52,23 @@ const {
 } = require('@whiskeysockets/baileys');
 const logger = require('./utils/logger');
 
-const PHONE = process.env.OWNER_NUMBER || '254118266549';
+const PHONE = String(process.env.OWNER_NUMBER || '').replace(/\D/g, '');
 const CODE_FILE = path.join(__dirname, 'pair-code.txt');
 const LINKED_FILE = path.join(__dirname, 'pair-linked.txt');
 
 (async () => {
+  try { fs.unlinkSync(LINKED_FILE); } catch (e) { if (e.code !== 'ENOENT') throw e; }
   // ── SESSION_ID first: env, then one interactive paste. No code needed. ──
   const existing = path.join(__dirname, 'auth_info_baileys', 'creds.json');
+  if (fs.existsSync(existing)) {
+    try {
+      const creds = JSON.parse(fs.readFileSync(existing, 'utf8'));
+      if (creds?.registered !== true) throw new Error('credentials are not registered');
+    } catch (e) {
+      console.log('Existing session invalid (' + e.message + ') — starting a fresh pairing flow.');
+      fs.rmSync(path.dirname(existing), { recursive: true, force: true });
+    }
+  }
   const envSession = (process.env.SESSION_ID || '').trim();
   if (envSession && !fs.existsSync(existing)) {
     try {
@@ -62,6 +82,8 @@ const LINKED_FILE = path.join(__dirname, 'pair-linked.txt');
     console.log('SESSION_SAVED — session already present, nothing to do.');
     process.exit(0);
   }
+
+  if (!PHONE) throw new Error('OWNER_NUMBER is required for pairing-code setup.');
 
   if (!fs.existsSync(existing)) {
     const pasted = await askOnce('Paste SESSION_ID (or press Enter to get a pairing code instead): ');
@@ -93,10 +115,17 @@ const LINKED_FILE = path.join(__dirname, 'pair-linked.txt');
     shouldSyncHistoryMessage: () => false,
   });
 
-  sock.ev.on('creds.update', saveCreds);
+  let credsSaveChain = Promise.resolve();
+  const queueCredsSave = () => {
+    credsSaveChain = credsSaveChain.catch(() => {}).then(() => saveCreds());
+    return credsSaveChain;
+  };
+  sock.ev.on('creds.update', () => { queueCredsSave().catch(e => logger.error('Credential save failed: ' + e.message)); });
 
+  let codeRequested = false;
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (connection === 'connecting') {
+    if (connection === 'connecting' && !codeRequested) {
+      codeRequested = true;
       // request the code as soon as the socket is live
       setTimeout(async () => {
         try {
@@ -112,6 +141,14 @@ const LINKED_FILE = path.join(__dirname, 'pair-linked.txt');
     }
 
     if (connection === 'open') {
+      try {
+        await queueCredsSave();
+        const savedCreds = JSON.parse(fs.readFileSync(existing, 'utf8'));
+        if (!state.creds.registered || savedCreds?.registered !== true) throw new Error('credentials are not registered');
+      } catch (e) {
+        logger.error('Linked credentials could not be validated: ' + e.message);
+        return;
+      }
       fs.writeFileSync(LINKED_FILE, 'linked at ' + new Date().toISOString());
       console.log('LINKED_OK');
       // small settle delay so creds flush, then exit — main bot takes over

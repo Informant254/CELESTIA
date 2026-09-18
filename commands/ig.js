@@ -3,7 +3,7 @@ const { bk9Social, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'ig',
-  aliases: ['instagram', 'igreel', 'igdl'],
+  aliases: ['instagram', 'insta', 'igreel', 'igdl'],
   description: 'Download Instagram reel/post. Usage: .ig <link>',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;

@@ -1,7 +1,9 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
+const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { ffmpegPath } = require('../download/engines');
 
 const queues = new Map(); // jid -> array of file paths
 
@@ -33,7 +35,7 @@ module.exports = {
 
       try {
         fs.writeFileSync(listPath, queue.map(p => `file '${p}'`).join('\n'));
-        execSync(`ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${outputPath}"`);
+        execFileSync(ffmpegPath(), ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath]);
 
         const buffer = fs.readFileSync(outputPath);
         await sock.sendMessage(jid, { video: buffer, caption: '✅ Merged video' }, { quoted: msg });
@@ -58,10 +60,11 @@ module.exports = {
     }
 
     try {
-      const media = await sock.downloadMediaMessage({
-        message: quoted,
-        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant }
-      });
+      const media = await downloadMediaMessage(
+        { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } },
+        'buffer',
+        {}
+      );
 
       const filePath = path.join(os.tmpdir(), `merge_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
       fs.writeFileSync(filePath, media);

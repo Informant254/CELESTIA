@@ -1,4 +1,4 @@
-const { parseDuration, formatDuration, scheduleUnmute } = require('../utils/muteTimers');
+const { parseDuration, formatDuration, scheduleUnmute, cancelUnmute } = require('../utils/muteTimers');
 
 module.exports = {
   name: 'mute',
@@ -29,6 +29,7 @@ module.exports = {
     // .mute off / .mute unmute — lift immediately
     if (first === 'off' || first === 'unmute') {
       await sock.groupSettingUpdate(jid, 'not_announcement');
+      cancelUnmute(jid);
       await sock.sendMessage(jid, { text: '🔓 Group unmuted — everyone can send messages again.' }, { quoted: msg });
       return;
     }
@@ -62,6 +63,7 @@ module.exports = {
     // .mute — permanent (no timer)
     if (!first) {
       await sock.groupSettingUpdate(jid, 'announcement');
+      cancelUnmute(jid);
       await sock.sendMessage(jid, { text: '🔒 Group muted — only admins can send messages now.\nTip: *.mute 30m* / *.mute 2h* to auto-unmute later.' }, { quoted: msg });
       return;
     }

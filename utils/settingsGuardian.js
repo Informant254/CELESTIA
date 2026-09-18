@@ -10,7 +10,7 @@
  *               config/botSettings.json (runtime settings), vault/ (media)
  *   skipped   : node_modules, .git, logs, pairing_sessions, .bkp itself
  *   cadence   : every 10s (unref'd — never holds the process open)
- *               + on SIGTERM (clean shutdown)
+ *               + during the application's clean shutdown
  *               + restoreMissing() on boot (fills gaps only, never clobbers)
  */
 
@@ -114,10 +114,6 @@ function startGuardian() {
   // Rolling backup every 10s — unref'd so it never holds the process open.
   // Catches setting changes even when the panel kills us without SIGTERM.
   setInterval(() => backupNow(), 10_000).unref();
-  // Clean-shutdown backup.
-  process.on('SIGTERM', () => {
-    try { backupNow(); } catch (_) {}
-  });
 }
 
 module.exports = { backupNow, restoreMissing, startGuardian, BACKUP_DIR };

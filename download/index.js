@@ -132,28 +132,33 @@ async function runJob(sock, msg, snap) {
   const chatId = msg.key.remoteJid;
   const senderId = snap.senderId || msg.key.participant || msg.key.remoteJid;
   const tag = senderTag(chatId, senderId);
-  const dir = jobDir(snap.kind);
   const t0 = Date.now();
   const isAudio = snap.kind === 'audio' || (snap.quality && snap.quality.kind === 'audio');
   const maxBytes = isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES;
+  let dir = null;
   let timeoutHandle = null;
+  let acquired = false;
+  let statusMsg = null;
 
-  const onTimeout = new Promise((_, reject) => {
-    timeoutHandle = setTimeout(() => {
-      ytdlp.abortDir(dir);
-      reject(new Error('Overall request timeout exceeded (TIMEOUT).'));
-    }, cfg.DOWNLOAD_TIMEOUT_MS);
-    if (timeoutHandle.unref) timeoutHandle.unref();
-  });
-
-  const job = (async () => {
+  try {
     const st = queue.stats();
-    let statusMsg = null;
     if (st.active >= st.max) {
       statusMsg = await sock.sendMessage(chatId, { text: `⏳ You are #${st.waiting + 1} in the download queue.` }, { quoted: msg });
     }
+    await queue.acquire(`${chatId}:${senderId}`);
+    acquired = true;
 
-    await queue.run(async () => {
+    // Do not allocate per-job resources until the bounded queue grants a slot.
+    dir = jobDir(snap.kind);
+    const onTimeout = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        ytdlp.abortDir(dir);
+        reject(new Error('Overall request timeout exceeded (TIMEOUT).'));
+      }, cfg.DOWNLOAD_TIMEOUT_MS);
+      if (timeoutHandle.unref) timeoutHandle.unref();
+    });
+
+    const job = (async () => {
       const setStatus = async (t) => {
         try {
           if (statusMsg) await sock.sendMessage(chatId, { text: t, edit: statusMsg.key });
@@ -232,10 +237,8 @@ async function runJob(sock, msg, snap) {
 
       await setStatus('✨ Done.');
       logger.celestia({ tag, status: 'done', secs: Math.round((Date.now() - t0) / 1000), bytes: size });
-    });
-  })();
+    })();
 
-  try {
     await Promise.race([job, onTimeout]);
   } catch (e) {
     const { userMessage } = require('./errors');
@@ -245,8 +248,11 @@ async function runJob(sock, msg, snap) {
     } catch { /* last resort failed */ }
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
-    wipeDir(dir); // guaranteed cleanup, success or failure
-    logger.cleanup({ tag, status: 'success' });
+    if (dir) {
+      wipeDir(dir); // guaranteed cleanup, success or failure
+      logger.cleanup({ tag, status: 'success' });
+    }
+    if (acquired) queue.release();
   }
 }
 

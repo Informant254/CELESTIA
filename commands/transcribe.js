@@ -8,7 +8,7 @@ const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-const GOOGLE_KEY = process.env.GOOGLE_STT_KEY || 'AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw';
+const GOOGLE_KEY = process.env.GOOGLE_STT_KEY;
 
 module.exports = {
   name: 'transcribe',
@@ -18,6 +18,14 @@ module.exports = {
   async execute(sock, msg) {
     const rawJid = msg.key.remoteJid;
     const jid = rawJid.endsWith('@lid') && msg.key.remoteJidAlt ? msg.key.remoteJidAlt : rawJid;
+
+    if (!GOOGLE_KEY) {
+      return sock.sendMessage(
+        jid,
+        { text: '⚠️ Audio transcription is unavailable because GOOGLE_STT_KEY is not configured.' },
+        { quoted: msg }
+      );
+    }
 
     const ctx = msg.message?.extendedTextMessage?.contextInfo;
     const quoted = ctx?.quotedMessage;
