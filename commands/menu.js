@@ -362,17 +362,17 @@ const T6 = {
     const time = new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit', hour12: true }).format(now);
     const mode = settingsStore.get('mode', config.WORK_TYPE);
 
-    let menuText = '┌──────────────────────────────┐\n';
-    menuText += '  🤖 *CELESTIA BOT*\n';
-    menuText += '  ━━━━━━━━━━━━━━━━━━━━━━━\n';
-    menuText += '  ⚡ *Prefix* : [ ' + (prefix || '.') + ' ]\n';
-    menuText += '  🔒 *Mode*   : ' + (mode || 'public').toUpperCase() + '\n';
-    menuText += '  🕒 *Time*   : ' + time + '\n';
-    menuText += '  🗓️ *Date*   : ' + date + '\n';
-    menuText += '  💾 *Ram*    : ' + usedRam + ' GB / ' + totalRam + ' GB\n';
-    menuText += '  ⏱️ *Uptime* : ' + Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm\n';
-    menuText += '  🔌 *Plugins* : ' + new Set(commands.values()).size + ' commands\n';
-    menuText += '└──────────────────────────────┘\n';
+    // Same quoted box style as every realm below: one structure,
+    // top to bottom (proportional fonts shatter padded columns).
+    let menuText = '> ╭─❏ *🤖 CELESTIA BOT* ❏\n';
+    menuText += '> │ ⚡ Prefix : [ ' + (prefix || '.') + ' ]\n';
+    menuText += '> │ 🔒 Mode : ' + (mode || 'public').toUpperCase() + '\n';
+    menuText += '> │ 🕒 Time : ' + time + '\n';
+    menuText += '> │ 🗓️ Date : ' + date + '\n';
+    menuText += '> │ 💾 Ram : ' + usedRam + ' GB / ' + totalRam + ' GB\n';
+    menuText += '> │ ⏱️ Uptime : ' + Math.floor(uptime / 3600) + 'h ' + Math.floor((uptime % 3600) / 60) + 'm\n';
+    menuText += '> │ 🔌 Plugins : ' + new Set(commands.values()).size + ' commands\n';
+    menuText += '> ╰─────────────────\n';
 
     for (const cat of CATEGORIES) {
       const avail = cat.cmds.filter((c) => commands.has(c));
