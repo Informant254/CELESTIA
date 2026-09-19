@@ -161,9 +161,17 @@ test('antitag kick removes immediately', async () => {
   assert.equal(h.removed.length, 1);
 });
 
-test('bot without admin stays silent and sends nothing', async () => {
-  const h = loadMessagesHarness({ botAdmin: false, group: { [GROUP]: { antilink: 'kick' } } });
+test('bot without admin lets the message flow through untouched', async () => {
+  const h = loadMessagesHarness({ privacy: 'public', botAdmin: false, group: { [GROUP]: { antilink: 'kick' } } });
   await h.send(link());
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.aiCalls(), 1);
+});
+
+test('antibot without admin never swallows member commands', async () => {
+  const h = loadMessagesHarness({ botAdmin: false, settings: { antibot: 'kick' } });
+  await h.send({ conversation: '.ping' });
   assert.equal(h.sent.length, 0);
   assert.equal(h.removed.length, 0);
 });

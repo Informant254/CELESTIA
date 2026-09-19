@@ -199,13 +199,19 @@ async function enforceModeration(sock, msg) {
       return false;
     }
   if (!isBotAdmin(sock, metadata)) {
-    let botIds = '?';
+    // Do NOT consume: swallowing a message we cannot punish breaks member
+    // commands outright (e.g. antibot eating every `.ping` it can't kick for).
+    let detail = '';
     try {
       const { getBotIdentifiers } = require('../utils/isAdmin');
-      botIds = [...getBotIdentifiers(sock)].join(',') || '(none)';
+      const admins = (metadata.participants || [])
+        .filter((p) => p?.admin)
+        .map((p) => `${p.id || ''}|${p.lid || ''}|${p.phoneNumber || ''}`)
+        .join(';');
+      detail = ` botIds=${[...getBotIdentifiers(sock)].join(',') || '(none)'} admins=[${admins}]`;
     } catch {}
-    logger.warn(`[moderation] bot lacks admin rights; skipping punishment. botIds=${botIds} participants=${metadata.participants?.length || 0}`);
-    return true;
+    logger.warn(`[moderation] bot lacks admin rights; letting message flow through.${detail}`);
+    return false;
   }
     senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
   }
