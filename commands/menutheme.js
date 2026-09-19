@@ -15,12 +15,12 @@ const settingsStore = require('../utils/settingsStore');
 const { isOwner } = require('../utils/isOwner');
 
 const THEMES = [
-  { key: 'boxed', icon: '❏', name: 'IRONBOX', desc: 'banner + full menu in one message · classic quote style' },
-  { key: 'celestial', icon: '🌌', name: 'CELESTIAL REIGN', desc: 'her flagship face · airy ornaments · logo crown' },
-  { key: 'constellation', icon: '🗺️', name: 'STAR MAP', desc: 'figlet banner · realm poems · star-light' },
-  { key: 'neon', icon: '🌆', name: 'NEON CLASSIC', desc: 'cyber grid · box panels · sharp neon lines' },
-  { key: 'zen', icon: '🍃', name: 'MINIMAL ZEN', desc: 'quiet whitespace · command clouds · calm' },
-  { key: 'grimoire', icon: '📜', name: 'ARCANE GRIMOIRE', desc: 'ancient spellbook · roman chapters · glyphs' },
+  { key: 'boxed', icon: '✦', name: 'CELESTIA SIGNATURE', desc: 'diamond accent · precise editorial finish' },
+  { key: 'celestial', icon: '✧', name: 'CELESTIAL REIGN', desc: 'soft starlight · an elegant silver accent' },
+  { key: 'constellation', icon: '⋆', name: 'STAR MAP', desc: 'astral points · observatory character' },
+  { key: 'neon', icon: '◆', name: 'NEON CLASSIC', desc: 'bold geometry · electric signal accent' },
+  { key: 'zen', icon: '•', name: 'MINIMAL ZEN', desc: 'quiet marks · restrained visual rhythm' },
+  { key: 'grimoire', icon: '❖', name: 'ARCANE GRIMOIRE', desc: 'ornate glyphs · archival mystique' },
 ];
 
 module.exports = {
@@ -87,12 +87,12 @@ module.exports = {
     }
     settingsStore.set('menu_theme', t.key);
     const preview = {
-      boxed: '❏ banner image with the full menu as its caption — one bubble',
-      celestial: '🌌 airy ornaments, breathing room, crowned in starlight',
-      constellation: '✧ ✦ star-lines and poems await',
-      neon: '┣ ⚡ neon grid online',
-      zen: '✨ quiet. clean. hers.',
-      grimoire: '◆ ✦ the tome opens, wolf-light on the pages',
+      boxed: '✦ the signature observatory now carries a diamond accent',
+      celestial: '✧ the same flawless navigation, washed in silver starlight',
+      constellation: '⋆ the observatory is charted in astral points',
+      neon: '◆ the grid is live with a sharper electric pulse',
+      zen: '• the observatory becomes quieter and more restrained',
+      grimoire: '❖ every path now carries an archival celestial glyph',
     }[t.key];
     return reply(
       `🎨 *Face set:* ${t.icon} *${t.name}*\n\n_${preview}_\n\n> Send \`${prefix}menu\` to see her new face.`

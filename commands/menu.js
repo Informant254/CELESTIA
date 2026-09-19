@@ -1,22 +1,12 @@
 const fs = require('fs');
 const path = require('path');
-const os = require('os');
-const ui = require('../utils/ui');
-const {
-  renderDashboard,
-  renderCategory,
-  shortUptime,
-} = require('../utils/celestiaUi');
-const figlet = require('figlet');
-const wolfTech = require('../utils/wolfTech');
 const config = require('../config/config');
 const settingsStore = require('../utils/settingsStore');
+const { RULE, shortUptime } = require('../utils/celestiaUi');
 
 const LOGO_PATH = path.join(__dirname, '../assets/banner.png');
+const PAGE_SIZE = 9;
 
-// ═══════════════════════════════════════════════════
-// THE REALMS — shared data, rendered by 4 themes
-// ═══════════════════════════════════════════════════
 const CATEGORIES = [
   { key: 'heart', icon: '💫', title: 'HER HEART', poem: 'the soul that stays', cmds: ['celestia', 'recall', 'goodnight', 'goodmorning', 'wish', 'watchover', 'remind', 'capsule', 'habit'] },
   { key: 'intel', icon: '🌦️', title: 'DAY INTEL', poem: 'the pulse of your world, hourly', cmds: ['weather', 'wx', 'forecast', 'pray', 'salah', 'crypto', 'coins', 'fx', 'rate', 'briefing', 'herald', 'daily', 'roast', 'burn', 'wolffire'] },
@@ -25,666 +15,396 @@ const CATEGORIES = [
   { key: 'wellness', icon: '🧘', title: 'WELLNESS', poem: 'she guards the vessel', cmds: ['wellness', 'health', 'fit'] },
   { key: 'business', icon: '💼', title: 'BUSINESS HUB', poem: 'the honest ledger', cmds: ['invoice', 'inv', 'expense', 'expenses', 'spend'] },
   { key: 'travel', icon: '✈️', title: 'TRAVEL KIT', poem: 'go far, pack light', cmds: ['travel', 'trip', 'packing'] },
-  { key: 'game', icon: '🎮', title: 'THE GAME', poem: 'the legend you live inside', cmds: ['level', 'rank', 'xp', 'legend', 'pet', 'wolf', 'companion', 'daily', 'claim', 'dailybonus', 'quests', 'quest', 'dailies', 'loot', 'crate', 'box', 'casino', 'bet', 'slots', 'secrets', 'eastereggs', 'mystery'] },
+  { key: 'game', icon: '🏆', title: 'THE GAME', poem: 'the legend you live inside', cmds: ['level', 'rank', 'xp', 'legend', 'pet', 'wolf', 'companion', 'daily', 'claim', 'dailybonus', 'quests', 'quest', 'dailies', 'loot', 'crate', 'box', 'casino', 'bet', 'slots', 'secrets', 'eastereggs', 'mystery'] },
   { key: 'status', icon: '📱', title: 'STATUS & VAULT', poem: 'beyond the normal, quietly', cmds: ['statussuite', 'ssuite', 'studio', 'setstatus', 'poststatus', 'status', 'statusview', 'whoviewed', 'statusreact', 'sreact', 'ghostarchive', 'garchive', 'statusarchive', 'vault', 'vvault', 'captures', 'vv', 'vv2', 'ghost', 'anon', 'anonymous'] },
   { key: 'atlas', icon: '🌍', title: 'WORLD ATLAS', poem: 'the world, mapped and alive', cmds: ['locate', 'where', 'geo', 'place', 'maps', 'senderlocate', 'slocate', 'whereis', 'locateuser', 'webcam', 'cam', 'worldcam', 'livecam', 'satellite', 'sat', 'satspy', 'orbital', 'ipinfo', 'geoip', 'ip', 'dnsrecon', 'whois'] },
-  { key: 'portal', icon: '🌀', title: 'THE PORTAL', poem: 'insanely good free websites, alive', cmds: ['portal', 'sites', 'webportal', 'goodies'] },
+  { key: 'portal', icon: '🌀', title: 'THE PORTAL', poem: 'free corners of the web, alive', cmds: ['portal', 'sites', 'webportal', 'goodies'] },
   { key: 'cyber', icon: '⚔️', title: 'CYBER FORTRESS', poem: 'the wolf guards the den', cmds: ['cyberfort', 'kev', 'cve', 'breach', 'phish', 'whois', 'dnsrecon', 'ipinfo', 'hash', 'hashid', 'passanalyze', 'gpass'] },
-  { key: 'general', icon: '✨', title: 'GENERAL & INFO', poem: 'know the star you orbit', cmds: ['menu', 'help', 'bot', 'alive', 'ping', 'uptime', 'runtime', 'stats', 'user', 'owner', 'CELESTIA', 'donate', 'script', 'wolftech', 'settings', 'time', 'jid', 'gjid', 'cinfo', 'status', 'setstatus'] },
-  { key: 'ai', icon: '🧠', title: 'AI HEAVENS', poem: 'minds made of starlight', cmds: ['ai', 'claude', 'void', 'wormgpt', 'bibleai', 'muslimai', 'imagine', 'vision', 'vision2', 'speechwriter'] },
-  { key: 'downloader', icon: '⬇️', title: 'DOWNLOADERS', poem: 'catch what falls from the sky', cmds: ['tiktok', 'ig', 'fb', 'twitter', 'igstory', 'pindl', 'song', 'play', 'play2', 'audio', 'download', 'video', 'video2', 'spotify', 'apk', 'gitclone'] },
-  { key: 'media', icon: '🎬', title: 'MEDIA STUDIO', poem: 'the forge of moving light', cmds: ['sticker', 'take', 'attp', 'mix', 'photo', 'toimg', 'tovideo', 'toaudio', 'cut', 'merge', 'tts', 'totext', 'transcribe', 'shazam', 'vocalremover', 'move', 'caption', 'doc', 'react', 'del'] },
+  { key: 'general', icon: '✨', title: 'GENERAL & INFO', poem: 'know the star you orbit', cmds: ['menu', 'help', 'bot', 'alive', 'ping', 'uptime', 'runtime', 'stats', 'user', 'owner', 'celestia', 'donate', 'script', 'wolftech', 'settings', 'time', 'jid', 'gjid', 'cinfo', 'status', 'setstatus'] },
+  { key: 'ai', icon: '🧠', title: 'AI HEAVENS', poem: 'minds made of starlight', cmds: ['ai', 'claude', 'void', 'wormgpt', 'bibleai', 'muslimai', 'imagine', 'vision', 'vision2', 'speechwriter', 'autochat'] },
+  { key: 'downloader', icon: '⬇️', title: 'DOWNLOADERS', poem: 'catch what falls from the sky', cmds: ['tiktok', 'ig', 'fb', 'twitter', 'igstory', 'pindl', 'song', 'play', 'play2', 'audio', 'download', 'downloader', 'video', 'video2', 'spotify', 'apk', 'gitclone', 'music', 'socialdl'] },
+  { key: 'media', icon: '🎬', title: 'MEDIA STUDIO', poem: 'the forge of moving light', cmds: ['sticker', 's', 'smeme', 'take', 'attp', 'mix', 'photo', 'toimg', 'tovideo', 'toaudio', 'cut', 'merge', 'tts', 'totext', 'transcribe', 'shazam', 'vocalremover', 'move', 'caption', 'doc', 'react', 'del'] },
   { key: 'image', icon: '🖼️', title: 'IMAGE LAB', poem: 'paint with pure voltage', cmds: ['remini', 'removebg', 'imagesearch', 'similarimage', 'ocr', 'qr', 'carbon', 'screenshot', 'webscan', 'fancy'] },
   { key: 'docs', icon: '📄', title: 'DOCUMENT FORGE', poem: 'stone tablets for the digital age', cmds: ['topdf', 'toword', 'toexcel', 'vcf', 'zip'] },
   { key: 'group', icon: '👥', title: 'GROUP ADMIN', poem: 'order in the pack', cmds: ['open', 'close', 'mute', 'unmute', 'amute', 'aunmute', 'promote', 'demote', 'kick', 'add', 'join', 'approve', 'reject', 'warn', 'delete', 'hidetag', 'tagall', 'tag', 'poll', 'link', 'revoke', 'subject', 'desc', 'icon', 'groupinfo', 'groupstatus', 'gstatus', 'admin', 'invite', 'gpp'] },
   { key: 'security', icon: '🛡️', title: 'GROUP SECURITY', poem: 'walls without mercy for chaos', cmds: ['antibot', 'antilink', 'antilinkall', 'antidelete', 'antiedit', 'antitag', 'antigm', 'antigstatus', 'antispam', 'antiword', 'badword', 'welcomegoodbye', 'welcome', 'goodbye', 'setgreet', 'pdm', 'foreigners'] },
-  { key: 'owner', icon: '👑', title: 'OWNER CROWN', poem: 'the hand that holds the leash', cmds: ['mode', 'public', 'self', 'prefix', 'getprefix', 'menutype', 'botpp', 'fullpp', 'broadcast', 'block', 'unblock', 'blocklist', 'ban', 'unban', 'mygroups', 'leavegroup', 'restart', 'logout', 'update', 'updatenow', 'pair', 'pair2', 'oadmin', 'left'] },
+  { key: 'owner', icon: '👑', title: 'OWNER CROWN', poem: 'the hand that holds the light', cmds: ['mode', 'public', 'self', 'prefix', 'getprefix', 'menutype', 'menutheme', 'botpp', 'fullpp', 'broadcast', 'block', 'unblock', 'blocklist', 'ban', 'unban', 'mygroups', 'leavegroup', 'restart', 'logout', 'update', 'updatenow', 'pair', 'pair2', 'oadmin', 'left'] },
   { key: 'sudo', icon: '🎖️', title: 'SUDO & ACCESS', poem: 'trust, but verified', cmds: ['addsudo', 'delsudo', 'checksudo', 'clearsudos', 'zushi'] },
-  { key: 'nuke', icon: '💀', title: 'WEAPONS OF MASS DESTRUCTION', poem: 'speak softly; carry a nuke', cmds: ['spam', 'kill', 'kill2', 'clear'] },
+  { key: 'nuke', icon: '💀', title: 'DESTRUCTIVE TOOLS', poem: 'power reserved for the crown', cmds: ['spam', 'kill', 'kill2', 'clear'] },
   { key: 'auto', icon: '🤖', title: 'AUTOMATION', poem: 'she moves while you sleep', cmds: ['autoread', 'autoview', 'autolike', 'autotyping', 'autorecording', 'autobio', 'anticall', 'wapresence', 'vv', 'vv2', 'save', 'save1'] },
   { key: 'games', icon: '🎮', title: 'ARCADE & FUN', poem: 'play among the planets', cmds: ['game', 'answer', 'rps', 'tictactoe', 'wordguess', 'guess', 'wgend', 'mathquiz', 'mans', 'joke', 'quote', 'zodiac', 'common', 'ttend'] },
   { key: 'football', icon: '⚽', title: 'FOOTBALL ZONE', poem: 'twenty-two hearts, one law', cmds: ['epl', 'eplscorers', 'laliga', 'laligascorers', 'seriea', 'serieascorers', 'bundesliga', 'bundesligascorers', 'ligue1', 'ligue1scorers', 'ucl', 'uclscorers', 'euro', 'fifa', 'fifaplayoffs', 'news', 'livescore', 'standings', 'playersearch', 'teamsearch'] },
-  { key: 'utility', icon: '🧰', title: 'UTILITY BELT', poem: 'everything else worth carrying', cmds: ['calc', 'define', 'base', 'unbase', 'trt', 'lyrics', 'lyrics2', 'ison', 'getpfp', 'upload', 'url', 'clearcache', 'eval', 'shell', 'fetch', 'cat', 'getfile', 'getcmd', 'enc', 'compile-py', 'compile-js', 'compile-c', 'compile-c++', 'disp-1', 'disp-7', 'disp-90', 'disp-off'] },
+  { key: 'utility', icon: '🧰', title: 'UTILITY BELT', poem: 'everything else worth carrying', cmds: ['calc', 'define', 'wiki', 'ytsearch', 'base', 'unbase', 'trt', 'lyrics', 'lyrics2', 'ison', 'getpfp', 'upload', 'url', 'clearcache', 'eval', 'shell', 'fetch', 'cat', 'getfile', 'getcmd', 'enc', 'compile-py', 'compile-js', 'compile-c', 'compile-c++', 'disp-1', 'disp-7', 'disp-90', 'disp-off'] },
 ];
 
-// ═══════════════════════════════════════════════════
-// THEME 1: CONSTELLATION — star-map, figlet, poems
-// ═══════════════════════════════════════════════════
-const T1 = {
-  key: 'constellation', name: 'STAR MAP', icon: '🗺️',
-  figlet() {
-    try {
-      return figlet.textSync('CELESTIA', { font: 'Small' })
-        .split('\n').map(l => l.replace(/\s+$/g, '')).filter(l => l).join('\n');
-    } catch { return '✨ C E L E S T I A ✨'; }
-  },
-  index(prefix, commands, total) {
-    const L = [];
-    L.push('```' + this.figlet() + '```');
-    L.push('*THE  MOST  BEAUTIFUL  BOT*');
-    L.push('🐺 _WolfTech howled → ✨ Celestia ascended_');
-    L.push('');
-    L.push(`╭${ui.RULE}╮`);
-    L.push(`│ 🗺️ *THE CONSTELLATION*`);
-    L.push(`│ ${total} commands • ${CATEGORIES.length} realms`);
-    L.push(`│ prefix: *${prefix}*`);
-    L.push(`╰${ui.RULE}╯`);
-    L.push('');
-    for (const c of CATEGORIES) {
-      const n = c.cmds.filter(x => commands.has(x)).length;
-      L.push(`${c.icon} \`${prefix}menu ${c.key}\` — ${c.title} *(${n})*`);
-    }
-    L.push('');
-    L.push(`📜 \`${prefix}menu all 1\` — full atlas`);
-    L.push('> _Howl of the Wolf → Light of the Stars_');
-    return L.join('\n');
-  },
-  realm(cat, prefix, commands, page) {
-    const PER = 14;
-    const avail = cat.cmds.filter(n => commands.has(n));
-    const pages = Math.ceil(avail.length / PER) || 1;
-    const p = Math.max(1, Math.min(page, pages));
-    const slice = avail.slice((p - 1) * PER, p * PER);
-    const L = [];
-    L.push(`\`${cat.icon}  ${cat.title}\``);
-    L.push(`_❝ ${cat.poem} ❞_`);
-    L.push('');
-    for (const name of slice) {
-      const cmd = commands.get(name);
-      const d = (cmd.description || '').split('.')[0].slice(0, 58);
-      const a = (cmd.aliases?.length) ? `ᴬ${cmd.aliases.length}` : '';
-      L.push(`✧ \`${prefix}${name}\`${a} — _${d}_`);
-    }
-    if (pages > 1) L.push('', `📜 ${p}/${pages} — \`${prefix}menu ${cat.key} ${p % pages + 1}\` for next`);
-    L.push('', '```        · · ✦ · ·        ```');
-    return L.join('\n');
-  },
-  footer: '> _Howl of the Wolf → Light of the Stars_',
-};
-
-// ═══════════════════════════════════════════════════
-// THEME 2: NEON CLASSIC — box-drawn cyber panels
-// ═══════════════════════════════════════════════════
-const T2 = {
-  key: 'neon', name: 'NEON CLASSIC', icon: '🌆',
-  index(prefix, commands, total) {
-    const L = [];
-    L.push('```╔════════════════════════════╗');
-    L.push('║  ✨  C E L E S T I A  ✨   ║');
-    L.push('║   THE MOST BEAUTIFUL BOT   ║');
-    L.push('╚════════════════════════════╝```');
-    L.push('🐺⚡ _WolfTech × Celestia — Powered Lineage_');
-    L.push('');
-    L.push(`┏━━━ 🌆 *NEON GRID* ━━━┓`);
-    L.push(`┃ ⚡ ${total} commands • ${CATEGORIES.length} zones`);
-    L.push(`┃ ⌨️ prefix: *${prefix}*`);
-    L.push(`┗${'━'.repeat(20)}┛`);
-    L.push('');
-    for (const c of CATEGORIES) {
-      const n = c.cmds.filter(x => commands.has(x)).length;
-      L.push(`┣ ${c.icon} *${c.title}* — \`${prefix}menu ${c.key}\` _(${n})_`);
-    }
-    L.push('');
-    L.push(`┗ 📜 \`${prefix}menu all 1\` — the full grid`);
-    L.push('> ⚡ _Neon veins. Wolf instincts._');
-    return L.join('\n');
-  },
-  realm(cat, prefix, commands, page) {
-    const PER = 14;
-    const avail = cat.cmds.filter(n => commands.has(n));
-    const pages = Math.ceil(avail.length / PER) || 1;
-    const p = Math.max(1, Math.min(page, pages));
-    const slice = avail.slice((p - 1) * PER, p * PER);
-    const L = [];
-    L.push(`┏━━━ ${cat.icon} *${cat.title}* ━━━┓`);
-    L.push(`┃ ⚡ ${cat.poem}`);
-    L.push('┃');
-    for (const name of slice) {
-      const cmd = commands.get(name);
-      const d = (cmd.description || '').split('.')[0].slice(0, 45);
-      L.push(`┣ ⚡ \`${prefix}${name}\` — ${d}`);
-    }
-    L.push(`┗${'━'.repeat(20)}┛`);
-    if (pages > 1) L.push(`📄 ${p}/${pages} — \`${prefix}menu ${cat.key} ${p % pages + 1}\` next`);
-    return L.join('\n');
-  },
-  footer: '> ⚡ _Neon veins. Wolf instincts._',
-};
-
-// ═══════════════════════════════════════════════════
-// THEME 3: MINIMAL ZEN — clean, whitespace, quiet
-// ═══════════════════════════════════════════════════
-const T3 = {
-  key: 'zen', name: 'MINIMAL ZEN', icon: '🍃',
-  index(prefix, commands, total) {
-    const L = [];
-    L.push('✨ *CELESTIA*');
-    L.push(`_${total} commands · ${CATEGORIES.length} realms · prefix ${prefix}_`);
-    L.push('');
-    for (const c of CATEGORIES) {
-      L.push(`${c.icon} ${c.title.toLowerCase()} → \`${prefix}menu ${c.key}\``);
-    }
-    L.push('');
-    L.push(`everything → \`${prefix}menu all 1\``);
-    L.push('— 🐺 ✨');
-    return L.join('\n');
-  },
-  realm(cat, prefix, commands, page) {
-    const PER = 16;
-    const avail = cat.cmds.filter(n => commands.has(n));
-    const pages = Math.ceil(avail.length / PER) || 1;
-    const p = Math.max(1, Math.min(page, pages));
-    const slice = avail.slice((p - 1) * PER, p * PER);
-    const L = [];
-    L.push(`${cat.icon} *${cat.title.toLowerCase()}*`);
-    L.push(`_${cat.poem}_`);
-    L.push('');
-    L.push(slice.map(n => `\`${prefix}${n}\``).join(' · '));
-    if (pages > 1) L.push('', `_${p}/${pages} · more: ${prefix}menu ${cat.key} ${p % pages + 1}_`);
-    L.push('', '—');
-    return L.join('\n');
-  },
-  footer: '— 🐺 ✨',
-};
-
-// ═══════════════════════════════════════════════════
-// THEME 4: ARCANE GRIMOIRE — spellbook of the wolf
-// ═══════════════════════════════════════════════════
-const T4 = {
-  key: 'grimoire', name: 'ARCANE GRIMOIRE', icon: '📜',
-  index(prefix, commands, total) {
-    const L = [];
-    L.push('```◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬◬');
-    L.push('   ✦ T H E   G R I M O I R E ✦');
-    L.push('      of the Celestial Wolf');
-    L.push('◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬ ◬◬```');
-    L.push('_Forged in the Wolf\'s Den • Bound in Starlight_');
-    L.push('');
-    L.push(`*Table of Contents* — ${total} incantations:`);
-    L.push('');
-    const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII'];
-    CATEGORIES.forEach((c, i) => {
-      const n = c.cmds.filter(x => commands.has(x)).length;
-      L.push(`${roman[i] || '•'}. ${c.icon} *${c.title}* — _${cat2Spell(c)}_ (${n})`);
-      L.push(`     ↳ \`${prefix}menu ${c.key}\``);
-    });
-    L.push('');
-    L.push(`*Appendix:* \`${prefix}menu all 1\` — the full tome`);
-    L.push('');
-    L.push('```· · ──── ✦ ──── · ·```');
-    L.push('> 🐺 _By fang and starlight, so it is written._');
-    return L.join('\n');
-  },
-  realm(cat, prefix, commands, page) {
-    const PER = 13;
-    const avail = cat.cmds.filter(n => commands.has(n));
-    const pages = Math.ceil(avail.length / PER) || 1;
-    const p = Math.max(1, Math.min(page, pages));
-    const slice = avail.slice((p - 1) * PER, p * PER);
-    const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV', 'XVI', 'XVII'];
-    const rIdx = CATEGORIES.indexOf(cat);
-    const L = [];
-    L.push('```◭ ───────────────── ⧫ ───────────────── ◮```');
-    L.push(`${cat.icon} *CHAPTER ${roman[rIdx] || '•'} — ${cat.title}*`);
-    L.push(`_"${cat2Spell(cat)}"_`);
-    L.push('```◭ ───────────────── ⧫ ───────────────── ◮```');
-    L.push('');
-    slice.forEach((name, i) => {
-      const cmd = commands.get(name);
-      const d = (cmd.description || '').split('.')[0].slice(0, 42);
-      const glyph = ['✦', '❖', '◆', '✧', '⟡'][i % 5];
-      L.push(`${glyph} *${name}* — _${d}_`);
-    });
-    if (pages > 1) L.push('', `_— page ${p}/${pages} · turn: ${prefix}menu ${cat.key} ${p % pages + 1} —_`);
-    L.push('', '```· · ──── ✦ ──── · ·```');
-    return L.join('\n');
-  },
-  footer: '> 🐺 _By fang and starlight._',
-};
-
-// ═══════════════════════════════════════════════════
-// THEME 5: CELESTIAL REIGN — her flagship face 👑
-// Built for how WhatsApp REALLY renders: no column-aligned
-// boxes (they shatter in proportional fonts), only symmetric
-// ornaments, generous air, one idea per line. Logo rides above.
- // ═══════════════════════════════════════════════════
-const T5 = {
-  key: 'celestial', name: 'CELESTIAL REIGN', icon: '🌌',
-  index(prefix, commands, total) {
-    const L = [];
-    L.push('✨ ⋆⋅☆⋅⋆ ✨ ⋆⋅☆⋅⋆ ✨');
-    L.push('        *CELESTIA*');
-    L.push('  _The Most Beautiful Bot_');
-    L.push('✨ ⋆⋅☆⋅⋆ ✨ ⋆⋅☆⋅⋆ ✨');
-    L.push('');
-    L.push('🐺 _WolfTech howled → Celestia ascended_');
-    L.push('');
-    L.push('◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦');
-    L.push(`   📜 *${total}* commands · *${CATEGORIES.length}* realms`);
-    L.push(`   ⌨️ prefix: \`${prefix}\` · ⏱️ ${uptimeShort()}`);
-    L.push('◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦ ◦');
-    L.push('');
-    for (const c of CATEGORIES) {
-      const n = c.cmds.filter(x => commands.has(x)).length;
-      if (!n) continue;
-      L.push(`${c.icon} *${c.title}*  ·  _${n}_`);
-      L.push(`   └ \`${prefix}menu ${c.key}\` — _${c.poem}_`);
-    }
-    L.push('');
-    L.push('❖ ───────── ★ ───────── ❖');
-    L.push(`📖 \`${prefix}menu all 1\` — the full atlas`);
-    L.push(`🎨 \`${prefix}menutheme\` — change her face`);
-    L.push('> _Howl of the Wolf → Light of the Stars_');
-    return L.join('\n');
-  },
-  realm(cat, prefix, commands, page) {
-    const PER = 14;
-    const avail = cat.cmds.filter(n => commands.has(n));
-    const pages = Math.ceil(avail.length / PER) || 1;
-    const p = Math.max(1, Math.min(page, pages));
-    const slice = avail.slice((p - 1) * PER, p * PER);
-    const L = [];
-    L.push(`${cat.icon} *${cat.title}*`);
-    L.push(`_❝ ${cat.poem} ❞_`);
-    L.push('· · ───── ✦ ───── · ·');
-    L.push('');
-    for (const name of slice) {
-      const cmd = commands.get(name);
-      const d = (cmd.description || '').split('.')[0].slice(0, 52);
-      L.push(`✧ \`${prefix}${name}\``);
-      if (d) L.push(`   _${d}_`);
-    }
-    L.push('');
-    L.push('· · ───── ✦ ───── · ·');
-    if (pages > 1) L.push(`_page ${p}/${pages} · next: \`${prefix}menu ${cat.key} ${p % pages + 1}\`_`);
-    L.push(`_back home: \`${prefix}menu\`_`);
-    return L.join('\n');
-  },
-  footer: '> _Howl of the Wolf → Light of the Stars_',
-};
-
-function uptimeShort() {
-  const s = Math.floor(process.uptime());
-  const d = Math.floor(s / 86400);
-  const h = Math.floor((s % 86400) / 3600);
-  const m = Math.floor((s % 3600) / 60);
-  if (d) return `${d}d ${h}h`;
-  if (h) return `${h}h ${m}m`;
-  if (m) return `${m}m`;
-  return `${s}s`;
-}
-
-// ═══════════════════════════════════════════════════
-// THEME 6: IRONBOX — the reference menu, CELESTIA build.
-// Banner image on its own bubble, then the full menu as plain quoted
-// text (image captions cap at ~1k chars — the 9k+ menu must travel as
-// text). Every line quote-prefixed (> ), commands in monospace. Renders
-// the FULL realm taxonomy (CATEGORIES) — every command that exists in
-// this bot appears, including CYBER FORTRESS.
-// ═══════════════════════════════════════════════════════════
-
-// ─── The default face renders exclusively through utils/ui.js — one
-// template, one indentation, one border width. Nothing is hand-formatted
-// per section.
-const T6 = {
-  key: 'boxed',
-
-  name: 'CELESTIA SIGNATURE',
-
-  icon: '✦',
-
-  buildFull(
-    prefix,
-    commands,
-    total,
-    context = {}
-  ) {
-    const mode =
-      settingsStore.get(
-        'mode',
-        config.WORK_TYPE
-      );
-
-    const availableCategories =
-      CATEGORIES.filter((cat) =>
-        cat.cmds.some((command) =>
-          commands.has(command)
-        )
-      );
-
-    const commandCount =
-      total ||
-      new Set(commands.values()).size;
-
-    const sections = [
-      renderDashboard({
-        user:
-          context.user,
-
-        prefix:
-          prefix || '.',
-
-        mode,
-
-        commandCount,
-
-        realmCount:
-          availableCategories.length,
-
-        uptime:
-          shortUptime(
-            process.uptime()
-          ),
-      }),
-    ];
-
-    for (
-      const cat
-      of availableCategories
-    ) {
-      const available =
-        cat.cmds.filter(
-          (command) =>
-            commands.has(command)
-        );
-
-      sections.push(
-        renderCategory({
-          icon:
-            cat.icon,
-
-          title:
-            cat.title,
-
-          subtitle:
-            cat.poem,
-
-          commands:
-            available,
-        })
-      );
-    }
-
-    sections.push(
-      [
-        '✦ _Howl of the Wolf → Light of the Stars_ ✦',
-        `🎨 ${prefix}menu theme • change menu style`,
-      ].join('\n')
-    );
-
-    return sections.join('\n\n');
-  },
-
-  index(
-    prefix,
-    commands,
-    total,
-    context
-  ) {
-    return this.buildFull(
-      prefix,
-      commands,
-      total,
-      context
-    );
-  },
-
-  realm(
-    cat,
-    prefix,
-    commands
-  ) {
-    const available =
-      cat.cmds.filter(
-        (command) =>
-          commands.has(command)
-      );
-
-    return (
-      renderCategory({
-        icon:
-          cat.icon,
-
-        title:
-          cat.title,
-
-        subtitle:
-          cat.poem,
-
-        commands:
-          available,
-
-        prefix,
-      }) +
-      `\n\n↩ Back: ${prefix}menu`
-    );
-  },
-
-  footer: '',
-};
-
-function cat2Spell(cat) {
-  return cat.poem;
-}
-
-const THEMES = { boxed: T6, celestial: T5, constellation: T1, neon: T2, zen: T3, grimoire: T4 };
-const THEME_ORDER = [
-  { key: 'boxed', icon: '❏', name: 'IRONBOX' },
-  { key: 'celestial', icon: '🌌', name: 'CELESTIAL REIGN' },
-  { key: 'constellation', icon: '🗺️', name: 'STAR MAP' },
-  { key: 'neon', icon: '🌆', name: 'NEON CLASSIC' },
-  { key: 'zen', icon: '🍃', name: 'MINIMAL ZEN' },
-  { key: 'grimoire', icon: '📜', name: 'ARCANE GRIMOIRE' },
+const HOUSES = [
+  { key: 'orbit', number: '01', icon: '☀️', title: 'INNER ORBIT', subtitle: 'Life, spirit & daily intelligence', cats: ['heart', 'intel', 'mystic', 'space', 'wellness', 'business', 'travel'] },
+  { key: 'arena', number: '02', icon: '🏟️', title: 'THE ARENA', subtitle: 'Games, glory & live competition', cats: ['game', 'games', 'football'] },
+  { key: 'forge', number: '03', icon: '✦', title: 'CREATOR FORGE', subtitle: 'AI, media & transformation', cats: ['ai', 'downloader', 'media', 'image', 'docs'] },
+  { key: 'nexus', number: '04', icon: '🌐', title: 'WORLD NEXUS', subtitle: 'Information, places & connection', cats: ['status', 'atlas', 'portal', 'general', 'utility'] },
+  { key: 'crown', number: '05', icon: '♛', title: 'CROWN CONTROL', subtitle: 'Administration, access & defense', cats: ['cyber', 'group', 'security', 'auto', 'sudo', 'owner', 'nuke'] },
 ];
 
-function splitMenuText(text, maxLength = 3800) {
+const SKINS = {
+  boxed: { glyph: '✦', name: 'SIGNATURE' },
+  celestial: { glyph: '✧', name: 'CELESTIAL' },
+  constellation: { glyph: '⋆', name: 'STAR MAP' },
+  neon: { glyph: '◆', name: 'NEON' },
+  zen: { glyph: '•', name: 'ZEN' },
+  grimoire: { glyph: '❖', name: 'GRIMOIRE' },
+};
+
+function skin() {
+  return SKINS[settingsStore.get('menu_theme', 'boxed')] || SKINS.boxed;
+}
+
+function clean(text, fallback = '') {
+  return String(text || fallback).replace(/[\r\n*_`~]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function description(command) {
+  const text = clean(command?.description, 'No description available.');
+  return text.length > 68 ? `${text.slice(0, 65).trim()}...` : text;
+}
+
+function uniqueCommands(commands) {
+  const byName = new Map();
+  for (const command of commands.values()) {
+    const name = clean(command?.name).toLowerCase();
+    if (name && !byName.has(name)) byName.set(name, command);
+  }
+  return byName;
+}
+
+function buildCatalog(commands) {
+  const unique = uniqueCommands(commands);
+  const claimed = new Set();
+  const categories = CATEGORIES.map((category) => {
+    const list = [];
+    for (const token of category.cmds) {
+      const command = commands.get(String(token).toLowerCase());
+      const name = clean(command?.name).toLowerCase();
+      if (!name || claimed.has(name)) continue;
+      claimed.add(name);
+      list.push(command);
+    }
+    return { ...category, commands: list };
+  });
+
+  const utility = categories.find((category) => category.key === 'utility');
+  for (const [name, command] of unique) {
+    if (!claimed.has(name)) utility.commands.push(command);
+  }
+  return { categories, unique };
+}
+
+function houseFor(categoryKey) {
+  return HOUSES.find((house) => house.cats.includes(categoryKey));
+}
+
+function categoryFor(catalog, key) {
+  return catalog.categories.find((category) => category.key === String(key || '').toLowerCase());
+}
+
+function houseStats(house, catalog) {
+  const categories = house.cats.map((key) => categoryFor(catalog, key)).filter((category) => category?.commands.length);
+  return { categories, count: categories.reduce((sum, category) => sum + category.commands.length, 0) };
+}
+
+function masthead(title, breadcrumb, s = skin()) {
+  const trail = clean(breadcrumb).replace(/\s*\/\s*/g, '  ›  ');
+  return [
+    `╭─ ${s.glyph} *CELESTIA / ${title}*`,
+    `│ ${trail.toUpperCase()}`,
+    `╰${RULE}`,
+  ].join('\n');
+}
+
+function footer(lines) {
+  return [
+    '╭─ ◇ *NAVIGATION*',
+    ...lines.map((line) => `│ ${line}`),
+    `╰${RULE}`,
+  ].join('\n');
+}
+
+function renderHome({ user, prefix, mode, total, catalog }) {
+  const s = skin();
+  const lines = [
+    masthead('OBSERVATORY', 'home', s),
+    '',
+    `Welcome back, *${clean(user, 'Traveler').slice(0, 40)}*`,
+    `_${s.name} interface · ${shortUptime(process.uptime())} uptime_`,
+    '',
+    '╭─ ◇ *FLIGHT STATUS*',
+    `│ Command key  ›  ${prefix}`,
+    `│ Access mode  ›  ${clean(mode, 'public').toUpperCase()}`,
+    `│ Live signals ›  ${total}`,
+    `│ Constellations › ${HOUSES.length}`,
+    `╰${RULE}`,
+    '',
+    `        ${s.glyph}  *COMMAND CONSTELLATION*  ${s.glyph}`,
+    '       _Choose where you want to go._',
+  ];
+
+  for (const house of HOUSES) {
+    const stats = houseStats(house, catalog);
+    if (!stats.count) continue;
+    lines.push('', `╭─ ${house.number}  ${house.icon} *${house.title}*`);
+    lines.push(`│ _${house.subtitle}_`);
+    lines.push(`│ ${stats.categories.length} realms · ${stats.count} signals`);
+    lines.push(`│ Enter › ${prefix}menu ${house.key}`);
+    lines.push(`╰${RULE}`);
+  }
+
+  lines.push('', footer([
+    `◇ ${prefix}menu all  · complete atlas`,
+    `◇ ${prefix}menu find <word>  · signal search`,
+    `◇ ${prefix}menu theme  · visual identity`,
+  ]));
+  lines.push('', `${s.glyph} _Howl of the Wolf · Light of the Stars_ ${s.glyph}`);
+  return lines.join('\n');
+}
+
+function renderHouse(house, catalog, prefix) {
+  const stats = houseStats(house, catalog);
+  const lines = [
+    masthead(house.title, `HOME  /  ${house.key}`),
+    '',
+    `${house.icon} *${house.subtitle}*`,
+    `_${stats.count} live signals in ${stats.categories.length} realms_`,
+  ];
+  stats.categories.forEach((category, index) => {
+    lines.push('', `╭─ ${String(index + 1).padStart(2, '0')}  ${category.icon} *${category.title}*`);
+    lines.push(`│ _${category.poem}_`);
+    lines.push(`│ ${category.commands.length} signals`);
+    lines.push(`│ Open › ${prefix}menu ${house.key} ${category.key}`);
+    lines.push(`╰${RULE}`);
+  });
+  lines.push('', footer([`← ${prefix}menu`, `◎ ${prefix}menu all`]));
+  return lines.join('\n');
+}
+
+function renderRealm(category, house, prefix, page = 1) {
+  const pages = Math.max(1, Math.ceil(category.commands.length / PAGE_SIZE));
+  const current = Math.max(1, Math.min(Number(page) || 1, pages));
+  const items = category.commands.slice((current - 1) * PAGE_SIZE, current * PAGE_SIZE);
+  const lines = [
+    masthead(category.title, `HOME  /  ${house.key}  /  ${category.key}`),
+    '',
+    `${category.icon} _${category.poem}_`,
+    `*${category.commands.length} signals* · page ${current}/${pages}`,
+    '',
+  ];
+  for (const command of items) {
+    const name = clean(command.name).toLowerCase();
+    lines.push(`${skin().glyph} *${prefix}${name}*`);
+    lines.push(`   ${description(command)}`);
+    lines.push('');
+  }
+  const nav = [`← ${prefix}menu ${house.key}`];
+  if (current > 1) nav.push(`‹ ${prefix}menu ${house.key} ${category.key} ${current - 1}`);
+  if (current < pages) nav.push(`› ${prefix}menu ${house.key} ${category.key} ${current + 1}`);
+  nav.push(`Details › ${prefix}menu ${house.key} ${category.key} <command>`);
+  lines.push(footer(nav));
+  return lines.join('\n');
+}
+
+function renderDetail(category, house, command, prefix) {
+  const name = clean(command.name).toLowerCase();
+  const aliases = [...new Set((command.aliases || []).map((alias) => clean(alias).toLowerCase()).filter(Boolean))];
+  const lines = [
+    masthead('SIGNAL PROFILE', `HOME  /  ${house.key}  /  ${category.key}  /  ${name}`),
+    '',
+    `╭─ ${category.icon} *${prefix}${name}*`,
+    `│ ${description(command)}`,
+  ];
+  if (aliases.length) {
+    lines.push('│', '│ *Aliases*');
+    for (const alias of aliases.slice(0, 8)) lines.push(`│  · ${prefix}${alias}`);
+  }
+  lines.push(`│`, `│ *Launch* › ${prefix}${name}`, `╰${RULE}`, '', footer([
+    `← ${prefix}menu ${house.key} ${category.key}`,
+    `⌂ ${prefix}menu`,
+  ]));
+  return lines.join('\n');
+}
+
+function renderAtlas(catalog, prefix, page = 1) {
+  const available = catalog.categories.filter((category) => category.commands.length);
+  const perPage = 7;
+  const pages = Math.max(1, Math.ceil(available.length / perPage));
+  const current = Math.max(1, Math.min(Number(page) || 1, pages));
+  const slice = available.slice((current - 1) * perPage, current * perPage);
+  const lines = [masthead('COMPLETE ATLAS', `HOME  /  ALL  /  ${current}`), '', `*${available.length} realms* · page ${current}/${pages}`];
+  for (const category of slice) {
+    const house = houseFor(category.key);
+    lines.push('', `${category.icon} *${category.title}*`);
+    lines.push(`   ${category.commands.length} signals · ${prefix}menu ${house.key} ${category.key}`);
+  }
+  const nav = [`← ${prefix}menu`];
+  if (current > 1) nav.push(`‹ ${prefix}menu all ${current - 1}`);
+  if (current < pages) nav.push(`› ${prefix}menu all ${current + 1}`);
+  lines.push('', footer(nav));
+  return lines.join('\n');
+}
+
+function renderSearch(catalog, prefix, query) {
+  const q = clean(query).toLowerCase().slice(0, 50);
+  const matches = [];
+  for (const category of catalog.categories) {
+    const house = houseFor(category.key);
+    for (const command of category.commands) {
+      const haystack = `${command.name} ${(command.aliases || []).join(' ')} ${command.description || ''}`.toLowerCase();
+      if (q && haystack.includes(q)) matches.push({ command, category, house });
+    }
+  }
+  const lines = [masthead('SIGNAL SEARCH', `HOME  /  FIND  /  ${q || '...'}`), ''];
+  if (!q) {
+    lines.push(`Search names, aliases or descriptions.`, '', `Try › ${prefix}menu find weather`);
+  } else if (!matches.length) {
+    lines.push(`No signal matched *${q}*.`, '', `_Try a shorter word or command alias._`);
+  } else {
+    lines.push(`*${matches.length} match${matches.length === 1 ? '' : 'es'}* for “${q}”`, '');
+    for (const { command, category, house } of matches.slice(0, 15)) {
+      lines.push(`${skin().glyph} *${prefix}${clean(command.name).toLowerCase()}* · ${category.title}`);
+      lines.push(`   ${prefix}menu ${house.key} ${category.key} ${clean(command.name).toLowerCase()}`);
+    }
+    if (matches.length > 15) lines.push('', `_Showing the first 15 results._`);
+  }
+  lines.push('', footer([`← ${prefix}menu`, `◎ ${prefix}menu all`]));
+  return lines.join('\n');
+}
+
+function splitMenuText(text, maxLength = 12000) {
   if (!text || text.length <= maxLength) return [text];
-
   let splitAt = text.lastIndexOf('\n', maxLength);
-  if (splitAt <= 0) splitAt = Math.max(1, Math.min(maxLength, text.length));
-
-  const first = text.slice(0, splitAt).trim();
-  const rest = text.slice(splitAt).trim();
-
-  if (!first) return splitMenuText(rest, maxLength);
-  return [first, ...splitMenuText(rest, maxLength)];
+  if (splitAt <= 0) splitAt = maxLength;
+  return [text.slice(0, splitAt).trim(), ...splitMenuText(text.slice(splitAt).trim(), maxLength)].filter(Boolean);
 }
 
-function getTheme() {
-  const t = settingsStore.get('menu_theme', 'boxed');
-  return THEMES[t] || T6;
-}
-
-// ═══════════════════════════════════════════════════
-// MAIN
-// ═══════════════════════════════════════════════════
 module.exports = {
   name: 'menu',
   aliases: ['help', 'commands', 'list'],
-  description: '✨ The Menu of Six Faces — Ironbox, Celestial Reign, Constellation, Neon, Zen, Grimoire',
+  description: 'Explore CELESTIA through constellations, realms and command profiles.',
   execute: async (sock, msg, args, commands, reply) => {
     const jid = msg.key.remoteJid;
     const prefix = settingsStore.get('prefix', config.prefix) || '.';
-    const arg0 = (args[0] || '').toLowerCase();
+    const catalog = buildCatalog(commands);
+    const total = catalog.unique.size;
+    const first = clean(args[0]).toLowerCase();
+    const second = clean(args[1]).toLowerCase();
+    const third = clean(args[2]).toLowerCase();
 
-    // count unique
-    const unique = new Set();
-    for (const c of commands.values()) unique.add(c.name);
-    const total = unique.size;
-
-    const theme = getTheme();
-
-    // Universal sender: logo as its OWN bare photo (no caption → natural
-    // full-width bubble), then the menu text below. Boxed menu rides in
-    // ONE monospace bubble (55k limit keeps it whole — single bubble =
-    // single width, boxes always aligned).
-    const sendPage = async (text, first) => {
-      const chunks = splitMenuText(text, 55000);
-      if (first && fs.existsSync(LOGO_PATH)) {
-        try {
-          await sock.sendMessage(jid, { image: fs.readFileSync(LOGO_PATH) }, { quoted: msg });
-        } catch { /* logo optional — menu must still send */ }
+    const getMenuImage = () => {
+      const custom = settingsStore.get('menu_banner', null);
+      if (custom) {
+        try { return Buffer.from(custom, 'base64'); } catch { /* use default */ }
       }
-      for (const [i, chunk] of chunks.entries()) {
-        await sock.sendMessage(jid, { text: chunk }, i === 0 && first ? { quoted: msg } : {});
-      }
-    };
-
-    const send = async (text) => sendPage(text, true);
-
-    // Boxed sender: banner image first on its own bubble, then the menu
-    // text underneath in 12k chunks (never as an image caption).
-    const getMenuImage = async () => {
-      const customBanner = settingsStore.get('menu_banner', null);
-      if (customBanner) {
-        try { return Buffer.from(customBanner, 'base64'); } catch { /* fall through */ }
-      }
-      for (const f of ['banner.png', 'script.jpg']) {
-        const p = path.join(__dirname, '../assets', f);
-        if (fs.existsSync(p)) {
-          try { return fs.readFileSync(p); } catch { /* try next */ }
-        }
+      for (const file of [LOGO_PATH, path.join(__dirname, '../assets/script.jpg')]) {
+        try { if (fs.existsSync(file)) return fs.readFileSync(file); } catch { /* try next */ }
       }
       return null;
     };
 
-    const sendBoxed = async (text) => {
-      const imageBuffer = await getMenuImage();
-
-      if (imageBuffer) {
+    let bannerSent = false;
+    const sendBanner = async () => {
+      if (bannerSent) return;
+      const image = getMenuImage();
+      if (image) {
         try {
-          await sock.sendMessage(jid, { image: imageBuffer }, { quoted: msg });
-        } catch {
-          // Image is optional. Menu must still continue.
-        }
+          await sock.sendMessage(jid, { image }, { quoted: msg });
+          bannerSent = true;
+        } catch { /* text still sends */ }
       }
+    };
 
-      const chunks = splitMenuText(text, 12000);
-
-      for (const [index, chunk] of chunks.entries()) {
+    const send = async (text, withBanner = true) => {
+      if (withBanner) await sendBanner();
+      for (const [index, chunk] of splitMenuText(text).entries()) {
         await sock.sendMessage(jid, { text: chunk }, index === 0 ? { quoted: msg } : {});
       }
     };
 
-    // Her spoken intro — pre-built opus voice note with music bed.
-    // File-gated: silently skipped if missing. Quoted so it threads under her menu.
-    const sendVoiceNote = async () => {
+    const sendVoice = async () => {
       const voicePath = path.join(__dirname, '../assets/menu-voice.opus');
-      if (!fs.existsSync(voicePath)) return;
       try {
-        await sock.sendMessage(jid, {
-          audio: fs.readFileSync(voicePath),
-          mimetype: 'audio/ogg; codecs=opus',
-          ptt: true,
-        }, { quoted: msg });
-      } catch { /* voice intro is a bonus — menu already delivered */ }
+        if (fs.existsSync(voicePath)) await sock.sendMessage(jid, { audio: fs.readFileSync(voicePath), mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
+      } catch { /* optional */ }
     };
 
-    // ─── .menu theme — show theme picker (native list) ───
-    if (arg0 === 'theme' || arg0 === 'style' || arg0 === 'appearance') {
-      try {
-        await sock.sendMessage(jid, {
-          text: `🎨 *Choose her face* — current: *${theme.name}* ${theme.icon}`,
-          buttonText: '🎨 Pick a Face',
-          sections: [{
-            title: '✨ Menu Appearances',
-            rows: THEME_ORDER.map(t => ({
-              title: `${t.icon} ${t.name}`,
-              rowId: `${prefix}menutheme ${t.key}`,
-              description: {
-                boxed: 'CELESTIA signature face · banner + card menu',
-                celestial: 'her flagship face · airy ornaments · logo crown',
-                constellation: 'star-map · figlet banner · realm poems',
-                neon: 'cyber grid · box panels · sharp lines',
-                zen: 'quiet whitespace · command clouds',
-                grimoire: 'ancient spellbook · roman chapters',
-              }[t.key],
-            })),
-          }],
-        }, { quoted: msg });
-        return;
-      } catch {
-        // fallback text picker
-        const cur = settingsStore.get('menu_theme', 'boxed');
-        const lines = THEME_ORDER.map(t => `${t.icon} \`${prefix}menutheme ${t.key}\`${t.key === cur ? ' ← current' : ''}`).join('\n');
-        return reply(`🎨 *Menu appearances:*\n\n${lines}\n\nOr \`.menutheme native\` for WhatsApp tappable menus.`);
-      }
+    if (['theme', 'style', 'appearance'].includes(first)) {
+      return commands.get('menutheme')?.execute(sock, msg, [], commands, reply);
     }
 
-    // ─── .menu all [page] — atlas in current theme ───
-    if (arg0 === 'all') {
-      if (theme.key === 'boxed') {
-        const parts = [renderCategory({ icon: '📖', title: 'ATLAS — ALL REALMS', commands: [] })];
-        for (const cat of CATEGORIES) {
-          if (cat.cmds.some((c) => commands.has(c))) parts.push(theme.realm(cat, prefix, commands));
+    if (first === 'find' || first === 'search') return send(renderSearch(catalog, prefix, args.slice(1).join(' ')));
+    if (first === 'all') return send(renderAtlas(catalog, prefix, Number(second) || 1));
+
+    const selectedHouse = HOUSES.find((house) => house.key === first);
+    if (selectedHouse) {
+      if (!second) {
+        if (settingsStore.get('menu_native', false)) {
+          const stats = houseStats(selectedHouse, catalog);
+          try {
+            await sendBanner();
+            await sock.sendMessage(jid, {
+              text: `${selectedHouse.icon} *${selectedHouse.title}*\n_${selectedHouse.subtitle}_`,
+              buttonText: '✦ Choose a realm',
+              sections: [{ title: selectedHouse.title, rows: stats.categories.map((category) => ({
+                title: `${category.icon} ${category.title}`,
+                rowId: `${prefix}menu ${selectedHouse.key} ${category.key}`,
+                description: `${category.commands.length} signals · ${category.poem}`,
+              })) }],
+            }, { quoted: msg });
+            return;
+          } catch { /* use text layout */ }
         }
-        return sendBoxed(parts.join('\n'));
+        return send(renderHouse(selectedHouse, catalog, prefix));
       }
-      const PER = 3;
-      const totalPages = Math.ceil(CATEGORIES.length / PER);
-      const p = Math.max(1, Math.min(parseInt(args[1], 10) || 1, totalPages));
-      const cats = CATEGORIES.slice((p - 1) * PER, p * PER);
-      const L = [`\`\`\`📖  ATLAS  ${p}/${totalPages}\`\`\``];
-      for (const cat of cats) L.push(theme.realm(cat, prefix, commands, 1));
-      L.push(`\`\`\`— ${prefix}menu all ${p % totalPages + 1} →—\`\`\``);
-      return send(L.join('\n'));
+      const category = categoryFor(catalog, second);
+      if (!category || !selectedHouse.cats.includes(category.key)) return send(renderHouse(selectedHouse, catalog, prefix));
+      if (third && !/^\d+$/.test(third)) {
+        const command = category.commands.find((item) => clean(item.name).toLowerCase() === third || (item.aliases || []).some((alias) => clean(alias).toLowerCase() === third));
+        if (command) return send(renderDetail(category, selectedHouse, command, prefix));
+      }
+      return send(renderRealm(category, selectedHouse, prefix, Number(third) || 1));
     }
 
-    // ─── .menu <realm> [page] ───
-    if (arg0) {
-      if (theme.key === 'boxed') {
-        const cat = CATEGORIES.find((c) => c.key === arg0);
-        if (cat) return sendBoxed(theme.realm(cat, prefix, commands));
-        return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${CATEGORIES.map((c) => c.key).join(' • ')}`);
+    const directCategory = categoryFor(catalog, first);
+    if (directCategory) {
+      const house = houseFor(directCategory.key);
+      if (second && !/^\d+$/.test(second)) {
+        const command = directCategory.commands.find((item) => clean(item.name).toLowerCase() === second || (item.aliases || []).some((alias) => clean(alias).toLowerCase() === second));
+        if (command) return send(renderDetail(directCategory, house, command, prefix));
       }
-      const cat = CATEGORIES.find(c => c.key === arg0);
-      if (cat) {
-        const r = theme.realm(cat, prefix, commands, parseInt(args[1], 10) || 1);
-        return send(r + '\n\n' + theme.footer);
-      }
-      const valid = CATEGORIES.map(c => c.key).join(' • ');
-      return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${valid}\nOr \`${prefix}menu theme\` to change her face.`);
+      return send(renderRealm(directCategory, house, prefix, Number(second) || 1));
     }
 
-    // ─── native mode: bare .menu = tappable realms ───
+    if (first) return send(renderSearch(catalog, prefix, first));
+
     if (settingsStore.get('menu_native', false)) {
       try {
+        await sendBanner();
         await sock.sendMessage(jid, {
-          text: `${theme.icon} *${theme.name}* — ${total} commands, ${CATEGORIES.length} realms\nChoose a realm, ${msg.pushName || 'traveler'}:`,
-          buttonText: '🚀 Enter',
-          sections: [{
-            title: `${theme.icon} ${theme.name}`,
-            rows: CATEGORIES.filter(c => c.cmds.some(n => commands.has(n))).map(c => ({
-              title: `${c.icon} ${c.title}`,
-              rowId: `${prefix}menu ${c.key}`,
-              description: c.poem,
-            })),
-          }],
+          text: `${skin().glyph} *CELESTIA OBSERVATORY*\n${total} live signals · choose a constellation, ${clean(msg.pushName, 'Traveler')}.`,
+          buttonText: '✦ Enter observatory',
+          sections: [{ title: 'COMMAND CONSTELLATION', rows: HOUSES.map((house) => {
+            const stats = houseStats(house, catalog);
+            return { title: `${house.number} ${house.icon} ${house.title}`, rowId: `${prefix}menu ${house.key}`, description: `${stats.categories.length} realms · ${stats.count} signals` };
+          }) }],
         }, { quoted: msg });
         return;
-      } catch { /* fall to render */ }
+      } catch { /* use text layout */ }
     }
 
-    // ─── bare .menu — themed index ───
-    if (theme.key === 'boxed') {
-      await sendBoxed(
-        theme.index(
-          prefix,
-          commands,
-          total,
-          {
-            user:
-              msg.pushName ||
-              'Traveler',
-          }
-        )
-      );
-
-      await sendVoiceNote();
-
-      return;
-    }
-    const idx = theme.index(prefix, commands, total);
-    return send(idx);
+    await send(renderHome({
+      user: msg.pushName || 'Traveler',
+      prefix,
+      mode: settingsStore.get('mode', config.WORK_TYPE),
+      total,
+      catalog,
+    }));
+    await sendVoice();
   },
+  _internals: { buildCatalog, renderHome, renderHouse, renderRealm, renderDetail, renderAtlas, renderSearch, HOUSES, CATEGORIES },
 };

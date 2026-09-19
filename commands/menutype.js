@@ -3,7 +3,7 @@ const { isOwner } = require('../utils/isOwner');
 
 module.exports = {
   name: 'menutype',
-  description: 'Compatibility bridge → use .menutheme for the full 4-face picker',
+  description: 'Compatibility bridge for text and native constellation menus',
   async execute(sock, msg, args) {
     if (!isOwner(msg)) return;
 
@@ -13,20 +13,20 @@ module.exports = {
     if (choice === 'button') {
       settingsStore.set('menu_native', true);
       return await sock.sendMessage(msg.key.remoteJid, {
-        text: '📱 Native tappable menus *ON* (old menutype=button bridged).\n🎨 Faces live in `.menutheme` — 4 styles: Star Map • Neon • Zen • Grimoire',
+        text: '📱 Native constellation menus *ON*.\n🎨 Visual accents remain available through `.menutheme`.',
       });
     }
     if (choice === 'list') {
       settingsStore.set('menu_native', false);
       return await sock.sendMessage(msg.key.remoteJid, {
-        text: '📱 Text menus (old menutype=list bridged).\n🎨 Faces live in `.menutheme` — 4 styles: Star Map • Neon • Zen • Grimoire',
+        text: '📱 Editorial text menus *ON*.\n🎨 Visual accents remain available through `.menutheme`.',
       });
     }
 
     const native = settingsStore.get('menu_native', false);
-    const theme = settingsStore.get('menu_theme', 'constellation');
+    const theme = settingsStore.get('menu_theme', 'boxed');
     await sock.sendMessage(msg.key.remoteJid, {
-      text: `📋 Menu config:\n• Face: *${theme}*\n• Native tappable: *${native ? 'ON' : 'off'}*\n\n💡 \`.menutheme\` — the full 4-face picker\n💡 \`.menutheme native on/off\` — tappable realms`,
+      text: `📋 Menu config:\n• Accent: *${theme}*\n• Native constellation: *${native ? 'ON' : 'off'}*\n\n💡 \`.menutheme\` — choose one of six accents\n💡 \`.menutheme native on/off\` — tappable navigation`,
     });
   },
 };
