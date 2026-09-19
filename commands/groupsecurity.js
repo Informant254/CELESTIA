@@ -177,16 +177,16 @@ module.exports = [
           return '❌ OFF';
         };
         const words = Array.isArray(inbox.antiwordlist) ? inbox.antiwordlist.length : 0;
-        return sock.sendMessage(jid, { text: `
-╭──〔 🛡️ INBOX SETTINGS 〕──╮
-🔗 Antilink: ${gmode(inbox.antilink, 'on')}
-🚫 Antispam: ${gmode(inbox.antispam, 'on')}
-🤬 Antiword: ${gmode(inbox.antiword, 'on')} (${words} words)
-🛡️ Antigstatus: ${gmode(inbox.antigstatus, 'on')}
-🤖 Antibot: ${gmode(globals.get('antibot', false), 'kick')}
-🏷️ Antitag: ${gmode(globals.get('antitag', false), 'on')}
-🚫 Badword: ${gmode(globals.get('badword', false), 'kick')}
-╰──────────────────╯`.trim() }, { quoted: msg });
+        const ui = require('../utils/ui');
+        return sock.sendMessage(jid, { text: ui.renderCard('🛡️ INBOX SETTINGS', [
+          ui.renderInfo('🔗', 'Antilink', gmode(inbox.antilink, 'on')),
+          ui.renderInfo('🚫', 'Antispam', gmode(inbox.antispam, 'on')),
+          ui.renderInfo('🤬', 'Antiword', `${gmode(inbox.antiword, 'on')} (${words} words)`),
+          ui.renderInfo('🛡️', 'Antigstatus', gmode(inbox.antigstatus, 'on')),
+          ui.renderInfo('🤖', 'Antibot', gmode(globals.get('antibot', false), 'kick')),
+          ui.renderInfo('🏷️', 'Antitag', gmode(globals.get('antitag', false), 'on')),
+          ui.renderInfo('🚫', 'Badword', gmode(globals.get('badword', false), 'kick')),
+        ]) }, { quoted: msg });
       }
 
       const settings = groupSettingsStore.getAll(jid);
@@ -194,16 +194,16 @@ module.exports = [
       const mode = (v, legacyTrue = 'on') => showMode(v, legacyTrue);
       const wordCount = Array.isArray(settings.antiwordlist) ? settings.antiwordlist.length : 0;
 
-      const text = `
-╭──〔 🛡️ GROUP SETTINGS 〕──╮
-🔗 Antilink: ${mode(settings.antilink)}
-🚫 Antispam: ${mode(settings.antispam)}
-🤬 Antiword: ${mode(settings.antiword)} (${wordCount} words)
-🛡️ Antigm: ${mode(settings.antigm)}
-🛡️ Antigstatus: ${mode(settings.antigstatus)}
-👋 Welcome: ${flag(settings.welcome)}
-👋 Goodbye: ${flag(settings.goodbye)}
-╰──────────────────╯`.trim();
+      const ui = require('../utils/ui');
+      const text = ui.renderCard('🛡️ GROUP SETTINGS', [
+        ui.renderInfo('🔗', 'Antilink', mode(settings.antilink)),
+        ui.renderInfo('🚫', 'Antispam', mode(settings.antispam)),
+        ui.renderInfo('🤬', 'Antiword', `${mode(settings.antiword)} (${wordCount} words)`),
+        ui.renderInfo('🛡️', 'Antigm', mode(settings.antigm)),
+        ui.renderInfo('🛡️', 'Antigstatus', mode(settings.antigstatus)),
+        ui.renderInfo('👋', 'Welcome', flag(settings.welcome)),
+        ui.renderInfo('👋', 'Goodbye', flag(settings.goodbye)),
+      ]);
 
       await sock.sendMessage(jid, { text }, { quoted: msg });
     }

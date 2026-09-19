@@ -12,7 +12,11 @@
  */
 'use strict';
 
-const SEP = '─'.repeat(26);
+// Mobile-safe rule: 20 strokes, 22 visible chars with corners.
+// Corners must always open AND close on the same line — never emit a
+// bare ╭/╰ line, and never center content with spaces.
+const RULE = '─'.repeat(20);
+const SEP = RULE;
 
 function uptimeShort() {
   const s = Math.floor(process.uptime());
@@ -26,9 +30,9 @@ function uptimeShort() {
 }
 
 function renderHeader(title, subtitle) {
-  const L = [`╭${SEP}╮`, `     ✦ ${title} ✦`];
-  if (subtitle) L.push(`   ${subtitle}`);
-  L.push(`╰${SEP}╯`);
+  const L = [`╭${RULE}╮`, `│ ✦ ${title} ✦`];
+  if (subtitle) L.push(`│ ${subtitle}`);
+  L.push(`╰${RULE}╯`);
   return L.join('\n');
 }
 
@@ -114,6 +118,7 @@ function renderFixture(home, away, when) {
 }
 
 module.exports = {
+  RULE,
   SEP,
   uptimeShort,
   renderHeader,

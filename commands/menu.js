@@ -59,11 +59,11 @@ const T1 = {
     L.push('*THE  MOST  BEAUTIFUL  BOT*');
     L.push('🐺 _WolfTech howled → ✨ Celestia ascended_');
     L.push('');
-    L.push(`╭─────────────────────────╮`);
-    L.push(`│  🗺️  *THE CONSTELLATION*  │`);
-    L.push(`│  ${String(total).padStart(3)} commands • ${CATEGORIES.length} realms │`);
-    L.push(`│  prefix: *${prefix}*            │`);
-    L.push(`╰─────────────────────────╯`);
+    L.push(`╭${ui.RULE}╮`);
+    L.push(`│ 🗺️ *THE CONSTELLATION*`);
+    L.push(`│ ${total} commands • ${CATEGORIES.length} realms`);
+    L.push(`│ prefix: *${prefix}*`);
+    L.push(`╰${ui.RULE}╯`);
     L.push('');
     for (const c of CATEGORIES) {
       const n = c.cmds.filter(x => commands.has(x)).length;
@@ -113,7 +113,7 @@ const T2 = {
     L.push(`┏━━━ 🌆 *NEON GRID* ━━━┓`);
     L.push(`┃ ⚡ ${total} commands • ${CATEGORIES.length} zones`);
     L.push(`┃ ⌨️ prefix: *${prefix}*`);
-    L.push('┗━━━━━━━━━━━━━━━━━━━━━━━┛');
+    L.push(`┗${'━'.repeat(20)}┛`);
     L.push('');
     for (const c of CATEGORIES) {
       const n = c.cmds.filter(x => commands.has(x)).length;
@@ -139,7 +139,7 @@ const T2 = {
       const d = (cmd.description || '').split('.')[0].slice(0, 45);
       L.push(`┣ ⚡ \`${prefix}${name}\` — ${d}`);
     }
-    L.push('┗' + '━'.repeat(27));
+    L.push(`┗${'━'.repeat(20)}┛`);
     if (pages > 1) L.push(`📄 ${p}/${pages} — \`${prefix}menu ${cat.key} ${p % pages + 1}\` next`);
     return L.join('\n');
   },

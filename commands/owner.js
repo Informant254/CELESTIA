@@ -1,4 +1,5 @@
 const config = require('../config/config');
+const ui = require('../utils/ui');
 
 module.exports = {
   name: 'owner',
@@ -17,12 +18,11 @@ module.exports = {
       `TEL;type=CELL;type=VOICE;waid=${ownerNumber}:+${ownerNumber}\n` +
       'END:VCARD';
 
-    const infoText = `
-╭──〔 👑 OWNER INFO 〕──╮
-🤖 *Bot:* CELESTIA
-👤 *Owner:* ${ownerName}
-📱 *Contact:* +${ownerNumber}
-╰──────────────────╯`.trim();
+    const infoText = ui.renderCard('👑 OWNER INFO', [
+      ui.renderInfo('🤖', 'Bot', 'CELESTIA'),
+      ui.renderInfo('👤', 'Owner', ownerName),
+      ui.renderInfo('📱', 'Contact', `+${ownerNumber}`),
+    ]);
 
     await sock.sendMessage(jid, { text: infoText }, { quoted: msg });
 

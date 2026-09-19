@@ -1,4 +1,5 @@
 const wolfTech = require('../utils/wolfTech');
+const ui = require('../utils/ui');
 
 module.exports = {
   name: 'ping',
@@ -12,14 +13,14 @@ module.exports = {
     const hours = Math.floor(uptime / 3600);
     const mins = Math.floor((uptime % 3600) / 60);
     await reply(
-      `╭─── 🏓 *PONG* ───╮\n` +
-      `│ ⚡ Latency: *${latency}ms*\n` +
-      `│ ⏱ Uptime: *${hours}h ${mins}m*\n` +
-      `│ 🤖 CELESTIA ✨ Heavenly\n` +
-      `╰─────────────────╯\n` +
-      `🐺 *WolfTech DNA* active • ✨ Celestia Soul shining\n` +
-      `> _${wolfTech.tribute.tagline}_\n` +
-      `> _${wolfTech.getRandomFooter()}_`
+      ui.renderCard('🏓 PONG', [
+        ui.renderInfo('⚡', 'Latency', `${latency}ms`),
+        ui.renderInfo('⏱', 'Uptime', `${hours}h ${mins}m`),
+        '🤖 CELESTIA ✨ Heavenly',
+      ]) +
+      `\n• 🐺 WolfTech DNA active · ✨ Celestia Soul shining\n` +
+      `• ${wolfTech.tribute.tagline}\n` +
+      `• ${wolfTech.getRandomFooter()}`
     );
   }
 };

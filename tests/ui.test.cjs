@@ -5,6 +5,20 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const ui = require(path.join(ROOT, 'utils/ui'));
 
+test('borders are mobile-safe with corners on one line', () => {
+  assert.equal(ui.RULE.length, 20);
+  const h = ui.renderHeader('CELESTIA', 'COMMAND INTERFACE').split('\n');
+  assert.deepEqual(h, [
+    `╭${ui.RULE}╮`,
+    '│ ✦ CELESTIA ✦',
+    '│ COMMAND INTERFACE',
+    `╰${ui.RULE}╯`,
+  ]);
+  for (const line of h) assert.ok(line.length <= 24, `header line too wide: ${line}`);
+  const cat = ui.renderCategory('i', 'T', [ui.renderCommand('ping')]).split('\n');
+  assert.ok(cat[0].endsWith('T') && /^╰─+$/.test(cat.at(-1)), 'category footer is one clean rule');
+});
+
 test('separators stay within mobile width', () => {
   assert.ok(ui.SEP.length <= 30, `separator too wide: ${ui.SEP.length}`);
   for (const s of [ui.renderHeader('A', 'B'), ui.renderCategory('i', 'T', ['x']), ui.renderCard('t', ['r'])]) {
