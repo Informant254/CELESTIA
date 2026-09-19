@@ -1,5 +1,4 @@
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
+const ui = require("../utils/ui");
 
 // No Euro tournament is currently running and no free keyless API with current
 // Euro standings could be verified live, so this command answers honestly
@@ -18,8 +17,8 @@ module.exports = {
     );
 
     await sock.sendMessage(jid, {
-      text: box("🏆 EURO CHAMPIONSHIP", [
-        "❌ Euro standings unavailable right now.",
+      text: ui.renderNotice("🏆 EURO CHAMPIONSHIP", [
+        "Euro standings unavailable right now.",
         "No Euro tournament is currently running.",
         "Please check back during the next Euros.",
       ]),

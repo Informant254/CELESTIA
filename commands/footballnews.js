@@ -1,10 +1,8 @@
 const axios = require("axios");
+const ui = require("../utils/ui");
 
 // Free, keyless source (verified live): BBC Sport Football RSS feed.
 const FEED_URL = "https://feeds.bbci.co.uk/sport/football/rss.xml";
-
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
 function clean(s) {
   return String(s || "")
@@ -58,27 +56,25 @@ module.exports = {
 
       if (!news.length) {
         return await sock.sendMessage(chatId, {
-          text: box("📰 FOOTBALL NEWS", ["❌ No football news found.", "Please try again later."]),
+          text: ui.renderNotice("📰 FOOTBALL NEWS", ["No football news found.", "Please try again later."]),
           edit: loading.key,
         });
       }
 
-      const lines = [];
-      news.forEach((item, i) => {
-        lines.push(`*${i + 1}. ${item.title}*`);
-        if (item.date) lines.push(`📅 ${item.date}`);
-        if (item.link) lines.push(`🔗 ${item.link}`);
-        lines.push("");
+      const cards = news.map((item, i) => {
+        const rows = [`› ${i + 1} · ${item.title}`];
+        if (item.date) rows.push(`  📅 ${item.date}`);
+        if (item.link) rows.push(`  🔗 ${item.link}`);
+        return rows.join("\n");
       });
-      lines.push("Source: BBC Sport.");
 
       await sock.sendMessage(chatId, {
-        text: box("📰 LATEST FOOTBALL NEWS", lines),
+        text: `${ui.renderSectionTitle("📰 LATEST FOOTBALL NEWS")}\n\n${cards.join("\n\n")}\n\n• Source: BBC Sport.`,
         edit: loading.key,
       });
     } catch (err) {
       await sock.sendMessage(chatId, {
-        text: box("📰 FOOTBALL NEWS", ["❌ Failed to fetch football news.", "Please try again later."]),
+        text: ui.renderNotice("📰 FOOTBALL NEWS", ["Failed to fetch football news.", "Please try again later."]),
       });
     }
   },

@@ -1,5 +1,7 @@
 // No free keyless API with Serie A top-scorer data could be verified live,
 // so this command answers honestly instead of showing stale or fake numbers.
+const ui = require("../utils/ui");
+
 module.exports = {
   name: "serieascorers",
   description: "Shows the current Serie A top scorers.",
@@ -13,10 +15,12 @@ module.exports = {
       { quoted: msg }
     );
 
-    const header = "⚽ *SERIE A TOP SCORERS*";
-
     await sock.sendMessage(jid, {
-      text: `${header}\n❌ Top-scorer data unavailable right now.\nNo free data source covers Serie A scorers.\nPlease try again later.`,
+      text: ui.renderNotice("⚽ SERIE A TOP SCORERS", [
+        "Top-scorer data unavailable right now.",
+        "No free data source covers Serie A scorers.",
+        "Please try again later.",
+      ]),
       edit: loading.key,
     });
   },

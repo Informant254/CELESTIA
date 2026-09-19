@@ -1,9 +1,8 @@
 const axios = require("axios");
+const ui = require("../utils/ui");
 
 // Free, keyless source (verified live): TheSportsDB free tier.
 // searchteams.php returns team info (verified: Arsenal -> Emirates Stadium).
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
 module.exports = {
   name: "teamsearch",
@@ -17,7 +16,7 @@ module.exports = {
       return sock.sendMessage(
         chatId,
         {
-          text: box("⚽ TEAM SEARCH", ["Example:", ".teamsearch Arsenal"]),
+          text: `${ui.renderSectionTitle("⚽ TEAM SEARCH")}\n\n• Example:\n• .teamsearch Arsenal`,
         },
         { quoted: msg }
       );
@@ -41,22 +40,24 @@ module.exports = {
 
       if (!team) {
         return sock.sendMessage(chatId, {
-          text: box("⚽ TEAM SEARCH", [`❌ No team found for "${query}".`, "Check the spelling and try again."]),
+          text: ui.renderNotice("⚽ TEAM SEARCH", [`No team found for "${query}".`, "Check the spelling and try again."]),
           edit: loading.key,
         });
       }
 
-      const lines = [];
-      if (team.strTeam) lines.push(`🏟️ *Name:* ${team.strTeam}`);
-      if (team.strTeamShort) lines.push(`🪧 *Short:* ${team.strTeamShort}`);
-      if (team.strCountry) lines.push(`🌍 *Country:* ${team.strCountry}`);
-      if (team.strLeague) lines.push(`🏆 *League:* ${team.strLeague}`);
-      if (team.intFormedYear) lines.push(`📅 *Founded:* ${team.intFormedYear}`);
-      if (team.strStadium) lines.push(`🏟️ *Stadium:* ${team.strStadium}`);
-      if (team.intStadiumCapacity) lines.push(`👥 *Capacity:* ${team.intStadiumCapacity}`);
-      if (team.strWebsite) lines.push(`🌐 *Website:* ${team.strWebsite}`);
+      const rows = [];
+      if (team.strTeam) rows.push(ui.renderInfo("🏟️", "Name", team.strTeam));
+      if (team.strTeamShort) rows.push(ui.renderInfo("🪧", "Short", team.strTeamShort));
+      if (team.strCountry) rows.push(ui.renderInfo("🌍", "Country", team.strCountry));
+      if (team.strLeague) rows.push(ui.renderInfo("🏆", "League", team.strLeague));
+      if (team.intFormedYear) rows.push(ui.renderInfo("📅", "Founded", team.intFormedYear));
+      if (team.strStadium) rows.push(ui.renderInfo("🏟️", "Stadium", team.strStadium));
+      if (team.intStadiumCapacity) rows.push(ui.renderInfo("👥", "Capacity", team.intStadiumCapacity));
+      if (team.strWebsite) rows.push(ui.renderInfo("🌐", "Website", team.strWebsite));
 
-      const text = box("⚽ TEAM INFORMATION", lines.length ? lines : ["❌ No details available."]);
+      const text = rows.length
+        ? ui.renderCard("⚽ TEAM INFORMATION", rows)
+        : ui.renderNotice("⚽ TEAM INFORMATION", ["No details available."]);
       const badge = team.strBadge || team.strLogo;
 
       if (badge) {
@@ -71,7 +72,7 @@ module.exports = {
       await sock.sendMessage(chatId, { text, edit: loading.key });
     } catch (err) {
       await sock.sendMessage(chatId, {
-        text: box("⚽ TEAM SEARCH", ["❌ Failed to search team.", "Please try again later."]),
+        text: ui.renderNotice("⚽ TEAM SEARCH", ["Failed to search team.", "Please try again later."]),
         edit: loading?.key,
       });
     }

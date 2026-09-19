@@ -1,8 +1,10 @@
 const axios = require("axios");
+const ui = require("../utils/ui");
 
 // Free, keyless source (verified live): TheSportsDB free tier.
 // lookuptable returns the current top 5 for league 4335 (Spanish La Liga).
 const LEAGUE_ID = "4335";
+const LEAGUE_EMOJI = "🇪🇸";
 const LEAGUE_LABEL = "LA LIGA";
 const SEASONS = ["2026-2027", "2025-2026", "2024-2025"];
 
@@ -42,27 +44,17 @@ module.exports = {
       }
 
       const rows = table.rows.map((t) => {
-        const rank = String(t.intRank).padStart(2);
-        const name = String(t.strTeam).slice(0, 18).padEnd(18);
-        const p = String(t.intPlayed).padStart(2);
-        const gdRaw = Number(t.intGoalDifference) >= 0 ? "+" + t.intGoalDifference : String(t.intGoalDifference);
-        const gd = gdRaw.padStart(3);
-        const pts = String(t.intPoints).padStart(2);
-        return `${rank}. ${name} P${p} GD${gd} ${pts}pts`;
+        const gd = Number(t.intGoalDifference) >= 0 ? "+" + t.intGoalDifference : String(t.intGoalDifference);
+        return ui.renderStanding(t.intRank, String(t.strTeam), `P${t.intPlayed} · GD ${gd} · ${t.intPoints}pts`);
       });
 
-      const header = `🇪🇸 *${LEAGUE_LABEL} TABLE*`;
-      const body = "```\n" + rows.join("\n") + "\n```";
-      const footer = `_Season ${table.season} — top ${table.rows.length} shown (free source)._`;
-
       await sock.sendMessage(jid, {
-        text: `${header}\n${body}\n${footer}`,
+        text: `${ui.renderSectionTitle(`${LEAGUE_EMOJI} ${LEAGUE_LABEL}`)}\n\n${rows.join("\n")}\n\n• Season ${table.season} — top ${table.rows.length} shown (free source).`,
         edit: loading.key,
       });
     } catch (err) {
-      const header = "🇪🇸 *LA LIGA TABLE*";
       await sock.sendMessage(jid, {
-        text: `${header}\n❌ Table unavailable right now.\nPlease try again later.`,
+        text: ui.renderNotice(`${LEAGUE_EMOJI} LA LIGA TABLE`, ["Table unavailable right now.", "Please try again later."]),
         edit: loading.key,
       });
     }

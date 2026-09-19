@@ -1,4 +1,5 @@
 const axios = require("axios");
+const ui = require("../utils/ui");
 
 // Free, keyless source (verified live): TheSportsDB free tier.
 // livescore.php?s=Soccer returns currently-live soccer matches.
@@ -9,14 +10,6 @@ const MAJOR = [
   "primeira liga", "saudi", "mls", "major league soccer",
   "world cup", "euro", "nations league", "afcon",
 ];
-
-function statusEmoji(s) {
-  const st = String(s || "").toUpperCase();
-  if (st === "FT" || st.includes("FINISH") || st.includes("FULL")) return "✅";
-  if (st === "HT") return "⏸️";
-  if (st === "NS" || st === "" || st.includes("SCHED")) return "⏳";
-  return "🔴";
-}
 
 module.exports = {
   name: "livescore",
@@ -40,9 +33,11 @@ module.exports = {
       const games = Array.isArray(data?.livescore) ? data.livescore : [];
 
       if (!games.length) {
-        const header = "⚽ *LIVE SCORES*";
         return sock.sendMessage(jid, {
-          text: `${header}\n📭 No live matches right now.\nCheck back later.`,
+          text: ui.renderNotice("⚽ LIVE SCORES", [
+            "No live matches right now.",
+            "Check back later.",
+          ]),
           edit: loading.key,
         });
       }
@@ -52,31 +47,30 @@ module.exports = {
       );
       const list = (major.length ? major : games).slice(0, 15);
 
-      const rows = list.map((g) => {
-        const emoji = statusEmoji(g.strStatus);
-        const home = String(g.strHomeTeam || "?").slice(0, 15).padEnd(15);
-        const away = String(g.strAwayTeam || "?").slice(0, 15).padEnd(15);
-        const hs = String(g.intHomeScore ?? "?").padStart(2);
-        const as = String(g.intAwayScore ?? "?").padStart(2);
-        const status = String(g.strStatus || "LIVE").slice(0, 8).padEnd(8);
-        const league = String(g.strLeague || "Soccer").slice(0, 18).padEnd(18);
-        return `${emoji} ${home} ${hs}-${as} ${away} ⏱ ${status} ${league}`;
-      });
+      const cards = list.map((g) =>
+        ui.renderMatch({
+          home: g.strHomeTeam,
+          away: g.strAwayTeam,
+          homeScore: g.intHomeScore,
+          awayScore: g.intAwayScore,
+          status: g.strStatus,
+          league: g.strLeague,
+        })
+      );
 
-      const header = "⚽ *LIVE SCORES*";
-      const body = "```\n" + rows.join("\n") + "\n```";
       const scopeNote = major.length ? "Showing major-league matches." : "Showing live matches.";
       const countNote = games.length > 15 ? ` Showing 15 of ${games.length} live matches.` : "";
-      const footer = `_${scopeNote}${countNote}_`;
 
       await sock.sendMessage(jid, {
-        text: `${header}\n${body}\n${footer}`,
+        text: `${ui.renderSectionTitle("⚽ LIVE SCORES")}\n\n${cards.join("\n\n")}\n\n• ${scopeNote}${countNote}`,
         edit: loading.key,
       });
     } catch (err) {
-      const header = "⚽ *LIVE SCORES*";
       await sock.sendMessage(jid, {
-        text: `${header}\n❌ Live scores unavailable right now.\nPlease try again later.`,
+        text: ui.renderNotice("⚽ LIVE SCORES", [
+          "Live scores unavailable right now.",
+          "Please try again later.",
+        ]),
         edit: loading.key,
       });
     }

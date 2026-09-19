@@ -1,5 +1,4 @@
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
+const ui = require("../utils/ui");
 
 // The verified free sources return no usable Champions League table yet
 // (OpenLigaDB UCL tables are all-zero pre-season, TheSportsDB has no UCL
@@ -18,8 +17,8 @@ module.exports = {
     );
 
     await sock.sendMessage(jid, {
-      text: box("🏆 CHAMPIONS LEAGUE TABLE", [
-        "❌ Table unavailable right now.",
+      text: ui.renderNotice("🏆 CHAMPIONS LEAGUE TABLE", [
+        "Table unavailable right now.",
         "The league phase has not started yet.",
         "Try .standings ucl for upcoming fixtures.",
       ]),

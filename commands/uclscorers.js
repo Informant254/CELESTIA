@@ -1,5 +1,7 @@
 // No free keyless API with Champions League top-scorer data could be verified
 // live, so this command answers honestly instead of showing stale/fake numbers.
+const ui = require("../utils/ui");
+
 module.exports = {
   name: "uclscorers",
   description: "Shows the current Champions League top scorers.",
@@ -13,10 +15,12 @@ module.exports = {
       { quoted: msg }
     );
 
-    const header = "⚽ *CHAMPIONS LEAGUE TOP SCORERS*";
-
     await sock.sendMessage(jid, {
-      text: `${header}\n❌ Top-scorer data unavailable right now.\nNo free data source covers UCL scorers.\nPlease try again later.`,
+      text: ui.renderNotice("⚽ CHAMPIONS LEAGUE TOP SCORERS", [
+        "Top-scorer data unavailable right now.",
+        "No free data source covers UCL scorers.",
+        "Please try again later.",
+      ]),
       edit: loading.key,
     });
   },

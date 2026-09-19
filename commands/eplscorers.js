@@ -1,5 +1,7 @@
 // No free keyless API with EPL top-scorer data could be verified live,
 // so this command answers honestly instead of showing stale or fake numbers.
+const ui = require("../utils/ui");
+
 module.exports = {
   name: "eplscorers",
   description: "Shows the current EPL top scorers.",
@@ -13,10 +15,12 @@ module.exports = {
       { quoted: msg }
     );
 
-    const header = "⚽ *EPL TOP SCORERS*";
-
     await sock.sendMessage(jid, {
-      text: `${header}\n❌ Top-scorer data unavailable right now.\nNo free data source covers EPL scorers.\nPlease try again later.`,
+      text: ui.renderNotice("⚽ EPL TOP SCORERS", [
+        "Top-scorer data unavailable right now.",
+        "No free data source covers EPL scorers.",
+        "Please try again later.",
+      ]),
       edit: loading.key,
     });
   },

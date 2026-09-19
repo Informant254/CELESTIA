@@ -1,9 +1,8 @@
 const axios = require("axios");
+const ui = require("../utils/ui");
 
 // Free, keyless source (verified live): TheSportsDB free tier.
 // searchplayers.php returns player info (verified: Bukayo Saka -> Arsenal).
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
 
 function ageFrom(dob) {
   const d = new Date(dob);
@@ -27,7 +26,7 @@ module.exports = {
       return sock.sendMessage(
         chatId,
         {
-          text: box("⚽ PLAYER SEARCH", ["Example:", ".playersearch Bukayo Saka"]),
+          text: `${ui.renderSectionTitle("⚽ PLAYER SEARCH")}\n\n• Example:\n• .playersearch Bukayo Saka`,
         },
         { quoted: msg }
       );
@@ -51,24 +50,26 @@ module.exports = {
 
       if (!player) {
         return sock.sendMessage(chatId, {
-          text: box("⚽ PLAYER SEARCH", [`❌ No player found for "${query}".`, "Check the spelling and try again."]),
+          text: ui.renderNotice("⚽ PLAYER SEARCH", [`No player found for "${query}".`, "Check the spelling and try again."]),
           edit: loading.key,
         });
       }
 
-      const lines = [];
-      if (player.strPlayer) lines.push(`👤 *Name:* ${player.strPlayer}`);
-      if (player.strTeam) lines.push(`🏟️ *Club:* ${player.strTeam}`);
-      if (player.strNationality) lines.push(`🌍 *Nationality:* ${player.strNationality}`);
-      if (player.strPosition) lines.push(`🎯 *Position:* ${player.strPosition}`);
+      const rows = [];
+      if (player.strPlayer) rows.push(ui.renderInfo("👤", "Name", player.strPlayer));
+      if (player.strTeam) rows.push(ui.renderInfo("🏟️", "Club", player.strTeam));
+      if (player.strNationality) rows.push(ui.renderInfo("🌍", "Nationality", player.strNationality));
+      if (player.strPosition) rows.push(ui.renderInfo("🎯", "Position", player.strPosition));
       if (player.dateBorn) {
         const age = ageFrom(player.dateBorn);
-        lines.push(`🎂 *Born:* ${player.dateBorn}${age !== null ? ` (age ${age})` : ""}`);
+        rows.push(ui.renderInfo("🎂", "Born", `${player.dateBorn}${age !== null ? ` (age ${age})` : ""}`));
       }
-      if (player.strStatus) lines.push(`📋 *Status:* ${player.strStatus}`);
-      if (player.strGender) lines.push(`⚧ *Gender:* ${player.strGender}`);
+      if (player.strStatus) rows.push(ui.renderInfo("📋", "Status", player.strStatus));
+      if (player.strGender) rows.push(ui.renderInfo("⚧", "Gender", player.strGender));
 
-      const text = box("⚽ PLAYER INFORMATION", lines.length ? lines : ["❌ No details available."]);
+      const text = rows.length
+        ? ui.renderCard("⚽ PLAYER INFORMATION", rows)
+        : ui.renderNotice("⚽ PLAYER INFORMATION", ["No details available."]);
       const photo = player.strThumb || player.strCutout;
 
       if (photo) {
@@ -83,7 +84,7 @@ module.exports = {
       await sock.sendMessage(chatId, { text, edit: loading.key });
     } catch (err) {
       await sock.sendMessage(chatId, {
-        text: box("⚽ PLAYER SEARCH", ["❌ Failed to search player.", "Please try again later."]),
+        text: ui.renderNotice("⚽ PLAYER SEARCH", ["Failed to search player.", "Please try again later."]),
         edit: loading?.key,
       });
     }

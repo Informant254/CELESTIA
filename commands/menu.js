@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const ui = require('../utils/ui');
 const figlet = require('figlet');
 const wolfTech = require('../utils/wolfTech');
 const config = require('../config/config');
@@ -317,56 +318,38 @@ function uptimeShort() {
 // this bot appears, including CYBER FORTRESS.
 // ═══════════════════════════════════════════════════════════
 
-// ─── The single boxed renderer. EVERY boxed surface (full menu, atlas,
-// realm views, header) is built by boxedSection + boxedRow — one template,
-// one indentation, one border width. Nothing is hand-formatted per section.
-const BOX_TOP = '> ╭─❏';
-const BOX_ROW = '> │';
-const BOX_END = '> ╰─────────────────';
-function boxedSection(title, rows) {
-  const L = [`${BOX_TOP} *${title}* ❏`];
-  for (const row of rows) L.push(`${BOX_ROW} ${row}`);
-  L.push(BOX_END);
-  return L.join('\n');
-}
-const boxedRow = (cmd) => '```' + String(cmd).toUpperCase() + '```';
-
+// ─── The default face renders exclusively through utils/ui.js — one
+// template, one indentation, one border width. Nothing is hand-formatted
+// per section.
 const T6 = {
   key: 'boxed', name: 'IRONBOX', icon: '❏',
-  buildFull(prefix, commands) {
-    const totalRam = (os.totalmem() / (1024 * 1024 * 1024)).toFixed(1);
-    const freeRam = (os.freemem() / (1024 * 1024 * 1024)).toFixed(1);
-    const usedRam = (parseFloat(totalRam) - parseFloat(freeRam)).toFixed(1);
-    const uptime = process.uptime();
-    const now = new Date();
-    const date = new Intl.DateTimeFormat('en-GB', { timeZone: config.timezone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(now);
-    const time = new Intl.DateTimeFormat('en-US', { timeZone: config.timezone, hour: '2-digit', minute: '2-digit', hour12: true }).format(now);
-    const mode = settingsStore.get('mode', config.WORK_TYPE);
-
-    const head = boxedSection('🤖 CELESTIA BOT', [
-      `⚡ Prefix : [ ${prefix || '.'} ]`,
-      `🔒 Mode : ${(mode || 'public').toUpperCase()}`,
-      `🕒 Time : ${time}`,
-      `🗓️ Date : ${date}`,
-      `💾 Ram : ${usedRam} GB / ${totalRam} GB`,
-      `⏱️ Uptime : ${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m`,
-      `🔌 Plugins : ${new Set(commands.values()).size} commands`,
-    ]);
-
-    const sections = [];
+  index(prefix, commands, total, extra = {}) {
+    const head = ui.renderDashboard({
+      title: 'CELESTIA',
+      subtitle: 'COMMAND INTERFACE',
+      rows: [
+        { icon: '👤', label: 'User', value: extra.user || 'traveler' },
+        { icon: '⚡', label: 'Prefix', value: prefix },
+        { icon: '🔐', label: 'Mode', value: String(settingsStore.get('mode', config.WORK_TYPE) || 'public').toUpperCase() },
+        { icon: '🧩', label: 'Commands', value: String(total) },
+        { icon: '⏱', label: 'Uptime', value: ui.uptimeShort() },
+      ],
+    });
+    const parts = [head, '', ui.renderSectionTitle('COMMAND CENTER'), ''];
     for (const cat of CATEGORIES) {
       const avail = cat.cmds.filter((c) => commands.has(c));
       if (!avail.length) continue;
-      sections.push(boxedSection(cat.title.toUpperCase(), avail.map(boxedRow)));
+      parts.push(ui.renderCategory(cat.icon, cat.title, avail.map((n) => ui.renderCommand(n))));
     }
-    return [head, ...sections].join('\n');
-  },
-  index(prefix, commands) {
-    return this.buildFull(prefix, commands);
+    parts.push('', ui.renderFooter(
+      `${total} commands · ${CATEGORIES.length} realms`,
+      `${prefix}menu <realm> opens a realm · ${prefix}menutheme changes faces`
+    ));
+    return parts.join('\n');
   },
   realm(cat, prefix, commands) {
-    const avail = cat.cmds.filter((c) => commands.has(c));
-    return boxedSection(cat.title.toUpperCase(), avail.map(boxedRow));
+    const avail = cat.cmds.filter((n) => commands.has(n));
+    return ui.renderCategory(cat.icon, cat.title, avail.map((n) => ui.renderCommand(n)));
   },
   footer: '',
 };
@@ -488,7 +471,7 @@ module.exports = {
     // ─── .menu all [page] — atlas in current theme ───
     if (arg0 === 'all') {
       if (theme.key === 'boxed') {
-        const parts = [boxedSection('📖 ATLAS — ALL REALMS', [])];
+        const parts = [ui.renderCategory('📖', 'ATLAS — ALL REALMS', [])];
         for (const cat of CATEGORIES) {
           if (cat.cmds.some((c) => commands.has(c))) parts.push(theme.realm(cat, prefix, commands));
         }
@@ -544,7 +527,7 @@ module.exports = {
     // plain quoted text (image captions cap at ~1k chars — the 9k+ menu
     // must travel as text). Voice intro closes the show.
     if (theme.key === 'boxed') {
-      await send(theme.index(prefix, commands, total));
+      await send(theme.index(prefix, commands, total, { user: msg.pushName || 'traveler' }));
       await sendVoiceNote();
       return;
     }

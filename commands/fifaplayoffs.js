@@ -1,5 +1,4 @@
-const box = (title, lines) =>
-  ["> ╭─❏ *" + title + "* ❏", ...lines.map((l) => "> │ " + l), "> ╰─────────────────"].join("\n");
+const ui = require("../utils/ui");
 
 // The verified free sources (OpenLigaDB wm2026 match data, TheSportsDB) only
 // publish World Cup group-stage data — no knockout/playoff brackets — so this
@@ -18,8 +17,8 @@ module.exports = {
     );
 
     await sock.sendMessage(jid, {
-      text: box("🏆 WORLD CUP PLAYOFFS", [
-        "❌ Playoff results unavailable right now.",
+      text: ui.renderNotice("🏆 WORLD CUP PLAYOFFS", [
+        "Playoff results unavailable right now.",
         "No free data source publishes the bracket.",
         "Try .fifa for the group-stage table.",
       ]),
