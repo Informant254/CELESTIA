@@ -198,10 +198,15 @@ async function enforceModeration(sock, msg) {
       logger.error(`[moderation] metadata unavailable: ${e.message}`);
       return false;
     }
-    if (!isBotAdmin(sock, metadata)) {
-      logger.warn('[moderation] bot lacks admin rights; skipping punishment.');
-      return true;
-    }
+  if (!isBotAdmin(sock, metadata)) {
+    let botIds = '?';
+    try {
+      const { getBotIdentifiers } = require('../utils/isAdmin');
+      botIds = [...getBotIdentifiers(sock)].join(',') || '(none)';
+    } catch {}
+    logger.warn(`[moderation] bot lacks admin rights; skipping punishment. botIds=${botIds} participants=${metadata.participants?.length || 0}`);
+    return true;
+  }
     senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
   }
   for (const job of jobs) {

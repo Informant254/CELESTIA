@@ -16,16 +16,45 @@ function normalize(jid) {
   const domain = jid.slice(atIndex);
   return idPart + domain;
 }
+function idPart(jid) {
+  if (!jid) return '';
+  return String(jid).split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
 function getBotIdentifiers(sock) {
   const ids = new Set();
   if (sock.user?.id) ids.add(normalize(sock.user.id));
   if (sock.user?.lid) ids.add(normalize(sock.user.lid));
+  // Baileys does not always populate sock.user.lid, while LID-addressed
+  // groups list the bot by pure LID. sessionOwner persists the bot's own
+  // LID at every connect (global + settings store) — same account, so it
+  // is a safe additional self identifier.
+  try {
+    if (globalThis.__ownerLid) ids.add(normalize(globalThis.__ownerLid));
+  } catch {}
+  try {
+    const stored = require('./settingsStore').get('ownerLid', '');
+    if (stored) ids.add(normalize(stored));
+  } catch {}
   return ids;
 }
 
 function participantMatches(participant, identifierSet) {
+  if (!participant) return false;
   const candidateFields = [participant.id, participant.jid, participant.lid, participant.phoneNumber];
-  return candidateFields.some((field) => field && identifierSet.has(normalize(field)));
+  for (const field of candidateFields) {
+    if (!field) continue;
+    if (identifierSet.has(normalize(field))) return true;
+    // Cross-domain fallback: a bare LID on one side and a full JID on the
+    // other never share a domain, so compare numeric id parts. PN and LID
+    // live in disjoint numeric namespaces, so equal digits mean same account.
+    const part = idPart(field);
+    if (!part) continue;
+    for (const known of identifierSet) {
+      if (known && idPart(known) === part) return true;
+    }
+  }
+  return false;
 }
 
 function isAdminParticipant(participant) {

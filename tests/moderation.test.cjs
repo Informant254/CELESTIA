@@ -14,7 +14,7 @@ const BOT_LID = '100000000000001@lid';
 const MEMBER = '100000000000002@lid';
 const ADMIN = '100000000000009@lid';
 
-function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, botAdmin = true, admins = [] } = {}) {
+function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, botAdmin = true, admins = [], noLid = false } = {}) {
   const mem = { ...settings };
   const gmem = { ...group };
   const warns = new Map();
@@ -55,7 +55,7 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
   const blocked = [];
   let metadataCalls = 0;
   const sock = {
-    user: { id: BOT_PN, lid: BOT_LID },
+    user: noLid ? { id: BOT_PN } : { id: BOT_PN, lid: BOT_LID },
     ev: { on: (ev, fn) => { if (ev === 'messages.upsert') handler = fn; } },
     groupMetadata: async () => { metadataCalls++; return ({
       id: GROUP,
@@ -269,6 +269,23 @@ test('inbox flood and channel spam are punished per inbox', async () => {
   const h2 = loadMessagesHarness({ group: { [DM]: { antigstatus: 'on' } } });
   await h2.sendDM({ conversation: 'join https://whatsapp.com/channel/abc' });
   assert.match(h2.sent[0].text, /Channel-invite/);
+});
+
+test('bot recognized by learned LID when socket lid is missing', async () => {
+  const Andes = require('node:module').createRequire(path.join(ROOT, 'events/messages.js'));
+  const isAdmin = Andes(path.join(ROOT, 'utils/isAdmin'));
+  const prev = globalThis.__ownerLid;
+  globalThis.__ownerLid = BOT_LID.split('@')[0];
+  try {
+    const noLidSock = { user: { id: BOT_PN } };
+    const metadata = { participants: [{ id: BOT_LID, admin: 'admin' }, { id: MEMBER }] };
+    assert.equal(isAdmin.isBotAdmin(noLidSock, metadata), true);
+    const h = loadMessagesHarness({ noLid: true, group: { [GROUP]: { antilink: 'on' } } });
+    await h.send(link());
+    assert.ok(h.sent[0].delete);
+  } finally {
+    globalThis.__ownerLid = prev;
+  }
 });
 
 test('owner messages are never punished', async () => {
