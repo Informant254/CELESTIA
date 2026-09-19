@@ -14,10 +14,28 @@ async function checkAdminPerms(sock, msg) {
   return metadata;
 }
 
-function makeToggleCommand(name, settingKey, label, emoji) {
+const MODES = ['off', 'on', 'warn', 'kick'];
+
+function showMode(value, legacyTrue) {
+  if (value === true) return `${legacyTrue.toUpperCase()} (legacy on)`;
+  if (typeof value === 'string' && MODES.includes(value)) return value.toUpperCase();
+  return '❌ OFF';
+}
+
+function requireBotAdmin(sock, metadata, jid, msg) {
+  if (isBotAdmin(sock, metadata)) return true;
+  sock.sendMessage(jid, {
+    text: '❌ Make me a group admin first. WhatsApp only lets group admins delete or remove messages.',
+  }, { quoted: msg }).catch(() => {});
+  return false;
+}
+
+// Unified punishment-mode command: off = disabled · on = delete only ·
+// warn = delete + 3 strikes then kick · kick = delete + immediate kick.
+function makeModeCommand(name, settingKey, label, emoji, legacyTrue = 'on') {
   return {
     name,
-    description: `Toggle ${label}. Usage: .${name} on/off`,
+    description: `${label}. Usage: .${name} off|on|warn|kick`,
     async execute(sock, msg, args) {
       const jid = msg.key.remoteJid;
       if (!jid.endsWith('@g.us')) {
@@ -28,12 +46,14 @@ function makeToggleCommand(name, settingKey, label, emoji) {
       if (!metadata) return;
 
       const mode = args[0]?.toLowerCase();
-      if (mode !== 'on' && mode !== 'off') {
-        return sock.sendMessage(jid, { text: `❌ Usage: .${name} on  or  .${name} off` }, { quoted: msg });
+      if (!MODES.includes(mode)) {
+        return sock.sendMessage(jid, { text: `❌ Usage: .${name} off | on | warn | kick` }, { quoted: msg });
       }
 
-      groupSettingsStore.set(jid, settingKey, mode === 'on');
-      await sock.sendMessage(jid, { text: `${emoji} ${label} turned ${mode}.` }, { quoted: msg });
+      if (mode !== 'off' && !requireBotAdmin(sock, metadata, jid, msg)) return;
+
+      groupSettingsStore.set(jid, settingKey, mode);
+      await sock.sendMessage(jid, { text: `${emoji} ${label} set to *${mode.toUpperCase()}*.` }, { quoted: msg });
     }
   };
 }
@@ -58,6 +78,8 @@ module.exports = [
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {
         return sock.sendMessage(jid, { text: '❌ Usage: .antigm off / on / kick / warn' }, { quoted: msg });
       }
+
+      if (mode !== 'off' && !requireBotAdmin(sock, metadata, jid, msg)) return;
 
       groupSettingsStore.set(jid, 'antigm', mode);
       await sock.sendMessage(jid, { text: `🛡️ Antigm set to *${mode.toUpperCase()}*.` }, { quoted: msg });
@@ -93,9 +115,45 @@ module.exports = [
     }
   },
 
-  makeToggleCommand('antigstatus', 'antigstatus', 'Anti-group-status spam protection', '🛡️'),
-  makeToggleCommand('antispam', 'antispam', 'Anti-spam protection', '🚫'),
-  makeToggleCommand('antiword', 'antiword', 'Banned word filter', '🤬'),
+  makeModeCommand('antigstatus', 'antigstatus', 'Channel-invite spam protection', '🛡️'),
+  makeModeCommand('antispam', 'antispam', 'Flood protection (>6 messages / 10s)', '🚫'),
+
+  {
+    name: 'antiword',
+    aliases: ['noword'],
+    description: 'Per-group banned word filter. Usage: .antiword off|on|warn|kick|add <word>|remove <word>|list',
+    async execute(sock, msg, args) {
+      const jid = msg.key.remoteJid;
+      if (!jid.endsWith('@g.us')) {
+        return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
+      }
+
+      const metadata = await checkAdminPerms(sock, msg);
+      if (!metadata) return;
+
+      const sub = args[0]?.toLowerCase();
+      if (MODES.includes(sub)) {
+        if (sub !== 'off' && !requireBotAdmin(sock, metadata, jid, msg)) return;
+        groupSettingsStore.set(jid, 'antiword', sub);
+        return sock.sendMessage(jid, { text: `🤬 Antiword set to *${sub.toUpperCase()}*.` }, { quoted: msg });
+      }
+      if (sub === 'add' || sub === 'remove' || sub === 'list') {
+        const list = groupSettingsStore.get(jid, 'antiwordlist', []);
+        const clean = Array.isArray(list) ? list : [];
+        if (sub === 'list') {
+          return sock.sendMessage(jid, { text: clean.length ? `📋 *Blocked words:*\n${clean.join(', ')}` : '📋 No blocked words yet.' }, { quoted: msg });
+        }
+        const word = args[1]?.toLowerCase();
+        if (!word) return sock.sendMessage(jid, { text: `❌ Usage: .antiword ${sub} <word>` }, { quoted: msg });
+        groupSettingsStore.set(jid, 'antiwordlist', sub === 'add' ? [...new Set([...clean, word])] : clean.filter((w) => w !== word));
+        return sock.sendMessage(jid, { text: sub === 'add' ? `✅ Blocked "${word}".` : `✅ Unblocked "${word}".` }, { quoted: msg });
+      }
+      const list = groupSettingsStore.get(jid, 'antiwordlist', []);
+      return sock.sendMessage(jid, {
+        text: `🤬 *Antiword:* ${showMode(groupSettingsStore.get(jid, 'antiword', 'off'), 'on')} (${Array.isArray(list) ? list.length : 0} words)\n\n💡 Use .antiword off|on|warn|kick|add <word>|remove <word>|list`,
+      }, { quoted: msg });
+    }
+  },
 
   {
     name: 'common',
@@ -108,14 +166,16 @@ module.exports = [
 
       const settings = groupSettingsStore.getAll(jid);
       const flag = (v) => v ? '✅ ON' : '❌ OFF';
+      const mode = (v, legacyTrue = 'on') => showMode(v, legacyTrue);
+      const wordCount = Array.isArray(settings.antiwordlist) ? settings.antiwordlist.length : 0;
 
       const text = `
 ╭──〔 🛡️ GROUP SETTINGS 〕──╮
-🔗 Antilink: ${settings.antilink ? String(settings.antilink).toUpperCase() : '❌ OFF'}
-🚫 Antispam: ${flag(settings.antispam)}
-🤬 Antiword: ${flag(settings.antiword)}
-🛡️ Antigm: ${settings.antigm ? String(settings.antigm).toUpperCase() : '❌ OFF'}
-🛡️ Antigstatus: ${flag(settings.antigstatus)}
+🔗 Antilink: ${mode(settings.antilink)}
+🚫 Antispam: ${mode(settings.antispam)}
+🤬 Antiword: ${mode(settings.antiword)} (${wordCount} words)
+🛡️ Antigm: ${mode(settings.antigm)}
+🛡️ Antigstatus: ${mode(settings.antigstatus)}
 👋 Welcome: ${flag(settings.welcome)}
 👋 Goodbye: ${flag(settings.goodbye)}
 ╰──────────────────╯`.trim();

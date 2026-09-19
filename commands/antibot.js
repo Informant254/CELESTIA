@@ -1,23 +1,28 @@
 const settingsStore = require('../utils/settingsStore');
 const { isOwner } = require('../utils/isOwner');
 
+const MODES = ['off', 'on', 'warn', 'kick'];
+
+function show(value) {
+  if (value === true) return 'KICK (legacy on)';
+  if (typeof value === 'string' && MODES.includes(value)) return value.toUpperCase();
+  return 'OFF';
+}
+
 module.exports = {
     name: 'antibot',
-    description: 'Toggle kicking messages that look like bot commands from non-admins.',
+    description: 'Kick messages that look like bot commands from non-admins. Usage: .antibot off|on|warn|kick (on = immediate kick, warn = 3 strikes then kick)',
     async execute(sock, msg, args) {
         if (!isOwner(msg)) return;
 
-        if (args[0] === 'on') {
-            settingsStore.set('antibot', true);
-            return await sock.sendMessage(msg.key.remoteJid, { text: '🤖 *Antibot:* ENABLED [🟢]' });
-        } else if (args[0] === 'off') {
-            settingsStore.set('antibot', false);
-            return await sock.sendMessage(msg.key.remoteJid, { text: '🤖 *Antibot:* DISABLED [🔴]' });
+        const sub = args[0]?.toLowerCase();
+        if (MODES.includes(sub)) {
+            settingsStore.set('antibot', sub === 'off' ? false : sub);
+            return await sock.sendMessage(msg.key.remoteJid, { text: `🤖 *Antibot:* ${show(settingsStore.get('antibot', false))}` });
         }
 
-        const status = settingsStore.get('antibot', false) ? 'ENABLED [🟢]' : 'DISABLED [🔴]';
         await sock.sendMessage(msg.key.remoteJid, {
-            text: `🤖 *Antibot Status:* ${status}\n\n💡 Use \`.antibot on\` or \`.antibot off\` to change it.`
+            text: `🤖 *Antibot Status:* ${show(settingsStore.get('antibot', false))}\n\n💡 Use \`.antibot off|on|warn|kick\``
         });
     },
 };

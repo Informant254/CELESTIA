@@ -52,48 +52,159 @@ async function cachedGroupMetadata(sock, jid, ttlMs = 60000) {
   return data;
 }
 
-// Explicitly enabled group moderation is independent of command/chat privacy.
-async function enforceAntilink(sock, msg) {
-  const jid = msg.key.remoteJid;
-  if (!jid?.endsWith('@g.us') || msg.key.fromMe) return false;
-  let mode = groupSettingsStore.get(jid, 'antilink', 'off');
-  if (mode === true) mode = 'on';
-  if (!mode) mode = 'off';
-  if (mode === 'off' && settingsStore.get('antilinkall', false)) mode = 'on';
-  if (!['on', 'warn', 'kick'].includes(mode) || !containsLink(extractMessageText(msg.message))) return false;
-
-  const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-  const sender = msg.key.participant || msg.key.participantPn || msg.key.participantAlt;
+// ─── Unified group moderation (runs before privacy/autochat) ───
+// Every explicitly enabled punishment runs here so private mode and
+// autochat can never starve it. Shared semantics for ALL antis:
+//   off = disabled · on = delete only · warn = delete + 3 strikes then kick · kick = immediate remove.
+// Legacy boolean `true` maps to each feature's historical behavior.
+const __flood = new Map(); // `${jid}::${sender}` -> [timestamps]
+let __badwordsCache = { mtime: 0, list: [] };
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+function loadBadwords() {
   try {
-    const metadata = await cachedGroupMetadata(sock, jid);
-    const senderAdmin = [sender, msg.key.participantPn, msg.key.participantAlt]
-      .filter(Boolean).some(id => isSenderAdmin(metadata, id));
-    if (senderAdmin && mode !== 'on') return false;
-    if (!isBotAdmin(sock, metadata)) {
-      logger.warn('[antilink] Blocked: bot lacks group admin rights.');
-      return true;
+    const p = path.join(__dirname, '../config/badwords.json');
+    const st = fs.statSync(p);
+    if (st.mtimeMs !== __badwordsCache.mtime) {
+      const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
+      __badwordsCache = { mtime: st.mtimeMs, list: Array.isArray(parsed) ? parsed : [] };
     }
+  } catch { /* keep last good list */ }
+  return Array.isArray(__badwordsCache.list) ? __badwordsCache.list : [];
+}
+function normMode(value, legacyTrue) {
+  if (typeof value === 'string') {
+    const v = value.toLowerCase();
+    return ['on', 'warn', 'kick'].includes(v) ? v : 'off';
+  }
+  if (value === true) return legacyTrue;
+  return 'off';
+}
+function floodHit(jid, sender, limit = 6, windowMs = 10000) {
+  const k = `${jid}::${sender}`;
+  const now = Date.now();
+  const arr = (__flood.get(k) || []).filter((t) => now - t < windowMs);
+  arr.push(now);
+  __flood.set(k, arr);
+  if (__flood.size > 500) __flood.delete(__flood.keys().next().value);
+  return arr.length > limit;
+}
+async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck }) {
+  const warnings = require('../utils/warnings');
+  const short = String(sender).split('@')[0];
+  try {
     await sock.sendMessage(jid, { delete: msg.key });
-    logger.info(`[antilink] Delete request sent; mode=${mode}`);
+  } catch (e) {
+    logger.error(`[${tag}] delete failed: ${e.message}`);
+  }
+  try {
     if (mode === 'kick') {
       await sock.groupParticipantsUpdate(jid, [sender], 'remove');
-      await sock.sendMessage(jid, { text: '🔗 A member was removed for sending a link.' });
-    } else if (mode === 'warn') {
-      const { addWarning, resetWarnings } = require('../utils/warnings');
-      const count = addWarning(jid, sender);
-      if (count >= 3) {
-        await sock.groupParticipantsUpdate(jid, [sender], 'remove');
-        resetWarnings(jid, sender);
-        await sock.sendMessage(jid, { text: '🔗 A member was removed after 3 link warnings.' });
-      } else {
-        await sock.sendMessage(jid, {
-          text: `⚠️ Link deleted. @${sender.split('@')[0]} — warning ${count}/3.`,
-          mentions: [sender],
-        });
-      }
+      await sock.sendMessage(jid, { text: `${struck} — @${short} removed.`, mentions: [sender] });
+      return;
     }
-  } catch (error) {
-    logger.error(`[antilink] Enforcement failed: ${error.message}`);
+    const count = warnings.addWarning(`${scope}::${jid}`, sender);
+    if (count >= 3) {
+      warnings.resetWarnings(`${scope}::${jid}`, sender);
+      await sock.groupParticipantsUpdate(jid, [sender], 'remove');
+      await sock.sendMessage(jid, { text: `${struck} — @${short} removed after 3 warnings.`, mentions: [sender] });
+    } else {
+      await sock.sendMessage(jid, { text: `${struck} — @${short} warning ${count}/3.`, mentions: [sender] });
+    }
+  } catch (e) {
+    logger.error(`[${tag}] punish failed: ${e.message}`);
+  }
+}
+async function enforceModeration(sock, msg) {
+  const jid = msg.key.remoteJid;
+  if (!jid?.endsWith('@g.us') || msg.key.fromMe) return false;
+  const { isOwner } = require('../utils/isOwner');
+  if (isOwner(msg)) return false;
+  const text = extractMessageText(msg.message);
+  const senderIds = [msg.key.participant, msg.key.participantPn, msg.key.participantAlt].filter(Boolean);
+  const sender = senderIds[0];
+  if (!sender) return false;
+
+  const g = (k, fb) => groupSettingsStore.get(jid, k, fb);
+  const s = (k, fb) => settingsStore.get(k, fb);
+  const jobs = [];
+
+  let linkMode = normMode(g('antilink', 'off'), 'on');
+  if (linkMode === 'off' && s('antilinkall', false)) linkMode = 'on';
+  if (linkMode !== 'off' && containsLink(text)) {
+    jobs.push({ tag: 'antilink', mode: linkMode, scope: 'link', strictAdmin: linkMode === 'on', struck: '🔗 Link deleted' });
+  }
+  const gmMode = normMode(g('antigm', 'off'), 'on');
+  if (gmMode !== 'off' && msg.message?.groupStatusMentionMessage) {
+    jobs.push({ tag: 'antigm', mode: gmMode, scope: 'gm', strictAdmin: gmMode === 'on', struck: '🚫 Status-mention deleted' });
+  }
+  const botMode = normMode(s('antibot', false), 'kick');
+  if (botMode !== 'off' && /^[./!#]/.test(text)) {
+    const { isSudo } = require('../utils/isSudo');
+    if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: '🤖 Suspected bot command removed' });
+  }
+  const tagMode = normMode(s('antitag', false), 'on');
+  const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  if (tagMode !== 'off' && mentioned.length > 5) {
+    jobs.push({ tag: 'antitag', mode: tagMode, scope: 'tag', strictAdmin: tagMode === 'on', struck: '🏷️ Mass-tag spam deleted' });
+  }
+  const bwMode = normMode(s('badword', false), 'kick');
+  if (bwMode !== 'off' && text) {
+    const low = text.toLowerCase();
+    if (loadBadwords().some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(low))) {
+      jobs.push({ tag: 'badword', mode: bwMode, scope: 'bw', strictAdmin: bwMode === 'on', struck: '🚫 Banned word deleted' });
+    }
+  }
+  const spamMode = normMode(g('antispam', 'off'), 'on');
+  if (spamMode !== 'off' && text && floodHit(jid, sender)) {
+    jobs.push({ tag: 'antispam', mode: spamMode, scope: 'spam', strictAdmin: spamMode === 'on', struck: '🚫 Flood messages deleted' });
+  }
+  const awMode = normMode(g('antiword', 'off'), 'on');
+  if (awMode !== 'off' && text) {
+    const list = g('antiwordlist', []);
+    const low = text.toLowerCase();
+    if (Array.isArray(list) && list.some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(low))) {
+      jobs.push({ tag: 'antiword', mode: awMode, scope: 'aw', strictAdmin: awMode === 'on', struck: '🤬 Blocked word deleted' });
+    }
+  }
+  const gsMode = normMode(g('antigstatus', 'off'), 'on');
+  if (gsMode !== 'off' && /whatsapp\.com\/(channel|invite)\/|chat\.whatsapp\.com\//i.test(text)) {
+    jobs.push({ tag: 'antigstatus', mode: gsMode, scope: 'gs', strictAdmin: gsMode === 'on', struck: '🛡️ Channel-invite spam deleted' });
+  }
+
+  if (!jobs.length) return false;
+  const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
+  let metadata;
+  try {
+    metadata = await cachedGroupMetadata(sock, jid);
+  } catch (e) {
+    logger.error(`[moderation] metadata unavailable: ${e.message}`);
+    return false;
+  }
+  if (!isBotAdmin(sock, metadata)) {
+    logger.warn('[moderation] bot lacks admin rights; skipping punishment.');
+    return true;
+  }
+  const senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
+  for (const job of jobs) {
+    if (senderAdmin && !job.strictAdmin) continue; // admins exempt from warn/kick
+    logger.info(`[moderation] ${job.tag} mode=${job.mode} sender=${sender}`);
+    if (job.mode === 'on') {
+      try {
+        await sock.sendMessage(jid, { delete: msg.key });
+      } catch (e) {
+        logger.error(`[${job.tag}] delete failed: ${e.message}`);
+      }
+      if (job.tag === 'antitag') {
+        await sock.sendMessage(jid, {
+          text: `🏷️ Mass-tag message deleted from @${sender.split('@')[0]}.`,
+          mentions: [sender],
+        }).catch(() => {});
+      }
+      continue;
+    }
+    await modPunish(sock, jid, msg, sender, job);
   }
   return true;
 }
@@ -145,7 +256,7 @@ function registerMessageHandler(sock, commands) {
         if (alreadySeen(msg)) continue;
 
         // Run configured group moderation before privacy/autochat can consume it.
-        if (await enforceAntilink(sock, msg)) continue;
+        if (await enforceModeration(sock, msg)) continue;
 
         // ═══ PRIVACY GATE — before conversational handlers and commands ═══
         // In private mode she is invisible to everyone except owner/sudo/self.
@@ -213,54 +324,6 @@ function registerMessageHandler(sock, commands) {
         }
 
         // ═══ END GATE ═══
-
-        if (msg.key.remoteJid.endsWith('@g.us')) {
-          const groupSettingsStore = require('../utils/groupSettingsStore');
-          const antigmMode = groupSettingsStore.get(msg.key.remoteJid, 'antigm', 'off');
-
-          if (antigmMode !== 'off' && msg.message?.groupStatusMentionMessage) {
-            const { isOwner } = require('../utils/isOwner');
-            const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-            const senderJid = msg.key.participant || msg.key.remoteJid;
-
-            if (!isOwner(msg)) {
-              const metadata = await sock.groupMetadata(msg.key.remoteJid);
-              if (!isSenderAdmin(metadata, senderJid) && isBotAdmin(sock, metadata)) {
-                try {
-                  await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
-
-                  if (antigmMode === 'kick') {
-                    await sock.groupParticipantsUpdate(msg.key.remoteJid, [senderJid], 'remove');
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: `status mention detected!!! @${senderJid.split('@')[0]} kicked 🚫`,
-                      mentions: [senderJid],
-                    });
-                  } else if (antigmMode === 'warn') {
-                    const { addWarning, resetWarnings } = require('../utils/warnings');
-                    const count = addWarning(msg.key.remoteJid, senderJid);
-
-                    if (count >= 3) {
-                      resetWarnings(msg.key.remoteJid, senderJid);
-                      await sock.groupParticipantsUpdate(msg.key.remoteJid, [senderJid], 'remove');
-                      await sock.sendMessage(msg.key.remoteJid, {
-                        text: `status mention detected!!! @${senderJid.split('@')[0]} kicked 🚫`,
-                        mentions: [senderJid],
-                      });
-                    } else {
-                      await sock.sendMessage(msg.key.remoteJid, {
-                        text: `⚠️WARNING⚠️\n*User :* @${senderJid.split('@')[0]}\n*Warn :* ${count}\n*Remaining :* ${3 - count}`,
-                        mentions: [senderJid],
-                      });
-                    }
-                  }
-                } catch (e) {
-                  logger.error(`[antigm] Failed to delete/act: ${e.message}`);
-                }
-                continue;
-              }
-            }
-          }
-        }
 
         const prefix = settingsStore.get('prefix', config.prefix);
         const workType = settingsStore.get('mode', config.WORK_TYPE);
@@ -505,42 +568,6 @@ function registerMessageHandler(sock, commands) {
           }
         }
 
-        if (msg.key.remoteJid.endsWith('@g.us')) {
-          if (settingsStore.get('antibot', false)) {
-            const botPrefixPattern = /^[.\/!#]/;
-            if (botPrefixPattern.test(text) && !msg.key.fromMe) {
-              const { isOwner } = require('../utils/isOwner');
-              const { isSudo } = require('../utils/isSudo');
-              const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-              const senderJid = msg.key.participant || msg.key.remoteJid;
-
-              if (!isOwner(msg) && !isSudo(msg)) {
-                const metadata = await sock.groupMetadata(msg.key.remoteJid);
-
-                if (!isSenderAdmin(metadata, senderJid)) {
-                  if (!isBotAdmin(sock, metadata)) {
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: '⚠ *I need admin privileges to remove suspected cheap bots.*',
-                    });
-                    continue;
-                  }
-
-                  try {
-                    await sock.groupParticipantsUpdate(msg.key.remoteJid, [senderJid], 'remove');
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: `🤖 Bot detected @${senderJid.split('@')[0]}, kicked.`,
-                      mentions: [senderJid],
-                    });
-                  } catch (e) {
-                    logger.error(`[antibot] Failed to kick: ${e.message}`);
-                  }
-                  continue;
-                }
-              }
-            }
-          }
-        }
-
         console.log('TEXT RECEIVED =', config.debugMessages ? JSON.stringify(text) : `[redacted:${text.length}]`);
         if (config.debugMessages) {
           console.log('PREFIX =', JSON.stringify(prefix));
@@ -558,76 +585,6 @@ function registerMessageHandler(sock, commands) {
               },
             });
           } catch { /* react is cosmetic — command continues below */ }
-        }
-
-        if (msg.key.remoteJid.endsWith('@g.us')) {
-          if (settingsStore.get('antitag', false)) {
-            const mentionedJid = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-            const TAG_THRESHOLD = 5;
-
-            if (mentionedJid.length > TAG_THRESHOLD) {
-              const { isOwner } = require('../utils/isOwner');
-              const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-              const senderJid = msg.key.participant || msg.key.remoteJid;
-
-              if (!isOwner(msg)) {
-                const metadata = await sock.groupMetadata(msg.key.remoteJid);
-
-                if (!isSenderAdmin(metadata, senderJid)) {
-                  if (!isBotAdmin(sock, metadata)) {
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: '⚠️ *I need admin privileges to delete mass-tag spam.*',
-                    });
-                    continue;
-                  }
-
-                  try {
-                    await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: `🏷️ Mass-tag message deleted from @${senderJid.split('@')[0]}.`,
-                      mentions: [senderJid],
-                    });
-                  } catch (e) {
-                    logger.error(`[antitag] Failed to delete: ${e.message}`);
-                  }
-                  continue;
-                }
-              }
-            }
-          }
-        }
-
-        if (msg.key.remoteJid.endsWith('@g.us')) {
-          if (settingsStore.get('badword', false)) {
-            const listPath = path.join(__dirname, '../config/badwords.json');
-            const badwords = fs.existsSync(listPath) ? JSON.parse(fs.readFileSync(listPath, 'utf8')) : [];
-
-            const lowerText = text.toLowerCase();
-            const matched = badwords.some((word) => new RegExp(`\\b${word}\\b`, 'i').test(lowerText));
-
-            if (matched) {
-              const { isOwner } = require('../utils/isOwner');
-              const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-              const senderJid = msg.key.participant || msg.key.remoteJid;
-
-              if (!isOwner(msg)) {
-                const metadata = await sock.groupMetadata(msg.key.remoteJid);
-                if (!isSenderAdmin(metadata, senderJid) && isBotAdmin(sock, metadata)) {
-                  try {
-                    await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
-                    await sock.groupParticipantsUpdate(msg.key.remoteJid, [senderJid], 'remove');
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: `🚫 @${senderJid.split('@')[0]} kicked for using bad words.`,
-                      mentions: [senderJid],
-                    });
-                  } catch (e) {
-                    logger.error(`[badword] Failed to delete/kick: ${e.message}`);
-                  }
-                  continue;
-                }
-              }
-            }
-          }
         }
 
         // Process Prefix Commands

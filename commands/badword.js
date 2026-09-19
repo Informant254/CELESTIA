@@ -14,21 +14,25 @@ function save(list) {
     fs.writeFileSync(listPath, JSON.stringify(list, null, 2));
 }
 
+const MODES = ['off', 'on', 'warn', 'kick'];
+
+function show(value) {
+  if (value === true) return 'KICK (legacy on)';
+  if (typeof value === 'string' && MODES.includes(value)) return value.toUpperCase();
+  return 'OFF';
+}
+
 module.exports = {
     name: 'badword',
-    description: 'Manage the bad word filter. Usage: .badword on|off|add <word>|remove <word>|list',
+    description: 'Manage the bad word filter. Usage: .badword on|off|warn|kick|add <word>|remove <word>|list (on = delete only, warn = 3 strikes then kick, kick = delete + immediate kick)',
     async execute(sock, msg, args) {
         if (!isOwner(msg) && !isSudo(msg)) return;
         const jid = msg.key.remoteJid;
         const sub = args[0]?.toLowerCase();
 
-        if (sub === 'on') {
-            settingsStore.set('badword', true);
-            return sock.sendMessage(jid, { text: '🚫 *Bad Word Filter:* ENABLED [🟢]' });
-        }
-        if (sub === 'off') {
-            settingsStore.set('badword', false);
-            return sock.sendMessage(jid, { text: '🚫 *Bad Word Filter:* DISABLED [🔴]' });
+        if (MODES.includes(sub)) {
+            settingsStore.set('badword', sub === 'off' ? false : sub);
+            return sock.sendMessage(jid, { text: `🚫 *Bad Word Filter:* ${show(settingsStore.get('badword', false))}` });
         }
         if (sub === 'add') {
             const word = args[1]?.toLowerCase();
@@ -49,9 +53,8 @@ module.exports = {
             return sock.sendMessage(jid, { text: list.length ? `📋 *Bad words:*\n${list.join(', ')}` : '📋 List is empty.' }, { quoted: msg });
         }
 
-        const status = settingsStore.get('badword', false) ? 'ENABLED [🟢]' : 'DISABLED [🔴]';
         await sock.sendMessage(jid, {
-            text: `🚫 *Bad Word Filter Status:* ${status}\n\n💡 Use .badword on|off|add <word>|remove <word>|list`
+            text: `🚫 *Bad Word Filter Status:* ${show(settingsStore.get('badword', false))}\n\n💡 Use .badword on|off|warn|kick|add <word>|remove <word>|list`
         });
     },
 };
