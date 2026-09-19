@@ -155,11 +155,21 @@ async function enforceModeration(sock, msg, commands) {
   }
   const botMode = normMode(s('antibot', false), 'kick');
   const prefix = s('prefix', config.prefix) || '.';
-  const commandName = text.startsWith(prefix) ? text.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase() : '';
+  const trimmed = String(text || '').trim();
+  const commandName = trimmed.startsWith(prefix) ? trimmed.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase() : '';
   const knownCommand = commandName && commands?.has(commandName);
-  if (botMode !== 'off' && /^[./!#]/.test(text) && !knownCommand) {
+  // Another bot's command: a command sigil immediately followed by a letter.
+  // The letter requirement keeps human text like "..." or ". " untouched.
+  const foreignCommand = /^[!#$%][A-Za-z]/u.test(trimmed);
+  // Interactive widgets (buttons, lists, templates, flows) cannot be sent by
+  // normal human clients — only bots and business APIs produce them. Human
+  // *taps* (buttonsResponseMessage/listResponseMessage) are NOT flagged.
+  const inner = msg.message?.ephemeralMessage?.message || msg.message?.viewOnceMessage?.message || msg.message?.viewOnceMessageV2?.message || msg.message;
+  const botWidget = inner && (inner.buttonsMessage || inner.listMessage || inner.templateMessage || inner.interactiveMessage);
+  const sigilCommand = /^[./!#][A-Za-z]/u.test(trimmed) && !knownCommand;
+  if (botMode !== 'off' && (sigilCommand || foreignCommand || botWidget)) {
     const { isSudo } = require('../utils/isSudo');
-    if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: '🤖 Suspected bot command removed' });
+    if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: botWidget ? '🤖 Automated bot message removed' : '🤖 Suspected bot command removed' });
   }
   const tagMode = normMode(s('antitag', false), 'on');
   const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];

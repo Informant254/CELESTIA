@@ -11,7 +11,7 @@ function show(value) {
 
 module.exports = {
     name: 'antibot',
-    description: 'Kick messages that look like bot commands from non-admins. Usage: .antibot off|on|warn|kick (on = immediate kick, warn = 3 strikes then kick)',
+    description: 'Remove bot-framework commands and automated widgets from non-admins. Usage: .antibot off|on|warn|kick (on = delete only, warn = 3 strikes then kick, kick = instant kick)',
     async execute(sock, msg, args) {
         if (!isOwner(msg)) return;
 

@@ -198,6 +198,46 @@ test('antibot warn escalates instead of instant kick', async () => {
   assert.match(h.sent.at(-1).text, /warning 1\/3/);
 });
 
+test('antibot catches foreign-prefix bot commands ($bank, %bet)', async () => {
+  const h = loadMessagesHarness({ settings: { antibot: 'kick' } });
+  await h.send({ conversation: '$bank' });
+  await h.send({ conversation: '%bet all' });
+  await h.send({ conversation: '!slots' });
+  await h.send({ conversation: '#daily' });
+  assert.equal(h.removed.length, 4);
+});
+
+test('antibot leaves human punctuation (... , . hello) alone', async () => {
+  const h = loadMessagesHarness({ privacy: 'public', settings: { antibot: 'kick' } });
+  await h.send({ conversation: '...' });
+  await h.send({ conversation: '. hello there' });
+  await h.send({ conversation: '? anyone here' });
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.warns.size, 0);
+});
+
+test('antibot removes bot-only widgets but not human button taps', async () => {
+  const h = loadMessagesHarness({ settings: { antibot: 'kick' } });
+  await h.send({ buttonsMessage: { contentText: 'tap me', buttons: [{ buttonId: 'x' }] } });
+  await h.send({ listMessage: { title: 'menu' } });
+  await h.send({ templateMessage: { hydratedTemplate: {} } });
+  await h.send({ interactiveMessage: { body: {} } });
+  assert.equal(h.removed.length, 4);
+  assert.match(h.sent.at(-1).text, /Automated bot message removed/);
+  const h2 = loadMessagesHarness({ privacy: 'public', settings: { antibot: 'kick' } });
+  await h2.send({ buttonsResponseMessage: { selectedButtonId: 'x' } });
+  await h2.send({ listResponseMessage: { title: 'y' } });
+  assert.equal(h2.removed.length, 0);
+});
+
+test('antibot exempts admins from widget removal', async () => {
+  const h = loadMessagesHarness({ settings: { antibot: 'kick' } });
+  await h.send({ buttonsMessage: { contentText: 'tap me' } }, ADMIN);
+  await h.send({ conversation: '$bank' }, ADMIN);
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.length, 0);
+});
+
 test('antitag on deletes mass tags with notice', async () => {
   const h = loadMessagesHarness({ settings: { antitag: true } });
   await h.send(tagMsg());
