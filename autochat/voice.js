@@ -64,11 +64,23 @@ function count() {
   return all().length;
 }
 
-// Style block for the prompt: stats + freshest examples (most representative).
+// Representative sampling: spread evenly across the whole bank so old
+// taught lines survive alongside recent auto-collected ones (newest-only
+// windows forget bulk lessons the moment fresh chats arrive).
+function pickSamples(v, n = 12) {
+  const list = Array.isArray(v) ? v.filter(Boolean) : [];
+  if (list.length <= n) return list.slice();
+  const picked = [];
+  const step = list.length / n;
+  for (let i = 0; i < n; i++) picked.push(list[Math.floor(i * step)]);
+  return [...new Set(picked)];
+}
+
+// Style block for the prompt: stats + representative examples.
 function styleBlock() {
   const v = all();
   if (!v.length) return 'No voice samples yet — write naturally and I will pick up the style.';
-  const sample = v.slice(-12);
+  const sample = pickSamples(v);
   const avgLen = Math.round(v.reduce((a, l) => a + l.length, 0) / v.length);
   const emojiLines = v.filter((l) => /\p{Emoji}/u.test(l)).length;
   return [
@@ -78,4 +90,4 @@ function styleBlock() {
   ].join('\n');
 }
 
-module.exports = { collect, learn, forget, count, styleBlock };
+module.exports = { collect, learn, forget, count, styleBlock, pickSamples };
