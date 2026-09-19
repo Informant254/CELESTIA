@@ -14,7 +14,7 @@ const BOT_LID = '100000000000001@lid';
 const MEMBER = '100000000000002@lid';
 const ADMIN = '100000000000009@lid';
 
-function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, botAdmin = true, admins = [], noLid = false } = {}) {
+function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, botAdmin = true, admins = [], noLid = false, commands = new Map(), stalledExtras = false } = {}) {
   const mem = { ...settings };
   const gmem = { ...group };
   const warns = new Map();
@@ -37,7 +37,7 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
     },
     '../utils/logger': { info() {}, warn() {}, error() {} },
     '../utils/isSudo': { isSudo: () => false },
-    '../utils/viewonceVault': { isAutoOn: () => false, monitorReply: async () => {} },
+    '../utils/viewonceVault': { isAutoOn: () => false, monitorReply: () => stalledExtras ? new Promise(() => {}) : Promise.resolve() },
     '../utils/warnings': warningsStub,
     '../autochat/index': { handleIncoming: async () => { aiCalls++; return true; } },
     fs: {
@@ -49,7 +49,7 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
   };
   const context = {
     require: (id) => (id in stubs ? stubs[id] : realRequire(id)),
-    module: { exports: {} }, __dirname: path.join(ROOT, 'events'), console: { log() {} },
+    module: { exports: {} }, __dirname: path.join(ROOT, 'events'), console: { log() {} }, setTimeout, clearTimeout,
   };
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'events/messages.js'), 'utf8'), context);
   const blocked = [];
@@ -66,13 +66,13 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
         { id: MEMBER },
       ],
     }); },
-    sendMessage: async (jid, content) => { sent.push(content); return { key: { id: 's' + sent.length } }; },
+    sendMessage: async (jid, content) => { sent.push(content); if (stalledExtras && content.react) return new Promise(() => {}); return { key: { id: 's' + sent.length } }; },
     groupParticipantsUpdate: async (jid, users, action) => { removed.push({ users, action }); return {}; },
     updateBlockStatus: async (jid, action) => { blocked.push({ jid, action }); return {}; },
-    sendPresenceUpdate: async () => {},
+    sendPresenceUpdate: () => stalledExtras ? new Promise(() => {}) : Promise.resolve(),
     readMessages: async () => {},
   };
-  context.module.exports.registerMessageHandler(sock, new Map());
+  context.module.exports.registerMessageHandler(sock, commands);
   let n = 0;
   const emit = (remoteJid, message, participant) => handler({ type: 'notify', messages: [{
     key: { remoteJid, id: 'm' + (++n), fromMe: false, ...(participant ? { participant } : {}) },
@@ -89,6 +89,56 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
 const link = (t = 'see https://google.com') => ({ conversation: t });
 const tagMsg = () => ({ extendedTextMessage: { text: 'hi all', contextInfo: { mentionedJid: ['a', 'b', 'c', 'd', 'e', 'f'] } } });
 const statusMention = () => ({ groupStatusMentionMessage: { a: 1 } });
+
+test('hung media monitor, typing and reaction cannot stop command dispatch', { timeout: 2000 }, async () => {
+  let calls = 0;
+  const h = loadMessagesHarness({ privacy: 'public', stalledExtras: true,
+    settings: { autotyping: true, autorecording: true },
+    commands: new Map([['ping', { name: 'ping', execute: async () => { calls++; } }]]),
+  });
+  await h.send({ conversation: '.ping' });
+  await h.send({ conversation: '.ping' });
+  assert.equal(calls, 2);
+});
+
+test('all anti modes exempt admins without deleting, warning, kicking or blocking', async () => {
+  for (const mode of ['on', 'warn', 'kick']) {
+    const h = loadMessagesHarness({
+      privacy: 'public',
+      settings: { antibot: mode, antitag: mode, badword: mode },
+      group: { [GROUP]: { antilink: mode, antigm: mode, antigstatus: mode,
+        antispam: mode, antiword: mode, antiwordlist: ['spoiler'] } },
+    });
+    for (const message of [link(), tagMsg(), statusMention(), { conversation: '.otherbot' },
+      { conversation: 'damn spoiler https://whatsapp.com/channel/abc' },
+      ...Array.from({ length: 8 }, () => ({ conversation: 'flood test' }))]) {
+      await h.send(message, ADMIN);
+    }
+    assert.equal(h.sent.filter(content => !content.react).length, 0, mode);
+    assert.equal(h.removed.length, 0, mode);
+    assert.equal(h.blocked.length, 0, mode);
+    assert.equal(h.warns.size, 0, mode);
+  }
+});
+
+test('admin commands reach dispatch instead of being consumed by antibot exemption', async () => {
+  let calls = 0;
+  const commands = new Map([['ping', { name: 'ping', execute: async () => { calls++; } }]]);
+  const h = loadMessagesHarness({ privacy: 'public', settings: { antibot: 'kick' }, commands });
+  await h.send({ conversation: '.ping' }, ADMIN);
+  assert.equal(calls, 1);
+  assert.equal(h.removed.length, 0);
+});
+
+test('registered member commands are not mistaken for another bot', async () => {
+  let calls = 0;
+  const commands = new Map([['ping', { name: 'ping', execute: async () => { calls++; } }]]);
+  const h = loadMessagesHarness({ privacy: 'public', settings: { antibot: true }, commands });
+  await h.send({ conversation: '.ping' });
+  assert.equal(calls, 1);
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.blocked.length, 0);
+});
 
 test('antilink on deletes member link in private mode before autochat', async () => {
   const h = loadMessagesHarness({ group: { [GROUP]: { antilink: 'on' } } });
@@ -120,10 +170,10 @@ test('antilinkall global mode applies when local is off', async () => {
   assert.ok(h.sent[0].delete);
 });
 
-test('admin links deleted in on mode but exempt from warn', async () => {
+test('admin links exempt in on mode and warn', async () => {
   const h = loadMessagesHarness({ group: { [GROUP]: { antilink: 'on' } } });
   await h.send(link(), ADMIN);
-  assert.ok(h.sent[0].delete);
+  assert.equal(h.sent.length, 0);
   const h2 = loadMessagesHarness({ group: { [GROUP]: { antilink: 'warn' } } });
   await h2.send(link(), ADMIN);
   assert.equal(h2.sent.length, 0);

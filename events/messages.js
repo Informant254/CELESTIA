@@ -126,7 +126,7 @@ async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck, dm 
     logger.error(`[${tag}] punish failed: ${e.message}`);
   }
 }
-async function enforceModeration(sock, msg) {
+async function enforceModeration(sock, msg, commands) {
   const jid = msg.key.remoteJid;
   // Groups use delete/kick; personal inboxes use notice/block (WhatsApp
   // lets nobody delete or kick inside a DM). Status broadcasts never qualify.
@@ -154,7 +154,10 @@ async function enforceModeration(sock, msg) {
     jobs.push({ tag: 'antigm', mode: gmMode, scope: 'gm', strictAdmin: gmMode === 'on', struck: '🚫 Status-mention deleted' });
   }
   const botMode = normMode(s('antibot', false), 'kick');
-  if (botMode !== 'off' && /^[./!#]/.test(text)) {
+  const prefix = s('prefix', config.prefix) || '.';
+  const commandName = text.startsWith(prefix) ? text.slice(prefix.length).trim().split(/\s+/)[0].toLowerCase() : '';
+  const knownCommand = commandName && commands?.has(commandName);
+  if (botMode !== 'off' && /^[./!#]/.test(text) && !knownCommand) {
     const { isSudo } = require('../utils/isSudo');
     if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: '🤖 Suspected bot command removed' });
   }
@@ -198,6 +201,10 @@ async function enforceModeration(sock, msg) {
       logger.error(`[moderation] metadata unavailable: ${e.message}`);
       return false;
     }
+    senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
+    // Admin exemption must return to dispatch, not merely skip each job:
+    // the latter consumed admin commands without performing any action.
+    if (senderAdmin) return false;
   if (!isBotAdmin(sock, metadata)) {
     // Do NOT consume: swallowing a message we cannot punish breaks member
     // commands outright (e.g. antibot eating every `.ping` it can't kick for).
@@ -213,10 +220,8 @@ async function enforceModeration(sock, msg) {
     logger.warn(`[moderation] bot lacks admin rights; letting message flow through.${detail}`);
     return false;
   }
-    senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
   }
   for (const job of jobs) {
-    if (senderAdmin && !job.strictAdmin) continue; // admins exempt from warn/kick
     logger.info(`[moderation] ${job.tag} mode=${job.mode} sender=${sender} dm=${!isGroup}`);
     if (job.mode === 'on') {
       if (isGroup) {
@@ -265,6 +270,12 @@ function registerMessageHandler(sock, commands) {
       console.log('MESSAGE RECEIVED:', config.debugMessages ? msg.key : '[redacted]');
       try {
         if (!msg.message) continue;
+        const activePrefix = settingsStore.get('prefix', config.prefix) || '.';
+        const incomingText = extractMessageText(msg.message).trim();
+        const incomingName = incomingText.startsWith(activePrefix)
+          ? incomingText.slice(activePrefix.length).trim().split(/\s+/)[0].toLowerCase() : '';
+        const commandLabel = commands.has(incomingName) ? incomingName : 'unknown';
+        if (incomingName) logger.info(`[dispatch] received command=${commandLabel} self=${!!msg.key.fromMe} group=${msg.key.remoteJid?.endsWith('@g.us')}`);
 
         // Helper to safely send messages and reject empty payloads
         const reply = async (content, options = {}) => {
@@ -282,13 +293,22 @@ function registerMessageHandler(sock, commands) {
 
         // Skip anything sent before the bot's very first boot (link-to-deploy gap only)
         const msgTimestamp = Number(msg.messageTimestamp);
-        if (msgTimestamp && msgTimestamp < CUTOFF_TIME) continue;
+        if (msgTimestamp && msgTimestamp < CUTOFF_TIME) {
+          if (incomingName) logger.info(`[dispatch] ignored old command=${commandLabel}`);
+          continue;
+        }
 
         // Drop duplicate deliveries — same message ID seen before.
-        if (alreadySeen(msg)) continue;
+        if (alreadySeen(msg)) {
+          if (incomingName) logger.info(`[dispatch] duplicate command=${commandLabel}`);
+          continue;
+        }
 
         // Run configured group moderation before privacy/autochat can consume it.
-        if (await enforceModeration(sock, msg)) continue;
+        if (await enforceModeration(sock, msg, commands)) {
+          if (incomingName) logger.info(`[dispatch] moderated command=${commandLabel}`);
+          continue;
+        }
 
         // ═══ PRIVACY GATE — before conversational handlers and commands ═══
         // In private mode she is invisible to everyone except owner/sudo/self.
@@ -320,12 +340,16 @@ function registerMessageHandler(sock, commands) {
         try {
           const vault = require('../utils/viewonceVault');
           const ownerJid = config.ownerNumber + '@s.whatsapp.net';
-          await vault.monitorReply(sock, msg, ownerJid).catch(() => {});
+          // Optional media retrieval must not hold command dispatch waiting on an upload.
+          vault.monitorReply(sock, msg, ownerJid).catch(e => logger.warn(`[vault] monitor failed: ${e.message}`));
         } catch (e) { logger.error(`[vault] monitor: ${e.message}`); }
 
         if (_workTypeEarly === 'private' && !msg.key.fromMe) {
           const { isSudo } = require('../utils/isSudo');
-          if (!isSudo(msg)) continue; // total silence for strangers
+          if (!isSudo(msg)) {
+            if (incomingName) logger.info(`[dispatch] private-mode denied command=${commandLabel}`);
+            continue;
+          }
         }
 
         // ─── 🤖 AUTOCHAT — answers chats as the owner after the privacy gate.
@@ -565,10 +589,10 @@ function registerMessageHandler(sock, commands) {
         }
 
         if (settingsStore.get('autotyping', false)) {
-          await sock.sendPresenceUpdate('composing', msg.key.remoteJid);
+          sock.sendPresenceUpdate('composing', msg.key.remoteJid).catch(() => {});
         }
         if (settingsStore.get('autorecording', false)) {
-          await sock.sendPresenceUpdate('recording', msg.key.remoteJid);
+          sock.sendPresenceUpdate('recording', msg.key.remoteJid).catch(() => {});
         }
 
         if (!text) continue;
@@ -610,12 +634,12 @@ function registerMessageHandler(sock, commands) {
           // React must never kill command processing — degraded connections
           // throw here, and without this guard every command dies silently.
           try {
-            await sock.sendMessage(msg.key.remoteJid, {
+            sock.sendMessage(msg.key.remoteJid, {
               react: {
                 text: '🕷️',
                 key: msg.key,
               },
-            });
+            }).catch(() => {});
           } catch { /* react is cosmetic — command continues below */ }
         }
 
@@ -728,7 +752,15 @@ function registerMessageHandler(sock, commands) {
             } catch { /* game never breaks the bot */ }
 
             try {
-              await command.execute(sock, msg, args, commands, reply);
+              logger.info(`[dispatch] executing command=${commandName}`);
+              const waiting = setTimeout(() => logger.warn(`[dispatch] still waiting command=${commandName}`), 20000);
+              waiting.unref?.();
+              try {
+                await command.execute(sock, msg, args, commands, reply);
+                logger.info(`[dispatch] completed command=${commandName}`);
+              } finally {
+                clearTimeout(waiting);
+              }
               // deliver game toasts AFTER the command response
               if (gameToast && gameToast.length) {
                 for (const t of gameToast) {
