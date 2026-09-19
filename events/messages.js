@@ -31,6 +31,11 @@ function extractMessageText(message) {
     message.extendedTextMessage?.text ||
     message.imageMessage?.caption ||
     message.videoMessage?.caption ||
+    message.documentMessage?.caption ||
+    message.buttonsResponseMessage?.selectedButtonId ||
+    message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+    message.templateButtonReplyMessage?.selectedId ||
+    message.interactiveResponseMessage?.nativeFlowResponseMessage?.paramsJson ||
     ''
   );
 }
@@ -94,7 +99,11 @@ async function removeSender(sock, jid, sender, dm) {
   if (dm) {
     await sock.updateBlockStatus(jid, 'block');
   } else {
-    await sock.groupParticipantsUpdate(jid, [sender], 'remove');
+    const result = await sock.groupParticipantsUpdate(jid, [sender], 'remove');
+    const entry = Array.isArray(result) ? result[0] : null;
+    if (entry?.status && Number(entry.status) !== 200) {
+      throw new Error(`WhatsApp rejected removal (status ${entry.status})`);
+    }
   }
 }
 async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck, dm = false }) {
@@ -137,7 +146,7 @@ async function enforceModeration(sock, msg, commands) {
   if (isOwner(msg)) return false;
   const text = extractMessageText(msg.message);
   const senderIds = [msg.key.participant, msg.key.participantPn, msg.key.participantAlt].filter(Boolean);
-  const sender = senderIds[0] || (isDM ? jid : null);
+  const sender = (isGroup ? (msg.key.participantPn || msg.key.participantAlt || msg.key.participant) : jid);
   if (!sender) return false;
 
   const g = (k, fb) => groupSettingsStore.get(jid, k, fb);
@@ -160,14 +169,15 @@ async function enforceModeration(sock, msg, commands) {
   const knownCommand = commandName && commands?.has(commandName);
   // Another bot's command: a command sigil immediately followed by a letter.
   // The letter requirement keeps human text like "..." or ". " untouched.
-  const foreignCommand = /^[!#$%][A-Za-z]/u.test(trimmed);
+  const commandLike = /^[./!#$%?&*+~>_-][A-Za-z]/u.test(trimmed);
+  const botMessageId = /^3EB0[A-F0-9]{12,}$/i.test(String(msg.key.id || ''));
   // Interactive widgets (buttons, lists, templates, flows) cannot be sent by
   // normal human clients — only bots and business APIs produce them. Human
   // *taps* (buttonsResponseMessage/listResponseMessage) are NOT flagged.
   const inner = msg.message?.ephemeralMessage?.message || msg.message?.viewOnceMessage?.message || msg.message?.viewOnceMessageV2?.message || msg.message;
   const botWidget = inner && (inner.buttonsMessage || inner.listMessage || inner.templateMessage || inner.interactiveMessage);
-  const sigilCommand = /^[./!#][A-Za-z]/u.test(trimmed) && !knownCommand;
-  if (botMode !== 'off' && (sigilCommand || foreignCommand || botWidget)) {
+  const sigilCommand = commandLike && (!knownCommand || botMessageId);
+  if (botMode !== 'off' && (sigilCommand || botWidget)) {
     const { isSudo } = require('../utils/isSudo');
     if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: botWidget ? '🤖 Automated bot message removed' : '🤖 Suspected bot command removed' });
   }
@@ -330,7 +340,27 @@ function registerMessageHandler(sock, commands) {
           continue;
         }
 
-        // ═══ PRIVACY GATE — before conversational handlers and commands ═══
+        // Autochat is an explicit opt-in DM/group responder, so it gets the
+        // first chance at ordinary text even when command privacy is private.
+        let _autochatHandled = false;
+        {
+          let _acSkip = false;
+          const _acText = extractMessageText(msg.message).trim();
+          try {
+            for (const cmd of new Set(commands.values())) {
+              if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(_acText)) { _acSkip = true; break; }
+            }
+          } catch {}
+          const _acPrefix = settingsStore.get('prefix', config.prefix) || '.';
+          if (!_acSkip && _acText && !_acText.startsWith(_acPrefix)) {
+            try {
+              _autochatHandled = await require('../autochat/index').handleIncoming(sock, msg, _acText);
+            } catch (e) { logger.error(`[autochat] ${e.message}`); }
+          }
+        }
+        if (_autochatHandled) continue;
+
+        // ═══ PRIVACY GATE — before commands ═══
         // In private mode she is invisible to everyone except owner/sudo/self.
         // Other passive handlers (antibot, welcome, reacts, etc.) must
         // never leak a reply to strangers in private mode.
@@ -370,33 +400,6 @@ function registerMessageHandler(sock, commands) {
             stats.denied++;
             if (incomingName) logger.info(`[dispatch] private-mode denied command=${commandLabel}`);
             continue;
-          }
-        }
-
-        // ─── 🤖 AUTOCHAT — answers chats as the owner after the privacy gate.
-        // Owner, sudo and self messages still work in private mode.
-        // Explicit noprefix triggers (vv2 emojis…) always win over her.
-        // NOTE: the main `text` const is declared later in this loop — this
-        // block extracts its own copy so it can never throw a TDZ error.
-        {
-          let _acSkip = false;
-          let _acText = '';
-          try {
-            _acText = extractMessageText(msg.message).trim();
-          } catch { _acText = ''; }
-          try {
-            for (const cmd of new Set(commands.values())) {
-              if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(_acText)) { _acSkip = true; break; }
-            }
-          } catch { /* never break flow */ }
-          const _acPrefix = settingsStore.get('prefix', config.prefix) || '.';
-          if (!_acSkip && _acText && !_acText.startsWith(_acPrefix)) {
-            try {
-              const ac = require('../autochat/index');
-              if (await ac.handleIncoming(sock, msg, _acText)) continue;
-            } catch (e) {
-              logger.error(`[autochat] ${e.message}`);
-            }
           }
         }
 

@@ -74,14 +74,15 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
   };
   context.module.exports.registerMessageHandler(sock, commands);
   let n = 0;
-  const emit = (remoteJid, message, participant) => handler({ type: 'notify', messages: [{
-    key: { remoteJid, id: 'm' + (++n), fromMe: false, ...(participant ? { participant } : {}) },
+  const emit = (remoteJid, message, participant, id) => handler({ type: 'notify', messages: [{
+    key: { remoteJid, id: id || 'm' + (++n), fromMe: false, ...(participant ? { participant } : {}) },
     message, messageTimestamp: Math.floor(Date.now() / 1000),
   }] });
   return {
     sent, removed, blocked, warns, aiCalls: () => aiCalls, mem, gmem,
     metadataCalls: () => metadataCalls,
     send: (message, participant = MEMBER) => emit(GROUP, message, participant),
+    sendWithId: (message, id, participant = MEMBER) => emit(GROUP, message, participant, id),
     sendDM: (message, dm = '999@s.whatsapp.net') => emit(dm, message, null),
   };
 }
@@ -138,6 +139,15 @@ test('registered member commands are not mistaken for another bot', async () => 
   assert.equal(calls, 1);
   assert.equal(h.removed.length, 0);
   assert.equal(h.blocked.length, 0);
+});
+
+test('Baileys-style bot IDs expose automated registered commands', async () => {
+  let calls = 0;
+  const commands = new Map([['ping', { name: 'ping', execute: async () => { calls++; } }]]);
+  const h = loadMessagesHarness({ privacy: 'public', settings: { antibot: 'kick' }, commands });
+  await h.sendWithId({ conversation: '.ping' }, '3EB0AABBCCDDEEFF00112233');
+  assert.equal(calls, 0);
+  assert.equal(h.removed.length, 1);
 });
 
 test('antilink on deletes member link in private mode before autochat', async () => {
@@ -266,10 +276,10 @@ test('antibot without admin never swallows member commands', async () => {
   assert.equal(h.removed.length, 0);
 });
 
-test('ordinary text stays silent in private mode and never reaches autochat', async () => {
+test('explicit autochat can answer ordinary text while commands remain private', async () => {
   const h = loadMessagesHarness();
   await h.send({ conversation: 'hello everyone' });
-  assert.equal(h.sent.length, 0);
+  assert.equal(h.aiCalls(), 1);
 });
 
 test('badword legacy boolean kicks, on mode only deletes', async () => {

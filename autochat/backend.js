@@ -29,7 +29,9 @@ function openaiKey() {
 }
 
 function hasKey() {
-  return !!(codexStatus().authenticated || apixKey() || openrouterKey() || geminiKey() || openaiKey());
+  let localEnabled = false;
+  try { localEnabled = require('./local').status().enabled; } catch {}
+  return !!(codexStatus().authenticated || apixKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
 }
 
 function codexStatus() {

@@ -50,10 +50,10 @@ test('--model flag switches the engine per request', async () => {
   };
   try {
     const sent = [];
-    await video.execute(fakeSock(sent), msg(), ['ocean', 'waves', '--model', 'wan-2.2-fast']);
-    assert.ok(capturedUrl.includes('model=wan-2.2-fast'), 'engine id passed through');
+    await video.execute(fakeSock(sent), msg(), ['ocean', 'waves', '--model', 'alibaba/wan-2.2-fast']);
+    assert.ok(capturedUrl.includes('model=alibaba%2Fwan-2.2-fast'), 'canonical engine id passed through');
     assert.ok(!capturedUrl.includes('--model'), 'flag stripped from prompt');
-    assert.ok(sent.find((s) => s.video)?.caption.includes('wan-2.2-fast'), 'caption names the engine');
+    assert.ok(sent.find((s) => s.video)?.caption.includes('alibaba/wan-2.2-fast'), 'caption names the engine');
   } finally {
     axios.get = origGet;
     restoreKey();
@@ -84,6 +84,53 @@ test('exhausted balance names the cause, not a raw dump', async () => {
     const sent = [];
     await video.execute(fakeSock(sent), msg(), ['waves']);
     assert.ok(sent.at(-1).text.includes('balance exhausted'));
+  } finally {
+    axios.get = origGet;
+    restoreKey();
+  }
+});
+
+test('buffered model error falls back instead of claiming content moderation', async () => {
+  const restoreKey = withKey();
+  const origGet = axios.get;
+  const urls = [];
+  axios.get = async (url) => {
+    urls.push(url);
+    if (urls.length === 1) {
+      const e = new Error('Request failed with status code 400');
+      e.response = { status: 400, data: Buffer.from(JSON.stringify({ error: { message: 'Invalid model route' } })) };
+      throw e;
+    }
+    return { data: MP4, headers: { 'content-type': 'video/mp4' } };
+  };
+  try {
+    const sent = [];
+    await video.execute(fakeSock(sent), msg(), ['waves', '--model', 'retired/model']);
+    assert.equal(urls.length, 2);
+    assert.ok(urls[1].includes('alibaba%2Fwan-2.2-fast'));
+    assert.ok(sent.find((s) => s.video)?.caption.includes('alibaba/wan-2.2-fast'));
+    assert.ok(!sent.some((s) => /content filter/i.test(s.text || '')));
+  } finally {
+    axios.get = origGet;
+    restoreKey();
+  }
+});
+
+test('explicit moderation refusal does not retry another engine', async () => {
+  const restoreKey = withKey();
+  const origGet = axios.get;
+  let calls = 0;
+  axios.get = async () => {
+    calls++;
+    const e = new Error('Request failed with status code 400');
+    e.response = { status: 400, data: Buffer.from(JSON.stringify({ error: { message: 'Blocked by safety filter' } })) };
+    throw e;
+  };
+  try {
+    const sent = [];
+    await video.execute(fakeSock(sent), msg(), ['unsafe']);
+    assert.equal(calls, 1);
+    assert.match(sent.at(-1).text, /content filter/i);
   } finally {
     axios.get = origGet;
     restoreKey();
