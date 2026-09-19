@@ -90,25 +90,35 @@ function floodHit(jid, sender, limit = 6, windowMs = 10000) {
   if (__flood.size > 500) __flood.delete(__flood.keys().next().value);
   return arr.length > limit;
 }
-async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck }) {
+async function removeSender(sock, jid, sender, dm) {
+  if (dm) {
+    await sock.updateBlockStatus(jid, 'block');
+  } else {
+    await sock.groupParticipantsUpdate(jid, [sender], 'remove');
+  }
+}
+async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck, dm = false }) {
   const warnings = require('../utils/warnings');
   const short = String(sender).split('@')[0];
-  try {
-    await sock.sendMessage(jid, { delete: msg.key });
-  } catch (e) {
-    logger.error(`[${tag}] delete failed: ${e.message}`);
+  const out = dm ? 'blocked' : 'removed';
+  if (!dm) {
+    try {
+      await sock.sendMessage(jid, { delete: msg.key });
+    } catch (e) {
+      logger.error(`[${tag}] delete failed: ${e.message}`);
+    }
   }
   try {
     if (mode === 'kick') {
-      await sock.groupParticipantsUpdate(jid, [sender], 'remove');
-      await sock.sendMessage(jid, { text: `${struck} — @${short} removed.`, mentions: [sender] });
+      await removeSender(sock, jid, sender, dm);
+      await sock.sendMessage(jid, { text: `${struck} — @${short} ${out}.`, mentions: [sender] });
       return;
     }
     const count = warnings.addWarning(`${scope}::${jid}`, sender);
     if (count >= 3) {
       warnings.resetWarnings(`${scope}::${jid}`, sender);
-      await sock.groupParticipantsUpdate(jid, [sender], 'remove');
-      await sock.sendMessage(jid, { text: `${struck} — @${short} removed after 3 warnings.`, mentions: [sender] });
+      await removeSender(sock, jid, sender, dm);
+      await sock.sendMessage(jid, { text: `${struck} — @${short} ${out} after 3 warnings.`, mentions: [sender] });
     } else {
       await sock.sendMessage(jid, { text: `${struck} — @${short} warning ${count}/3.`, mentions: [sender] });
     }
@@ -118,12 +128,16 @@ async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck }) {
 }
 async function enforceModeration(sock, msg) {
   const jid = msg.key.remoteJid;
-  if (!jid?.endsWith('@g.us') || msg.key.fromMe) return false;
+  // Groups use delete/kick; personal inboxes use notice/block (WhatsApp
+  // lets nobody delete or kick inside a DM). Status broadcasts never qualify.
+  const isGroup = !!jid?.endsWith('@g.us');
+  const isDM = !!jid && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid'));
+  if ((!isGroup && !isDM) || msg.key.fromMe) return false;
   const { isOwner } = require('../utils/isOwner');
   if (isOwner(msg)) return false;
   const text = extractMessageText(msg.message);
   const senderIds = [msg.key.participant, msg.key.participantPn, msg.key.participantAlt].filter(Boolean);
-  const sender = senderIds[0];
+  const sender = senderIds[0] || (isDM ? jid : null);
   if (!sender) return false;
 
   const g = (k, fb) => groupSettingsStore.get(jid, k, fb);
@@ -136,7 +150,7 @@ async function enforceModeration(sock, msg) {
     jobs.push({ tag: 'antilink', mode: linkMode, scope: 'link', strictAdmin: linkMode === 'on', struck: '🔗 Link deleted' });
   }
   const gmMode = normMode(g('antigm', 'off'), 'on');
-  if (gmMode !== 'off' && msg.message?.groupStatusMentionMessage) {
+  if (isGroup && gmMode !== 'off' && msg.message?.groupStatusMentionMessage) {
     jobs.push({ tag: 'antigm', mode: gmMode, scope: 'gm', strictAdmin: gmMode === 'on', struck: '🚫 Status-mention deleted' });
   }
   const botMode = normMode(s('antibot', false), 'kick');
@@ -175,28 +189,35 @@ async function enforceModeration(sock, msg) {
 
   if (!jobs.length) return false;
   const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-  let metadata;
-  try {
-    metadata = await cachedGroupMetadata(sock, jid);
-  } catch (e) {
-    logger.error(`[moderation] metadata unavailable: ${e.message}`);
-    return false;
+  let senderAdmin = false;
+  if (isGroup) {
+    let metadata;
+    try {
+      metadata = await cachedGroupMetadata(sock, jid);
+    } catch (e) {
+      logger.error(`[moderation] metadata unavailable: ${e.message}`);
+      return false;
+    }
+    if (!isBotAdmin(sock, metadata)) {
+      logger.warn('[moderation] bot lacks admin rights; skipping punishment.');
+      return true;
+    }
+    senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
   }
-  if (!isBotAdmin(sock, metadata)) {
-    logger.warn('[moderation] bot lacks admin rights; skipping punishment.');
-    return true;
-  }
-  const senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
   for (const job of jobs) {
     if (senderAdmin && !job.strictAdmin) continue; // admins exempt from warn/kick
-    logger.info(`[moderation] ${job.tag} mode=${job.mode} sender=${sender}`);
+    logger.info(`[moderation] ${job.tag} mode=${job.mode} sender=${sender} dm=${!isGroup}`);
     if (job.mode === 'on') {
-      try {
-        await sock.sendMessage(jid, { delete: msg.key });
-      } catch (e) {
-        logger.error(`[${job.tag}] delete failed: ${e.message}`);
+      if (isGroup) {
+        try {
+          await sock.sendMessage(jid, { delete: msg.key });
+        } catch (e) {
+          logger.error(`[${job.tag}] delete failed: ${e.message}`);
+        }
+      } else {
+        await sock.sendMessage(jid, { text: `${job.struck} — links and spam are not allowed here.` }).catch(() => {});
       }
-      if (job.tag === 'antitag') {
+      if (job.tag === 'antitag' && isGroup) {
         await sock.sendMessage(jid, {
           text: `🏷️ Mass-tag message deleted from @${sender.split('@')[0]}.`,
           mentions: [sender],
@@ -204,7 +225,7 @@ async function enforceModeration(sock, msg) {
       }
       continue;
     }
-    await modPunish(sock, jid, msg, sender, job);
+    await modPunish(sock, jid, msg, sender, { ...job, dm: !isGroup });
   }
   return true;
 }

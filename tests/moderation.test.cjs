@@ -52,10 +52,12 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
     module: { exports: {} }, __dirname: path.join(ROOT, 'events'), console: { log() {} },
   };
   vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'events/messages.js'), 'utf8'), context);
+  const blocked = [];
+  let metadataCalls = 0;
   const sock = {
     user: { id: BOT_PN, lid: BOT_LID },
     ev: { on: (ev, fn) => { if (ev === 'messages.upsert') handler = fn; } },
-    groupMetadata: async () => ({
+    groupMetadata: async () => { metadataCalls++; return ({
       id: GROUP,
       participants: [
         { id: BOT_LID, admin: botAdmin ? 'admin' : null },
@@ -63,20 +65,24 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
         ...admins.map((a) => ({ id: a, admin: 'admin' })),
         { id: MEMBER },
       ],
-    }),
+    }); },
     sendMessage: async (jid, content) => { sent.push(content); return { key: { id: 's' + sent.length } }; },
     groupParticipantsUpdate: async (jid, users, action) => { removed.push({ users, action }); return {}; },
+    updateBlockStatus: async (jid, action) => { blocked.push({ jid, action }); return {}; },
     sendPresenceUpdate: async () => {},
     readMessages: async () => {},
   };
   context.module.exports.registerMessageHandler(sock, new Map());
   let n = 0;
+  const emit = (remoteJid, message, participant) => handler({ type: 'notify', messages: [{
+    key: { remoteJid, id: 'm' + (++n), fromMe: false, ...(participant ? { participant } : {}) },
+    message, messageTimestamp: Math.floor(Date.now() / 1000),
+  }] });
   return {
-    sent, removed, warns, aiCalls: () => aiCalls, mem, gmem,
-    send: (message, participant = MEMBER) => handler({ type: 'notify', messages: [{
-      key: { remoteJid: GROUP, id: 'm' + (++n), fromMe: false, participant },
-      message, messageTimestamp: Math.floor(Date.now() / 1000),
-    }] }),
+    sent, removed, blocked, warns, aiCalls: () => aiCalls, mem, gmem,
+    metadataCalls: () => metadataCalls,
+    send: (message, participant = MEMBER) => emit(GROUP, message, participant),
+    sendDM: (message, dm = '999@s.whatsapp.net') => emit(dm, message, null),
   };
 }
 
@@ -211,6 +217,58 @@ test('antigstatus hits channel invites but ignores plain links', async () => {
   const h2 = loadMessagesHarness({ group: { [GROUP]: { antigstatus: 'warn' } } });
   await h2.send(link());
   assert.equal(h2.sent.length, 0);
+});
+
+test('inbox antilink on sends notice without delete or block', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ group: { [DM]: { antilink: 'on' } } });
+  await h.sendDM(link());
+  assert.equal(h.sent.length, 1);
+  assert.ok(!h.sent[0].delete);
+  assert.match(h.sent[0].text, /not allowed here/);
+  assert.equal(h.blocked.length, 0);
+  assert.equal(h.metadataCalls(), 0);
+});
+
+test('inbox antilink warn blocks contact on third strike', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ group: { [DM]: { antilink: 'warn' } } });
+  await h.sendDM(link());
+  await h.sendDM(link());
+  assert.equal(h.blocked.length, 0);
+  assert.match(h.sent.at(-1).text, /warning 2\/3/);
+  await h.sendDM(link());
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+  assert.match(h.sent.at(-1).text, /blocked after 3 warnings/);
+});
+
+test('inbox antilink kick blocks immediately', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ group: { [DM]: { antilink: 'kick' } } });
+  await h.sendDM(link());
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+  assert.equal(h.removed.length, 0);
+});
+
+test('inbox badword kick blocks, antigm stays group-only', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ settings: { badword: 'kick' }, group: { [DM]: { antigm: 'kick' } } });
+  await h.sendDM({ conversation: 'you are damn wrong' });
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+  const h2 = loadMessagesHarness({ group: { [DM]: { antigm: 'kick' } } });
+  await h2.sendDM(statusMention());
+  assert.equal(h2.sent.length, 0);
+  assert.equal(h2.blocked.length, 0);
+});
+
+test('inbox flood and channel spam are punished per inbox', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ group: { [DM]: { antispam: 'warn', antigstatus: 'on' } } });
+  for (let i = 0; i < 7; i++) await h.sendDM({ conversation: 'ping ' + i });
+  assert.match(h.sent.at(-1).text, /Flood/);
+  const h2 = loadMessagesHarness({ group: { [DM]: { antigstatus: 'on' } } });
+  await h2.sendDM({ conversation: 'join https://whatsapp.com/channel/abc' });
+  assert.match(h2.sent[0].text, /Channel-invite/);
 });
 
 test('owner messages are never punished', async () => {

@@ -2,16 +2,29 @@ const groupSettingsStore = require('../utils/groupSettingsStore');
 const { isOwner } = require('../utils/isOwner');
 const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
 
-async function checkAdminPerms(sock, msg) {
+function isDMJid(jid) {
+  return !!jid && !jid.endsWith('@g.us') && (jid.endsWith('@s.whatsapp.net') || jid.endsWith('@lid'));
+}
+
+async function checkChatPerms(sock, msg) {
   const jid = msg.key.remoteJid;
+  // Personal inbox: only owner/sudo may arm moderation, keyed to that chat.
+  if (isDMJid(jid)) {
+    const { isSudo } = require('../utils/isSudo');
+    if (!isOwner(msg) && !isSudo(msg)) {
+      await sock.sendMessage(jid, { text: '❌ Only the bot owner can use this command.' }, { quoted: msg }).catch(() => {});
+      return null;
+    }
+    return { dm: true };
+  }
   const metadata = await sock.groupMetadata(jid);
   const senderJid = msg.key.participant || jid;
 
   if (!isOwner(msg) && !isSenderAdmin(metadata, senderJid)) {
     await sock.sendMessage(jid, { text: '❌ Only group admins can use this command.' }, { quoted: msg });
-    return false;
+    return null;
   }
-  return metadata;
+  return { metadata };
 }
 
 const MODES = ['off', 'on', 'warn', 'kick'];
@@ -38,19 +51,16 @@ function makeModeCommand(name, settingKey, label, emoji, legacyTrue = 'on') {
     description: `${label}. Usage: .${name} off|on|warn|kick`,
     async execute(sock, msg, args) {
       const jid = msg.key.remoteJid;
-      if (!jid.endsWith('@g.us')) {
-        return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
-      }
 
-      const metadata = await checkAdminPerms(sock, msg);
-      if (!metadata) return;
+      const perms = await checkChatPerms(sock, msg);
+      if (!perms) return;
 
       const mode = args[0]?.toLowerCase();
       if (!MODES.includes(mode)) {
         return sock.sendMessage(jid, { text: `❌ Usage: .${name} off | on | warn | kick` }, { quoted: msg });
       }
 
-      if (mode !== 'off' && !requireBotAdmin(sock, metadata, jid, msg)) return;
+      if (mode !== 'off' && !perms.dm && !requireBotAdmin(sock, perms.metadata, jid, msg)) return;
 
       groupSettingsStore.set(jid, settingKey, mode);
       await sock.sendMessage(jid, { text: `${emoji} ${label} set to *${mode.toUpperCase()}*.` }, { quoted: msg });
@@ -71,15 +81,15 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ Is this a group ? This command only works in groups.' }, { quoted: msg });
       }
 
-      const metadata = await checkAdminPerms(sock, msg);
-      if (!metadata) return;
+      const perms = await checkChatPerms(sock, msg);
+      if (!perms) return;
 
       const mode = args[0]?.toLowerCase();
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {
         return sock.sendMessage(jid, { text: '❌ Usage: .antigm off / on / kick / warn' }, { quoted: msg });
       }
 
-      if (mode !== 'off' && !requireBotAdmin(sock, metadata, jid, msg)) return;
+      if (mode !== 'off' && !requireBotAdmin(sock, perms.metadata, jid, msg)) return;
 
       groupSettingsStore.set(jid, 'antigm', mode);
       await sock.sendMessage(jid, { text: `🛡️ Antigm set to *${mode.toUpperCase()}*.` }, { quoted: msg });
@@ -89,22 +99,19 @@ module.exports = [
   {
     name: 'antilink',
     aliases: ['nolinks'],
-    description: 'Anti-link protection. Usage: .antilink off/on/kick/warn (on = delete only, warn = delete + warn, kick = delete + kick)',
+    description: 'Anti-link protection for groups and inboxes. Usage: .antilink off/on/kick/warn (groups: on = delete only, warn = 3 strikes then kick, kick = immediate remove; inbox: on = notice, warn = 3 strikes then block, kick = immediate block)',
     async execute(sock, msg, args) {
       const jid = msg.key.remoteJid;
-      if (!jid.endsWith('@g.us')) {
-        return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
-      }
 
-      const metadata = await checkAdminPerms(sock, msg);
-      if (!metadata) return;
+      const perms = await checkChatPerms(sock, msg);
+      if (!perms) return;
 
       const mode = args[0]?.toLowerCase();
       if (!['off', 'on', 'kick', 'warn'].includes(mode)) {
         return sock.sendMessage(jid, { text: '❌ Usage: .antilink off / on / kick / warn' }, { quoted: msg });
       }
 
-      if (mode !== 'off' && !isBotAdmin(sock, metadata)) {
+      if (mode !== 'off' && !perms.dm && !isBotAdmin(sock, perms.metadata)) {
         return sock.sendMessage(jid, {
           text: '❌ Make me a group admin first. WhatsApp only lets group admins delete other people’s links.',
         }, { quoted: msg });
@@ -121,19 +128,16 @@ module.exports = [
   {
     name: 'antiword',
     aliases: ['noword'],
-    description: 'Per-group banned word filter. Usage: .antiword off|on|warn|kick|add <word>|remove <word>|list',
+    description: 'Banned word filter for groups and inboxes. Usage: .antiword off|on|warn|kick|add <word>|remove <word>|list',
     async execute(sock, msg, args) {
       const jid = msg.key.remoteJid;
-      if (!jid.endsWith('@g.us')) {
-        return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
-      }
 
-      const metadata = await checkAdminPerms(sock, msg);
-      if (!metadata) return;
+      const perms = await checkChatPerms(sock, msg);
+      if (!perms) return;
 
       const sub = args[0]?.toLowerCase();
       if (MODES.includes(sub)) {
-        if (sub !== 'off' && !requireBotAdmin(sock, metadata, jid, msg)) return;
+        if (sub !== 'off' && !perms.dm && !requireBotAdmin(sock, perms.metadata, jid, msg)) return;
         groupSettingsStore.set(jid, 'antiword', sub);
         return sock.sendMessage(jid, { text: `🤬 Antiword set to *${sub.toUpperCase()}*.` }, { quoted: msg });
       }
@@ -160,8 +164,29 @@ module.exports = [
     description: 'Show current group protection settings.',
     async execute(sock, msg) {
       const jid = msg.key.remoteJid;
+      const { isSudo } = require('../utils/isSudo');
       if (!jid.endsWith('@g.us')) {
-        return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
+        if (!isDMJid(jid) || (!isOwner(msg) && !isSudo(msg))) {
+          return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
+        }
+        const inbox = groupSettingsStore.getAll(jid);
+        const globals = require('../utils/settingsStore');
+        const gmode = (v, legacyTrue) => {
+          if (v === true) return `${legacyTrue.toUpperCase()} (legacy on)`;
+          if (typeof v === 'string' && MODES.includes(v)) return v.toUpperCase();
+          return '❌ OFF';
+        };
+        const words = Array.isArray(inbox.antiwordlist) ? inbox.antiwordlist.length : 0;
+        return sock.sendMessage(jid, { text: `
+╭──〔 🛡️ INBOX SETTINGS 〕──╮
+🔗 Antilink: ${gmode(inbox.antilink, 'on')}
+🚫 Antispam: ${gmode(inbox.antispam, 'on')}
+🤬 Antiword: ${gmode(inbox.antiword, 'on')} (${words} words)
+🛡️ Antigstatus: ${gmode(inbox.antigstatus, 'on')}
+🤖 Antibot: ${gmode(globals.get('antibot', false), 'kick')}
+🏷️ Antitag: ${gmode(globals.get('antitag', false), 'on')}
+🚫 Badword: ${gmode(globals.get('badword', false), 'kick')}
+╰──────────────────╯`.trim() }, { quoted: msg });
       }
 
       const settings = groupSettingsStore.getAll(jid);
