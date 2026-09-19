@@ -29,7 +29,15 @@ function openaiKey() {
 }
 
 function hasKey() {
-  return !!(apixKey() || openrouterKey() || geminiKey() || openaiKey());
+  return !!(codexStatus().authenticated || apixKey() || openrouterKey() || geminiKey() || openaiKey());
+}
+
+function codexStatus() {
+  try {
+    return require('./codex').status();
+  } catch {
+    return { authenticated: false, mode: null };
+  }
 }
 
 // Apix (Wolvarex hub, unlimited premium): GET /api/ai/{model}?q=...
@@ -168,10 +176,18 @@ async function openai(system, user) {
   }
 }
 
-// system+user split for OpenAI, merged for Gemini.
-// Order: Apix (unlimited) -> OpenRouter free chain -> Gemini -> local -> OpenAI.
+// ChatGPT subscription is preferred when authenticated; key-based providers
+// remain fallbacks when its quota, login, or single-worker slot is unavailable.
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 async function complete(system, user) {
+  if (codexStatus().authenticated) {
+    try {
+      const text = await require('./codex').generate(system, user);
+      if (text) return { text, engine: `codex/${require('./codex').model()}` };
+    } catch (e) {
+      console.error('[autochat] codex unavailable:', String(e.message).slice(0, 100));
+    }
+  }
   const ax = await apix(system, user);
   if (ax) return ax;
   const or = await openrouter(system, user);
@@ -201,4 +217,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
+module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };

@@ -145,6 +145,14 @@ module.exports = {
       settingsStore.set('openai_model', name);
       return reply(`🤖 OpenAI model set to *${name}* — used when the OpenAI fallback answers.`);
     }
+    if (sub === 'codexmodel') {
+      const name = (args[1] || '').trim();
+      const codex = require('../autochat/codex');
+      if (!name) return reply(`🤖 ChatGPT model: *${codex.model()}*\nUsage: \`.autochat codexmodel gpt-5.6-luna\``);
+      if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) return reply('🤖 Usage: `.autochat codexmodel gpt-5.6-luna`');
+      settingsStore.set('codex_model', name);
+      return reply(`🤖 ChatGPT model set to *${name}*.`);
+    }
     if (sub === 'test') {
       const text = args.slice(1).join(' ').trim();
       if (!text) return reply('🤖 Usage: `.autochat test <message>`');
@@ -164,6 +172,7 @@ module.exports = {
       `  🎭 *Vibe* : ${(settingsStore.get('autochat_vibe', 'savage') || 'savage').toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
       `  🧠 *AI keys* : Apix ${backend.apixKey() ? 'SET' : '—'} · OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'} · OpenAI ${backend.openaiKey() ? `SET (${backend.openaiModel()})` : '—'}`,
+      `  ✦ *ChatGPT Plus* : ${backend.codexStatus().authenticated ? `CONNECTED (${require('../autochat/codex').model()})` : 'NOT CONNECTED'}`,
       `  🏠 *Local* : ${require('../autochat/local').status().enabled ? 'ON' : 'OFF'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
       '└──────────────────────────────┘',

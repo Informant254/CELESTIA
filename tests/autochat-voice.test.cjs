@@ -6,6 +6,21 @@ const axios = require('axios');
 const backend = require('../autochat/backend');
 const voice = require('../autochat/voice');
 const settingsStore = require('../autochat/../utils/settingsStore');
+const codex = require('../autochat/codex');
+
+test('Codex text provider is isolated from bot secrets and agent tools', () => {
+  process.env.APIX_KEY = 'must-not-reach-codex';
+  process.env.SESSION_ID = 'must-not-reach-codex';
+  const env = codex.safeEnv();
+  assert.equal(env.APIX_KEY, undefined);
+  assert.equal(env.SESSION_ID, undefined);
+  const opts = codex.threadOptions();
+  assert.equal(opts.sandboxMode, 'read-only');
+  assert.equal(opts.approvalPolicy, 'never');
+  assert.equal(opts.networkAccessEnabled, false);
+  assert.equal(opts.webSearchMode, 'disabled');
+  assert.equal(opts.skipGitRepoCheck, true);
+});
 
 test('openai fallback uses the configured model', async () => {
   process.env.OPENAI_API_KEY = process.env.OPENAI_API_KEY || 'test-openai-key';
@@ -51,6 +66,8 @@ test('voice sampling spreads across the bank instead of newest-only', () => {
 
 test('apix query carries the persona and voice samples, not a generic suffix', async () => {
   const orig = axios.get;
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = `${process.cwd()}/test-no-codex-auth`;
   let captured = null;
   axios.get = async (url, opts) => {
     captured = opts?.params?.q || '';
@@ -65,5 +82,7 @@ test('apix query carries the persona and voice samples, not a generic suffix', a
     assert.ok(!captured.includes('chill teenager'), 'hardcoded generic instruction must be gone');
   } finally {
     axios.get = orig;
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
+    else process.env.CODEX_HOME = previousCodexHome;
   }
 });
