@@ -262,10 +262,19 @@ function alreadySeen(msg) {
 }
 
 function registerMessageHandler(sock, commands) {
+  const stats = (globalThis.__msgStats = globalThis.__msgStats || {
+    received: 0, withText: 0, dispatched: 0, completed: 0, sent: 0, denied: 0, moderated: 0,
+  });
+  const rawSend = sock.sendMessage.bind(sock);
+  sock.sendMessage = async (...args) => {
+    stats.sent++;
+    return rawSend(...args);
+  };
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
 
     for (const msg of messages) {
+      stats.received++;
       console.log('MESSAGE RECEIVED:', config.debugMessages ? msg.key : '[redacted]');
       try {
         if (!msg.message) continue;
@@ -274,6 +283,7 @@ function registerMessageHandler(sock, commands) {
         const incomingName = incomingText.startsWith(activePrefix)
           ? incomingText.slice(activePrefix.length).trim().split(/\s+/)[0].toLowerCase() : '';
         const commandLabel = commands.has(incomingName) ? incomingName : 'unknown';
+        if (incomingText) stats.withText++;
         if (incomingName) logger.info(`[dispatch] received command=${commandLabel} self=${!!msg.key.fromMe} group=${msg.key.remoteJid?.endsWith('@g.us')}`);
 
         // Helper to safely send messages and reject empty payloads
@@ -305,6 +315,7 @@ function registerMessageHandler(sock, commands) {
 
         // Run configured group moderation before privacy/autochat can consume it.
         if (await enforceModeration(sock, msg, commands)) {
+          stats.moderated++;
           if (incomingName) logger.info(`[dispatch] moderated command=${commandLabel}`);
           continue;
         }
@@ -346,6 +357,7 @@ function registerMessageHandler(sock, commands) {
         if (_workTypeEarly === 'private' && !msg.key.fromMe) {
           const { isSudo } = require('../utils/isSudo');
           if (!isSudo(msg)) {
+            stats.denied++;
             if (incomingName) logger.info(`[dispatch] private-mode denied command=${commandLabel}`);
             continue;
           }
@@ -751,11 +763,13 @@ function registerMessageHandler(sock, commands) {
             } catch { /* game never breaks the bot */ }
 
             try {
+              stats.dispatched++;
               logger.info(`[dispatch] executing command=${commandName}`);
               const waiting = setTimeout(() => logger.warn(`[dispatch] still waiting command=${commandName}`), 20000);
               waiting.unref?.();
               try {
                 await command.execute(sock, msg, args, commands, reply);
+                stats.completed++;
                 logger.info(`[dispatch] completed command=${commandName}`);
               } finally {
                 clearTimeout(waiting);

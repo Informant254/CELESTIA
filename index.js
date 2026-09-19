@@ -336,6 +336,13 @@ healthApp.get('/ready', (req, res) => {
   const state = runtimeState.settingsReady ? runtimeState.connection : 'initializing';
   res.status(ok ? 200 : 503).json({ ok, state, uptime: Math.floor(process.uptime()) });
 });
+// Message-pipeline counters since boot. Counts only — no JIDs, no content.
+healthApp.get('/stats', (req, res) => {
+  res.json({
+    uptime: Math.floor(process.uptime()),
+    ...(globalThis.__msgStats || { received: 0, withText: 0, dispatched: 0, completed: 0, sent: 0, denied: 0, moderated: 0 }),
+  });
+});
 healthApp.get('/qr', async (req, res) => {
   if (!authorizeQr(req, res)) return;
   const qr = globalThis.__lastQR;
