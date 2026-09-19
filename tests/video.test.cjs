@@ -40,6 +40,26 @@ test('prompt reaches the video endpoint and mp4 is delivered', async () => {
   }
 });
 
+test('--model flag switches the engine per request', async () => {
+  const restoreKey = withKey();
+  const origGet = axios.get;
+  let capturedUrl = null;
+  axios.get = async (url) => {
+    capturedUrl = url;
+    return { data: MP4, headers: { 'content-type': 'video/mp4' } };
+  };
+  try {
+    const sent = [];
+    await video.execute(fakeSock(sent), msg(), ['ocean', 'waves', '--model', 'wan-2.2-fast']);
+    assert.ok(capturedUrl.includes('model=wan-2.2-fast'), 'engine id passed through');
+    assert.ok(!capturedUrl.includes('--model'), 'flag stripped from prompt');
+    assert.ok(sent.find((s) => s.video)?.caption.includes('wan-2.2-fast'), 'caption names the engine');
+  } finally {
+    axios.get = origGet;
+    restoreKey();
+  }
+});
+
 test('missing key points at the shared setup', async () => {
   const prev = settingsStore.get('pollinations_key', null);
   settingsStore.set('pollinations_key', null);

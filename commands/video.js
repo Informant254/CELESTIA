@@ -23,13 +23,13 @@ module.exports = {
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     const config = require('../config/config');
-    const prompt = args.join(' ').trim();
+    let prompt = args.join(' ').trim();
 
     if (!prompt) {
       return sock.sendMessage(
         jid,
         {
-          text: `Usage: ${config.prefix}video <scene description>\n\nExample: ${config.prefix}video a dog driving a vintage car down a coastal road at sunset\n\nShort clips (a few seconds). Video burns Pollen much faster than images — keep prompts tight.\nSetup: same key as images — \`${config.prefix}imagine setkey <key>\` (free at enter.pollinations.ai).`,
+          text: `Usage: ${config.prefix}video <scene description> [--model <id>]\n\nExample: ${config.prefix}video a dog driving a vintage car down a coastal road at sunset\n\nShort clips (a few seconds). Video burns Pollen much faster than images — keep prompts tight.\nEngines to try (cheapest first): minimax-h3-max-turbo, wan-2.2-fast, seedance-2.0-fast, seedance-2.5, wan-3.0, grok-imagine-video\nExample: ${config.prefix}video ocean waves at dawn --model wan-2.2-fast\nSetup: same key as images — \`${config.prefix}imagine setkey <key>\` (free at enter.pollinations.ai).`,
         },
         { quoted: msg }
       );
@@ -45,10 +45,20 @@ module.exports = {
       return sock.sendMessage(jid, { text: '❌ Keep the scene under 800 characters — short clips need tight prompts.' }, { quoted: msg });
     }
 
-    await sock.sendMessage(jid, { text: '🎬 Rendering your clip — this takes a few minutes, hang tight...' }, { quoted: msg });
+    let engine = videoModel();
+    const modelMatch = prompt.match(/--model\s+([A-Za-z0-9._/-]{1,64})/);
+    if (modelMatch) {
+      engine = modelMatch[1];
+      prompt = prompt.replace(modelMatch[0], '').replace(/\s+/g, ' ').trim();
+    }
+    if (!prompt) {
+      return sock.sendMessage(jid, { text: '❌ Give me a scene first — what should the clip show?' }, { quoted: msg });
+    }
+
+    await sock.sendMessage(jid, { text: `🎬 Rendering with *${engine}* — this takes a few minutes, hang tight...` }, { quoted: msg });
 
     try {
-      const url = `${GEN_BASE}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(videoModel())}`;
+      const url = `${GEN_BASE}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(engine)}`;
       const res = await axios.get(url, {
         responseType: 'arraybuffer',
         timeout: FETCH_TIMEOUT,
@@ -68,7 +78,7 @@ module.exports = {
       }
       await sock.sendMessage(
         jid,
-        { video: buffer, caption: `*Engine:* Pollinations+${videoModel()} 🎬\n*Prompt:* ${prompt.slice(0, 140)}${prompt.length > 140 ? '...' : ''}` },
+        { video: buffer, caption: `*Engine:* Pollinations+${engine} 🎬\n*Prompt:* ${prompt.slice(0, 140)}${prompt.length > 140 ? '...' : ''}` },
         { quoted: msg }
       );
     } catch (error) {
