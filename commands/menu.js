@@ -2,6 +2,11 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const ui = require('../utils/ui');
+const {
+  renderDashboard,
+  renderCategory,
+  shortUptime,
+} = require('../utils/celestiaUi');
 const figlet = require('figlet');
 const wolfTech = require('../utils/wolfTech');
 const config = require('../config/config');
@@ -322,35 +327,139 @@ function uptimeShort() {
 // template, one indentation, one border width. Nothing is hand-formatted
 // per section.
 const T6 = {
-  key: 'boxed', name: 'IRONBOX', icon: '❏',
-  index(prefix, commands, total, extra = {}) {
-    const head = ui.renderDashboard({
-      title: 'CELESTIA',
-      subtitle: 'COMMAND INTERFACE',
-      rows: [
-        { icon: '👤', label: 'User', value: extra.user || 'traveler' },
-        { icon: '⚡', label: 'Prefix', value: prefix },
-        { icon: '🔐', label: 'Mode', value: String(settingsStore.get('mode', config.WORK_TYPE) || 'public').toUpperCase() },
-        { icon: '🧩', label: 'Commands', value: String(total) },
-        { icon: '⏱', label: 'Uptime', value: ui.uptimeShort() },
-      ],
-    });
-    const parts = [head, '', ui.renderSectionTitle('COMMAND CENTER'), ''];
-    for (const cat of CATEGORIES) {
-      const avail = cat.cmds.filter((c) => commands.has(c));
-      if (!avail.length) continue;
-      parts.push(ui.renderCategory(cat.icon, cat.title, avail.map((n) => ui.renderCommand(n))));
+  key: 'boxed',
+
+  name: 'CELESTIA SIGNATURE',
+
+  icon: '✦',
+
+  buildFull(
+    prefix,
+    commands,
+    total,
+    context = {}
+  ) {
+    const mode =
+      settingsStore.get(
+        'mode',
+        config.WORK_TYPE
+      );
+
+    const availableCategories =
+      CATEGORIES.filter((cat) =>
+        cat.cmds.some((command) =>
+          commands.has(command)
+        )
+      );
+
+    const commandCount =
+      total ||
+      new Set(commands.values()).size;
+
+    const sections = [
+      renderDashboard({
+        user:
+          context.user,
+
+        prefix:
+          prefix || '.',
+
+        mode,
+
+        commandCount,
+
+        realmCount:
+          availableCategories.length,
+
+        uptime:
+          shortUptime(
+            process.uptime()
+          ),
+      }),
+    ];
+
+    for (
+      const cat
+      of availableCategories
+    ) {
+      const available =
+        cat.cmds.filter(
+          (command) =>
+            commands.has(command)
+        );
+
+      sections.push(
+        renderCategory({
+          icon:
+            cat.icon,
+
+          title:
+            cat.title,
+
+          subtitle:
+            cat.poem,
+
+          commands:
+            available,
+        })
+      );
     }
-    parts.push('', ui.renderFooter(
-      `${total} commands · ${CATEGORIES.length} realms`,
-      `${prefix}menu <realm> opens a realm · ${prefix}menutheme changes faces`
-    ));
-    return parts.join('\n');
+
+    sections.push(
+      [
+        '✦ _Howl of the Wolf → Light of the Stars_ ✦',
+        `🎨 ${prefix}menu theme • change menu style`,
+      ].join('\n')
+    );
+
+    return sections.join('\n\n');
   },
-  realm(cat, prefix, commands) {
-    const avail = cat.cmds.filter((n) => commands.has(n));
-    return ui.renderCategory(cat.icon, cat.title, avail.map((n) => ui.renderCommand(n)));
+
+  index(
+    prefix,
+    commands,
+    total,
+    context
+  ) {
+    return this.buildFull(
+      prefix,
+      commands,
+      total,
+      context
+    );
   },
+
+  realm(
+    cat,
+    prefix,
+    commands
+  ) {
+    const available =
+      cat.cmds.filter(
+        (command) =>
+          commands.has(command)
+      );
+
+    return (
+      renderCategory({
+        icon:
+          cat.icon,
+
+        title:
+          cat.title,
+
+        subtitle:
+          cat.poem,
+
+        commands:
+          available,
+
+        prefix,
+      }) +
+      `\n\n↩ Back: ${prefix}menu`
+    );
+  },
+
   footer: '',
 };
 
@@ -423,6 +532,40 @@ module.exports = {
 
     const send = async (text) => sendPage(text, true);
 
+    // Boxed sender: banner image first on its own bubble, then the menu
+    // text underneath in 12k chunks (never as an image caption).
+    const getMenuImage = async () => {
+      const customBanner = settingsStore.get('menu_banner', null);
+      if (customBanner) {
+        try { return Buffer.from(customBanner, 'base64'); } catch { /* fall through */ }
+      }
+      for (const f of ['banner.png', 'script.jpg']) {
+        const p = path.join(__dirname, '../assets', f);
+        if (fs.existsSync(p)) {
+          try { return fs.readFileSync(p); } catch { /* try next */ }
+        }
+      }
+      return null;
+    };
+
+    const sendBoxed = async (text) => {
+      const imageBuffer = await getMenuImage();
+
+      if (imageBuffer) {
+        try {
+          await sock.sendMessage(jid, { image: imageBuffer }, { quoted: msg });
+        } catch {
+          // Image is optional. Menu must still continue.
+        }
+      }
+
+      const chunks = splitMenuText(text, 12000);
+
+      for (const [index, chunk] of chunks.entries()) {
+        await sock.sendMessage(jid, { text: chunk }, index === 0 ? { quoted: msg } : {});
+      }
+    };
+
     // Her spoken intro — pre-built opus voice note with music bed.
     // File-gated: silently skipped if missing. Quoted so it threads under her menu.
     const sendVoiceNote = async () => {
@@ -449,7 +592,7 @@ module.exports = {
               title: `${t.icon} ${t.name}`,
               rowId: `${prefix}menutheme ${t.key}`,
               description: {
-                boxed: 'banner + full menu in one message · classic quote style',
+                boxed: 'CELESTIA signature face · banner + card menu',
                 celestial: 'her flagship face · airy ornaments · logo crown',
                 constellation: 'star-map · figlet banner · realm poems',
                 neon: 'cyber grid · box panels · sharp lines',
@@ -471,11 +614,11 @@ module.exports = {
     // ─── .menu all [page] — atlas in current theme ───
     if (arg0 === 'all') {
       if (theme.key === 'boxed') {
-        const parts = [ui.renderCategory('📖', 'ATLAS — ALL REALMS', [])];
+        const parts = [renderCategory({ icon: '📖', title: 'ATLAS — ALL REALMS', commands: [] })];
         for (const cat of CATEGORIES) {
           if (cat.cmds.some((c) => commands.has(c))) parts.push(theme.realm(cat, prefix, commands));
         }
-        return sendPage(parts.join('\n'), true);
+        return sendBoxed(parts.join('\n'));
       }
       const PER = 3;
       const totalPages = Math.ceil(CATEGORIES.length / PER);
@@ -491,7 +634,7 @@ module.exports = {
     if (arg0) {
       if (theme.key === 'boxed') {
         const cat = CATEGORIES.find((c) => c.key === arg0);
-        if (cat) return sendPage(theme.realm(cat, prefix, commands), false);
+        if (cat) return sendBoxed(theme.realm(cat, prefix, commands));
         return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${CATEGORIES.map((c) => c.key).join(' • ')}`);
       }
       const cat = CATEGORIES.find(c => c.key === arg0);
@@ -523,12 +666,22 @@ module.exports = {
     }
 
     // ─── bare .menu — themed index ───
-    // Boxed face: banner image on its own bubble, then the full menu as
-    // plain quoted text (image captions cap at ~1k chars — the 9k+ menu
-    // must travel as text). Voice intro closes the show.
     if (theme.key === 'boxed') {
-      await send(theme.index(prefix, commands, total, { user: msg.pushName || 'traveler' }));
+      await sendBoxed(
+        theme.index(
+          prefix,
+          commands,
+          total,
+          {
+            user:
+              msg.pushName ||
+              'Traveler',
+          }
+        )
+      );
+
       await sendVoiceNote();
+
       return;
     }
     const idx = theme.index(prefix, commands, total);

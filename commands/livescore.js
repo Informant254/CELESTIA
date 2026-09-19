@@ -1,5 +1,8 @@
 const axios = require("axios");
-const ui = require("../utils/ui");
+const {
+  renderMatchCard,
+  renderNotice,
+} = require("../utils/celestiaUi");
 
 // Free, keyless source (verified live): TheSportsDB free tier.
 // livescore.php?s=Soccer returns currently-live soccer matches.
@@ -34,10 +37,11 @@ module.exports = {
 
       if (!games.length) {
         return sock.sendMessage(jid, {
-          text: ui.renderNotice("⚽ LIVE SCORES", [
-            "No live matches right now.",
-            "Check back later.",
-          ]),
+          text: renderNotice(
+            "📭",
+            "LIVE SCORES",
+            "No matches were found."
+          ),
           edit: loading.key,
         });
       }
@@ -47,30 +51,42 @@ module.exports = {
       );
       const list = (major.length ? major : games).slice(0, 15);
 
-      const cards = list.map((g) =>
-        ui.renderMatch({
-          home: g.strHomeTeam,
-          away: g.strAwayTeam,
-          homeScore: g.intHomeScore,
-          awayScore: g.intAwayScore,
-          status: g.strStatus,
-          league: g.strLeague,
+      const cards = list.map((game) =>
+        renderMatchCard({
+          status: game.strStatus || "NS",
+          home: game.strHomeTeam,
+          away: game.strAwayTeam,
+          homeScore: game.intHomeScore ?? "0",
+          awayScore: game.intAwayScore ?? "0",
+          league: game.strLeague || "",
+          country: game.strCountry || "",
         })
       );
+
+      const count = list.length;
+      const header = [
+        "╭─ ⚽ *CELESTIA LIVE*",
+        `│ ${major.length ? "Major competitions" : "Live matches"}`,
+        `│ ${count} match${count === 1 ? "" : "es"} shown`,
+        "╰────────────────────────",
+      ].join("\n");
 
       const scopeNote = major.length ? "Showing major-league matches." : "Showing live matches.";
       const countNote = games.length > 15 ? ` Showing 15 of ${games.length} live matches.` : "";
 
       await sock.sendMessage(jid, {
-        text: `${ui.renderSectionTitle("⚽ LIVE SCORES")}\n\n${cards.join("\n\n")}\n\n• ${scopeNote}${countNote}`,
+        text: `${header}\n\n${cards.join("\n\n")}\n\n📄 _${scopeNote}${countNote}_`,
         edit: loading.key,
       });
     } catch (err) {
+      console.error(err);
+
       await sock.sendMessage(jid, {
-        text: ui.renderNotice("⚽ LIVE SCORES", [
-          "Live scores unavailable right now.",
-          "Please try again later.",
-        ]),
+        text: renderNotice(
+          "⚠️",
+          "LIVE SCORES",
+          "Could not fetch live scores right now."
+        ),
         edit: loading.key,
       });
     }

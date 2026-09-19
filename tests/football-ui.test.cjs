@@ -39,15 +39,19 @@ function assertNewLanguage(text, label) {
 test('livescore renders one card per match with full names', async () => {
   const cmd = loadCommand('livescore.js', async () => ({ data: { livescore: [
     { strHomeTeam: 'Nacional de Madeira', strAwayTeam: 'Deportivo Alavés', intHomeScore: 0, intAwayScore: 2, strStatus: '1H', strLeague: 'Portuguese Primeira Liga' },
-    { strHomeTeam: 'Athletic Bilbao', strAwayTeam: 'Getafe', intHomeScore: null, intAwayScore: null, strStatus: 'NS', strLeague: 'Spanish La Liga' },
+    { strHomeTeam: 'Newcastle United', strAwayTeam: 'Hull City', intHomeScore: null, intAwayScore: null, strStatus: 'NS', strLeague: 'English Premier League', strCountry: 'England' },
   ] } }));
   const sock = mockSock();
   await cmd.execute(sock, mockMsg(), []);
   const text = finalText(sock);
   assert.ok(text.includes('Nacional de Madeira') && text.includes('Deportivo Alavés'));
-  assert.ok(text.includes('Portuguese Primeira Liga'));
-  assert.ok(text.includes('╭─ 🔴 LIVE • 1H') && text.includes('? ─ ?') && text.includes('⏳ SCHEDULED'));
-  assert.equal((text.match(/╰─+/g) || []).length, 2);
+  assert.ok(text.includes('🏆 Portuguese Primeira Liga'));
+  assert.ok(text.includes('╭─ 🔴 LIVE • 1H'));
+  assert.ok(text.includes('🏠 Newcastle United') && text.includes('✈️ Hull City'));
+  assert.ok(text.includes('🏆 English Premier League • England'));
+  assert.ok(text.includes('⏳ NOT STARTED'));
+  assert.ok(text.includes('╭─ ⚽ *CELESTIA LIVE*'));
+  assert.equal((text.match(/╰─+/g) || []).length, 3);
   assertNewLanguage(text, 'livescore');
 });
 
