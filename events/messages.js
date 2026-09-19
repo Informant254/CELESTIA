@@ -450,6 +450,8 @@ function registerMessageHandler(sock, commands) {
 
           if (antilinkMode !== 'off' && containsLink(text) && !msg.key.fromMe) {
             const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
+            const senderJid = msg.key.participant || msg.key.participantPn || msg.key.participantAlt || msg.key.remoteJid;
+            logger.info(`[antilink] trigger group=${msg.key.remoteJid} mode=${antilinkMode} sender=${senderJid}`);
             let metadata;
             try {
               metadata = await sock.groupMetadata(msg.key.remoteJid);
@@ -457,15 +459,17 @@ function registerMessageHandler(sock, commands) {
               logger.error(`[antilink] Could not load group metadata: ${e.message}`);
               continue;
             }
-            const senderJid = msg.key.participant || msg.key.participantPn || msg.key.participantAlt || msg.key.remoteJid;
             const senderIsAdmin = isSenderAdmin(metadata, senderJid);
+            const botAdmin = isBotAdmin(sock, metadata);
+            logger.info(`[antilink] verdict senderAdmin=${senderIsAdmin} botAdmin=${botAdmin} botId=${sock.user?.id} botLid=${sock.user?.lid || 'none'}`);
 
             // `on` is strict delete-only protection, including admin links.
             // `warn` and `kick` continue to exempt admins from punishment.
             if (!senderIsAdmin || antilinkMode === 'on') {
-              if (isBotAdmin(sock, metadata)) {
+              if (botAdmin) {
                 try {
                   await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
+                  logger.info(`[antilink] deleted link from ${senderJid}`);
                 } catch (e) {
                   logger.error(`[antilink] Failed to delete message: ${e.message}`);
                 }
