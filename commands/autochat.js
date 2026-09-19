@@ -132,6 +132,19 @@ module.exports = {
       settingsStore.set('gemini_key', key);
       return reply('🤖 Key stored. She has her voice now — `.autochat on` when ready.');
     }
+    if (sub === 'model') {
+      const name = (args[1] || '').trim();
+      if (!name) {
+        return reply(`🤖 OpenAI model: *${backend.openaiModel()}*\nUsage: \`.autochat model gpt-4o\` (or \`default\` to reset).`);
+      }
+      if (/^default$/i.test(name)) {
+        settingsStore.set('openai_model', null);
+        return reply(`🤖 OpenAI model reset to default (*${backend.openaiModel()}*).`);
+      }
+      if (!/^[A-Za-z0-9._-]{1,64}$/.test(name)) return reply('🤖 Usage: `.autochat model gpt-4o` (letters, numbers, dots, dashes).');
+      settingsStore.set('openai_model', name);
+      return reply(`🤖 OpenAI model set to *${name}* — used when the OpenAI fallback answers.`);
+    }
     if (sub === 'test') {
       const text = args.slice(1).join(' ').trim();
       if (!text) return reply('🤖 Usage: `.autochat test <message>`');
@@ -150,7 +163,7 @@ module.exports = {
       `  🔌 *Mode* : ${mode.toUpperCase()}`,
       `  🎭 *Vibe* : ${(settingsStore.get('autochat_vibe', 'savage') || 'savage').toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
-      `  🧠 *AI keys* : Apix ${backend.apixKey() ? 'SET' : '—'} · OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'}`,
+      `  🧠 *AI keys* : Apix ${backend.apixKey() ? 'SET' : '—'} · OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'} · OpenAI ${backend.openaiKey() ? `SET (${backend.openaiModel()})` : '—'}`,
       `  🏠 *Local* : ${require('../autochat/local').status().enabled ? 'ON' : 'OFF'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
       '└──────────────────────────────┘',

@@ -139,6 +139,11 @@ async function gemini(prompt) {
   }
 }
 
+function openaiModel() {
+  const m = String(settingsStore.get('openai_model', null) || process.env.OPENAI_MODEL || 'gpt-4o-mini').trim();
+  return m || 'gpt-4o-mini';
+}
+
 async function openai(system, user) {
   const key = openaiKey();
   if (!key) return null;
@@ -146,7 +151,7 @@ async function openai(system, user) {
     const { default: OpenAI } = require('openai');
     const oa = new OpenAI({ apiKey: key, timeout: 60000 });
     const res = await oa.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: openaiModel(),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user },
@@ -196,4 +201,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), apixKey: () => !!apixKey() };
+module.exports = { complete, hasKey, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
