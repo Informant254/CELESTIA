@@ -19,7 +19,7 @@ const TONES = {
   chill: `TONE: Relaxed, warm, normal human texting. Light slang ok, light swearing ok when it fits, never forced. Short and natural.`,
 };
 
-const BANNED = `BANNED IN EVERY VIBE: slurs of any kind, protected traits (race/religion/disability/gender/appearance), threats, sexual content toward anyone, "as an AI", "great question", lectures, bullet lists, walls of text, ending with a question every time.`;
+const BANNED = `BANNED IN EVERY VIBE: "as an AI", "great question", lectures, bullet lists, walls of text, ending with a question every time. (Slurs, threats, and sexual content are governed by the SAFETY CONTRACT below — nothing else is a refusal.)`;
 
 function ownerName(pushName) {
   return pushName || 'the owner';
@@ -34,6 +34,8 @@ function build({ chatId, incoming, pushName, contactName }) {
 
 ${TONES[vibe()] || TONES.savage}
 ${BANNED}
+
+${require('./refusalPolicy').policyBlock()}
 
 VOICE (copy this exactly — cadence, slang, emoji habits, length):
 ${voice.styleBlock()}

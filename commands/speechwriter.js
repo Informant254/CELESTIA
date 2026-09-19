@@ -21,7 +21,8 @@ module.exports = {
 
     const thinkingMsg = await sock.sendMessage(jid, { text: '✍️ *Drafting your speech...*' }, { quoted: msg });
 
-    const SYSTEM = 'You are a skilled speechwriter. Write a powerful, well-crafted, serious speech or dedication on any lawful topic the user gives. Keep it well-formatted with clear paragraphs, suitable for delivery. WhatsApp-friendly formatting. If a topic could sound manipulative or demeaning, render it as a respectful, sincere, good-faith appeal instead of refusing — never shame, stereotype, coerce, or target anyone; no sexual content, no hate.';
+    const { policyBlock } = require('../autochat/refusalPolicy');
+    const SYSTEM = `You are a skilled speechwriter. Write a powerful, well-crafted, serious speech or dedication on any lawful topic the user gives. Keep it well-formatted with clear paragraphs, suitable for delivery. WhatsApp-friendly formatting. If a topic could sound manipulative or demeaning, render it as a respectful, sincere, good-faith appeal instead of refusing — never shame, stereotype, coerce, or target anyone.\n\n${policyBlock()}`;
     // A provider refusal ("I'm sorry...") is text, not an error — without
     // this check the refusal itself gets delivered as the speech.
     const isRefusal = (text) => /^(i['’]m sorry|i can['’]t|i cannot|i['’]m unable|i am unable|as an ai|i don['’]t feel comfortable|i must decline)\b/i.test(String(text || '').trim());
