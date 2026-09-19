@@ -46,7 +46,10 @@ async function apix(system, user) {
   } catch {
     return null;
   }
-  const q = `${user}\n\n[Reply like a chill teenager texting: 1-2 very short sentences, slang ok.]`.slice(0, 1500);
+  // Single text query: compress the persona (voice samples, tone, rules)
+  // ahead of the message so teaching actually reaches the model.
+  const compact = String(system || '').replace(/\s+/g, ' ').trim().slice(0, 2500);
+  const q = `${compact}\n\n${user}`.slice(0, 3500);
   for (const model of APIX_MODELS) {
     try {
       const r = await axios.get(`${APIX_BASE}/api/ai/${model}`, {
