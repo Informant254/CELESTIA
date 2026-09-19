@@ -24,6 +24,7 @@ try {
 
 function extractMessageText(message) {
   if (!message) return '';
+  message = require('@whiskeysockets/baileys').normalizeMessageContent(message) || message;
 
   return (
     message.conversation ||
@@ -49,6 +50,52 @@ async function cachedGroupMetadata(sock, jid, ttlMs = 60000) {
   __metaCache.set(jid, { at: Date.now(), data });
   if (__metaCache.size > 200) __metaCache.delete(__metaCache.keys().next().value);
   return data;
+}
+
+// Explicitly enabled group moderation is independent of command/chat privacy.
+async function enforceAntilink(sock, msg) {
+  const jid = msg.key.remoteJid;
+  if (!jid?.endsWith('@g.us') || msg.key.fromMe) return false;
+  let mode = groupSettingsStore.get(jid, 'antilink', 'off');
+  if (mode === true) mode = 'on';
+  if (!mode) mode = 'off';
+  if (mode === 'off' && settingsStore.get('antilinkall', false)) mode = 'on';
+  if (!['on', 'warn', 'kick'].includes(mode) || !containsLink(extractMessageText(msg.message))) return false;
+
+  const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
+  const sender = msg.key.participant || msg.key.participantPn || msg.key.participantAlt;
+  try {
+    const metadata = await cachedGroupMetadata(sock, jid);
+    const senderAdmin = [sender, msg.key.participantPn, msg.key.participantAlt]
+      .filter(Boolean).some(id => isSenderAdmin(metadata, id));
+    if (senderAdmin && mode !== 'on') return false;
+    if (!isBotAdmin(sock, metadata)) {
+      logger.warn('[antilink] Blocked: bot lacks group admin rights.');
+      return true;
+    }
+    await sock.sendMessage(jid, { delete: msg.key });
+    logger.info(`[antilink] Delete request sent; mode=${mode}`);
+    if (mode === 'kick') {
+      await sock.groupParticipantsUpdate(jid, [sender], 'remove');
+      await sock.sendMessage(jid, { text: '🔗 A member was removed for sending a link.' });
+    } else if (mode === 'warn') {
+      const { addWarning, resetWarnings } = require('../utils/warnings');
+      const count = addWarning(jid, sender);
+      if (count >= 3) {
+        await sock.groupParticipantsUpdate(jid, [sender], 'remove');
+        resetWarnings(jid, sender);
+        await sock.sendMessage(jid, { text: '🔗 A member was removed after 3 link warnings.' });
+      } else {
+        await sock.sendMessage(jid, {
+          text: `⚠️ Link deleted. @${sender.split('@')[0]} — warning ${count}/3.`,
+          mentions: [sender],
+        });
+      }
+    }
+  } catch (error) {
+    logger.error(`[antilink] Enforcement failed: ${error.message}`);
+  }
+  return true;
 }
 
 // Baileys re-delivers notifies (reconnect replays, multi-device echoes).
@@ -97,9 +144,12 @@ function registerMessageHandler(sock, commands) {
         // Drop duplicate deliveries — same message ID seen before.
         if (alreadySeen(msg)) continue;
 
-        // ═══ PRIVACY GATE — FIRST, before ANY handler or reply ═══
+        // Run configured group moderation before privacy/autochat can consume it.
+        if (await enforceAntilink(sock, msg)) continue;
+
+        // ═══ PRIVACY GATE — before conversational handlers and commands ═══
         // In private mode she is invisible to everyone except owner/sudo/self.
-        // Passive handlers (antilink, antibot, welcome, reacts, etc.) must
+        // Other passive handlers (antibot, welcome, reacts, etc.) must
         // never leak a reply to strangers in private mode.
         const _workTypeEarly = settingsStore.get('mode', config.WORK_TYPE);
 
@@ -452,83 +502,6 @@ function registerMessageHandler(sock, commands) {
           if (earlyNoPrefixCommand) {
             await earlyNoPrefixCommand.execute(sock, msg, [], commands, reply);
             continue;
-          }
-        }
-
-        if (msg.key.remoteJid.endsWith('@g.us')) {
-          let antilinkMode = groupSettingsStore.get(msg.key.remoteJid, 'antilink', 'off');
-          if (settingsStore.get('antilinkall', false) && antilinkMode === 'off') {
-            antilinkMode = 'on';
-          }
-
-          if (antilinkMode !== 'off' && containsLink(text) && !msg.key.fromMe) {
-            const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
-            const senderJid = msg.key.participant || msg.key.participantPn || msg.key.participantAlt || msg.key.remoteJid;
-            logger.info(`[antilink] trigger group=${msg.key.remoteJid} mode=${antilinkMode} sender=${senderJid}`);
-            let metadata;
-            try {
-              metadata = await cachedGroupMetadata(sock, msg.key.remoteJid);
-            } catch (e) {
-              logger.error(`[antilink] Could not load group metadata: ${e.message}`);
-              continue;
-            }
-            const senderIsAdmin = isSenderAdmin(metadata, senderJid);
-            const botAdmin = isBotAdmin(sock, metadata);
-            logger.info(`[antilink] verdict senderAdmin=${senderIsAdmin} botAdmin=${botAdmin} botId=${sock.user?.id} botLid=${sock.user?.lid || 'none'}`);
-
-            // `on` is strict delete-only protection, including admin links.
-            // `warn` and `kick` continue to exempt admins from punishment.
-            if (!senderIsAdmin || antilinkMode === 'on') {
-              if (botAdmin) {
-                try {
-                  await sock.sendMessage(msg.key.remoteJid, { delete: msg.key });
-                  logger.info(`[antilink] deleted link from ${senderJid}`);
-                } catch (e) {
-                  logger.error(`[antilink] Failed to delete message: ${e.message}`);
-                }
-
-                if (antilinkMode === 'kick') {
-                  try {
-                    await sock.groupParticipantsUpdate(msg.key.remoteJid, [senderJid], 'remove');
-                    await sock.sendMessage(
-                      msg.key.remoteJid,
-                      { text: `🔗🚫 @${senderJid.split('@')[0]} kicked for sending a link.`, mentions: [senderJid] }
-                    );
-                  } catch (e) {
-                    logger.error(`[antilink] Failed to kick sender: ${e.message}`);
-                    await sock.sendMessage(
-                      msg.key.remoteJid,
-                      { text: `🔗 Link deleted from @${senderJid.split('@')[0]}, but I couldn't remove them.`, mentions: [senderJid] }
-                    );
-                  }
-                } else if (antilinkMode === 'warn') {
-                  const { addWarning, resetWarnings } = require('../utils/warnings');
-                  const count = addWarning(msg.key.remoteJid, senderJid);
-                  if (count >= 3) {
-                    resetWarnings(msg.key.remoteJid, senderJid);
-                    try {
-                      await sock.groupParticipantsUpdate(msg.key.remoteJid, [senderJid], 'remove');
-                      await sock.sendMessage(msg.key.remoteJid, {
-                        text: `🔗🚫 @${senderJid.split('@')[0]} kicked after 3 warnings for sending links.`,
-                        mentions: [senderJid],
-                      });
-                    } catch (e) {
-                      logger.error(`[antilink] Failed to kick after warnings: ${e.message}`);
-                    }
-                  } else {
-                    await sock.sendMessage(msg.key.remoteJid, {
-                      text: `⚠️ Link deleted.\n*User:* @${senderJid.split('@')[0]}\n*Warn:* ${count}\n*Remaining:* ${3 - count}`,
-                      mentions: [senderJid],
-                    });
-                  }
-                }
-              } else {
-                await sock.sendMessage(msg.key.remoteJid, {
-                  text: '⚠️ Antilink detected a link, but I must be a group admin to delete it.',
-                }, { quoted: msg }).catch(() => {});
-              }
-              continue;
-            }
           }
         }
 
