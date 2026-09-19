@@ -320,7 +320,13 @@ module.exports = {
     };
 
     const send = async (text, withBanner = true) => {
-      if (withBanner) await sendBanner();
+      if (withBanner) {
+        const image = getMenuImage();
+        if (image) {
+          await sock.sendMessage(jid, { image, caption: text }, { quoted: msg });
+          return;
+        }
+      }
       for (const [index, chunk] of splitMenuText(text).entries()) {
         await sock.sendMessage(jid, { text: chunk }, index === 0 ? { quoted: msg } : {});
       }

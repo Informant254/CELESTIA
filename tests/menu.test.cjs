@@ -32,10 +32,9 @@ async function runMenu(commands, args, options = {}) {
     const msg = { key: { remoteJid: 't@s.whatsapp.net', id: `m${Math.random()}`, fromMe: true }, pushName: options.pushName || 'Boss' };
     await menu.execute(sock, msg, args, commands, async (text) => sent.push({ text }));
     for (const message of sent) {
-      assert.ok(!message.caption, 'banner must remain bare and unchanged');
-      if (message.text) {
-        assert.ok(message.text.length <= 12000, 'text stays within WhatsApp limits');
-        for (const line of message.text.split('\n').filter(Boolean)) {
+      assert.ok(!(message.image && !message.caption), 'banner and menu travel as one captioned image');
+      for (const body of [message.text, message.caption].filter(Boolean)) {
+        for (const line of body.split('\n').filter(Boolean)) {
           assert.ok(line.length <= 80, `mobile line too long: ${line}`);
         }
       }
@@ -47,7 +46,7 @@ async function runMenu(commands, args, options = {}) {
   }
 }
 
-const textOf = (sent) => sent.map((message) => message.text).filter(Boolean).join('\n');
+const textOf = (sent) => sent.map((message) => message.caption || message.text).filter(Boolean).join('\n');
 const FIXTURE = fakeCommands([
   { name: 'ping', aliases: ['p', 'latency'] }, 'menu', 'celestia', 'recall', 'weather',
   'game', 'livescore', 'ai', 'sticker', 'statussuite', 'locate', 'antibot',
@@ -56,7 +55,9 @@ const FIXTURE = fakeCommands([
 
 test('home is a compact observatory with five constellation cards', async () => {
   const sent = await runMenu(FIXTURE, []);
-  assert.ok(sent[0]?.image, 'CELESTIA banner sends first on its own');
+  assert.ok(sent[0]?.image?.length, 'CELESTIA banner rides as the message image');
+  assert.ok(sent[0]?.caption?.includes('COMMAND CONSTELLATION'), 'entire menu text rides in the image caption');
+  assert.ok(!sent.some((message) => message.text && !message.caption), 'no separate text message');
   const text = textOf(sent);
   assert.match(text, /CELESTIA \/ OBSERVATORY/);
   assert.match(text, /Welcome back, \*Boss\*/);
