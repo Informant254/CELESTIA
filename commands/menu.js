@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const https = require('https');
 const figlet = require('figlet');
 const wolfTech = require('../utils/wolfTech');
 const config = require('../config/config');
@@ -310,13 +311,44 @@ function uptimeShort() {
 
 // ═══════════════════════════════════════════════════
 // THEME 6: IRONBOX — the reference menu, CELESTIA build.
-// Banner image on its own bubble, then the full menu as plain
-// quoted text (image captions cap at ~1k chars — the 9k+ menu
-// must travel as text). Every line quote-prefixed (> ),
-// commands in monospace. Renders the FULL realm taxonomy
-// (CATEGORIES) — every command that exists in this bot appears,
-// including CYBER FORTRESS.
-// ═══════════════════════════════════════════════════════════
+// ONE message: banner image + full menu as the caption,
+// so logo and menu are literally one bubble (always aligned).
+// Every line quote-prefixed (> ), commands in monospace.
+// Renders the FULL realm taxonomy (CATEGORIES) — every command
+// that exists in this bot appears, including CYBER FORTRESS.
+// ═══════════════════════════════════════════════════
+function downloadBuffer(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (response) => {
+      if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+        return downloadBuffer(response.headers.location).then(resolve).catch(reject);
+      }
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => resolve(Buffer.concat(chunks)));
+      response.on('error', reject);
+    }).on('error', reject);
+  });
+}
+
+async function getMenuImage() {
+  const customBanner = settingsStore.get('menu_banner', null);
+  if (customBanner) {
+    try { return Buffer.from(customBanner, 'base64'); } catch { /* fall through */ }
+  }
+  for (const f of ['banner.png', 'script.jpg']) {
+    const p = path.join(__dirname, '../assets', f);
+    if (fs.existsSync(p)) {
+      try { return fs.readFileSync(p); } catch { /* try next */ }
+    }
+  }
+  try {
+    return await downloadBuffer('https://i.imgur.com/3Z8Xy9G.jpeg');
+  } catch (error) {
+    console.error('[MENU IMAGE FETCH ERROR]', error && error.message);
+    return null;
+  }
+}
 
 const T6 = {
   key: 'boxed', name: 'IRONBOX', icon: '❏',
@@ -437,6 +469,17 @@ module.exports = {
 
     const send = async (text) => sendPage(text, true);
 
+    // Boxed face: ONE message — banner image + full menu as the caption.
+    // Logo and menu are literally one bubble, so they always align.
+    const sendBoxed = async (text) => {
+      const imageBuffer = await getMenuImage();
+      if (imageBuffer) {
+        await sock.sendMessage(jid, { image: imageBuffer, caption: text }, { quoted: msg });
+      } else {
+        await sock.sendMessage(jid, { text }, { quoted: msg });
+      }
+    };
+
     // Her spoken intro — pre-built opus voice note with music bed.
     // File-gated: silently skipped if missing. Quoted so it threads under her menu.
     const sendVoiceNote = async () => {
@@ -489,7 +532,7 @@ module.exports = {
         for (const cat of CATEGORIES) {
           if (cat.cmds.some((c) => commands.has(c))) parts.push(theme.realm(cat, prefix, commands));
         }
-        return sendPage(parts.join('\n'), true);
+        return sendBoxed(parts.join('\n'));
       }
       const PER = 3;
       const totalPages = Math.ceil(CATEGORIES.length / PER);
@@ -505,7 +548,7 @@ module.exports = {
     if (arg0) {
       if (theme.key === 'boxed') {
         const cat = CATEGORIES.find((c) => c.key === arg0);
-        if (cat) return sendPage(theme.realm(cat, prefix, commands), false);
+        if (cat) return sendBoxed(theme.realm(cat, prefix, commands));
         return reply(`🧭 Unknown realm *${arg0}*.\nRealms: ${CATEGORIES.map((c) => c.key).join(' • ')}`);
       }
       const cat = CATEGORIES.find(c => c.key === arg0);
@@ -537,11 +580,10 @@ module.exports = {
     }
 
     // ─── bare .menu — themed index ───
-    // Boxed face: banner image on its own bubble, then the full menu as
-    // plain quoted text (an image caption caps at ~1k chars — the 9k+ menu
-    // would be truncated mid-realm). Voice intro closes the show.
+    // Boxed face: banner image + full menu as ONE captioned message,
+    // then her spoken intro as a voice note.
     if (theme.key === 'boxed') {
-      await send(theme.index(prefix, commands, total));
+      await sendBoxed(theme.index(prefix, commands, total));
       await sendVoiceNote();
       return;
     }
