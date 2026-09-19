@@ -73,4 +73,4 @@ function isSenderAdmin(metadata, senderJid) {
   return isAdminParticipant(match);
 }
 
-module.exports = { isBotAdmin, isSenderAdmin, getBotIdentifiers };
+module.exports = { isBotAdmin, isSenderAdmin, getBotIdentifiers, participantMatches, normalize };

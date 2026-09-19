@@ -210,12 +210,11 @@ async function enforceModeration(sock, msg, commands) {
     // commands outright (e.g. antibot eating every `.ping` it can't kick for).
     let detail = '';
     try {
-      const { getBotIdentifiers } = require('../utils/isAdmin');
-      const admins = (metadata.participants || [])
-        .filter((p) => p?.admin)
-        .map((p) => `${p.id || ''}|${p.lid || ''}|${p.phoneNumber || ''}`)
-        .join(';');
-      detail = ` botIds=${[...getBotIdentifiers(sock)].join(',') || '(none)'} admins=[${admins}]`;
+      const { getBotIdentifiers, participantMatches } = require('../utils/isAdmin');
+      const botIds = getBotIdentifiers(sock);
+      const selfEntry = (metadata.participants || []).find((p) => participantMatches(p, botIds));
+      const adminCount = (metadata.participants || []).filter((p) => p?.admin).length;
+      detail = ` selfInGroup=${selfEntry ? `yes admin=${selfEntry.admin || 'none'}` : 'no'} admins=${adminCount} members=${(metadata.participants || []).length}`;
     } catch {}
     logger.warn(`[moderation] bot lacks admin rights; letting message flow through.${detail}`);
     return false;
