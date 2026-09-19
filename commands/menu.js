@@ -333,7 +333,9 @@ module.exports = {
     };
 
     const sendVoice = async () => {
-      const voicePath = path.join(__dirname, '../assets/menu-voice.opus');
+      const enhanced = path.join(__dirname, '../assets/menu-voice-music.opus');
+      const clean = path.join(__dirname, '../assets/menu-voice.opus');
+      const voicePath = fs.existsSync(enhanced) ? enhanced : clean;
       try {
         if (fs.existsSync(voicePath)) await sock.sendMessage(jid, { audio: fs.readFileSync(voicePath), mimetype: 'audio/ogg; codecs=opus', ptt: true }, { quoted: msg });
       } catch { /* optional */ }
