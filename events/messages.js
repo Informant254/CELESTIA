@@ -35,7 +35,20 @@ function extractMessageText(message) {
 }
 
 function containsLink(text) {
-  return /(?:https?:\s*\/\s*\/|www\.|chat\.whatsapp\.com\/|whatsapp\.com\/(?:channel|invite)\/|wa\.me\/|(?:[a-z0-9-]+\.)+(?:com|net|org|io|co|me|app|dev|xyz|info|biz|link|gg)(?:\/\S*)?)/i.test(String(text || ''));
+  return /(?:https?:\s*\/\s*\/|www\.|chat\.whatsapp\.com\/|wa\.me\/|whatsapp\.com\/(?:channel|invite)\/|wa\.me\/|(?:[a-z0-9-]+\.)+(?:com|net|org|io|co|me|app|dev|xyz|info|biz|link|gg)(?:\/\S*)?)/i.test(String(text || ''));
+}
+
+// Short-lived group metadata cache for moderation: WhatsApp rate-limits
+// groupMetadata under load, and every moderation check doing a live fetch
+// starves antilink/antibot/antitag. 60s TTL, bounded size.
+const __metaCache = new Map();
+async function cachedGroupMetadata(sock, jid, ttlMs = 60000) {
+  const hit = __metaCache.get(jid);
+  if (hit && Date.now() - hit.at < ttlMs) return hit.data;
+  const data = await sock.groupMetadata(jid);
+  __metaCache.set(jid, { at: Date.now(), data });
+  if (__metaCache.size > 200) __metaCache.delete(__metaCache.keys().next().value);
+  return data;
 }
 
 // Baileys re-delivers notifies (reconnect replays, multi-device echoes).
@@ -454,7 +467,7 @@ function registerMessageHandler(sock, commands) {
             logger.info(`[antilink] trigger group=${msg.key.remoteJid} mode=${antilinkMode} sender=${senderJid}`);
             let metadata;
             try {
-              metadata = await sock.groupMetadata(msg.key.remoteJid);
+              metadata = await cachedGroupMetadata(sock, msg.key.remoteJid);
             } catch (e) {
               logger.error(`[antilink] Could not load group metadata: ${e.message}`);
               continue;
