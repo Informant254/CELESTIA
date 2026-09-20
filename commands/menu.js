@@ -333,7 +333,7 @@ module.exports = {
     };
 
     const sendVoice = async () => {
-      const enhanced = path.join(__dirname, '../assets/menu-voice-music.opus');
+      const enhanced = path.join(__dirname, '../assets/menu-voice-celestial.opus');
       const clean = path.join(__dirname, '../assets/menu-voice.opus');
       const voicePath = fs.existsSync(enhanced) ? enhanced : clean;
       try {
