@@ -13,19 +13,61 @@ function ensureFileExists() {
   }
 }
 
+// In-memory write-through cache: strikes must land instantly (a raid is
+// dozens of messages per second), while disk writes are throttled so a
+// flood can't turn every strike into a full file rewrite.
+let cache = null;
+let dirty = false;
+let saveTimer = null;
+
 function readAll() {
+  if (cache) return cache;
   ensureFileExists();
-  const raw = fs.readFileSync(FILE_PATH, 'utf-8');
   try {
-    return JSON.parse(raw);
+    cache = JSON.parse(fs.readFileSync(FILE_PATH, 'utf-8'));
+    if (!cache || typeof cache !== 'object') cache = {};
   } catch {
-    return {};
+    cache = {};
   }
+  return cache;
 }
 
 function writeAll(data) {
-  ensureFileExists();
-  fs.writeFileSync(FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+  cache = data && typeof data === 'object' ? data : {};
+  scheduleSave();
+}
+
+function scheduleSave() {
+  dirty = true;
+  if (saveTimer) return;
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    if (!dirty) return;
+    dirty = false;
+    try {
+      ensureFileExists();
+      fs.writeFileSync(FILE_PATH, JSON.stringify(cache, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[warnings] Failed to persist:', err.message);
+    }
+  }, 2000);
+  if (saveTimer.unref) saveTimer.unref();
+}
+
+// Synchronous flush for clean shutdown paths and tests.
+function flush() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+  }
+  if (!dirty && cache) return;
+  dirty = false;
+  try {
+    ensureFileExists();
+    fs.writeFileSync(FILE_PATH, JSON.stringify(cache || {}, null, 2), 'utf-8');
+  } catch (err) {
+    console.error('[warnings] Failed to persist:', err.message);
+  }
 }
 
 function key(groupJid, userJid) {
@@ -36,19 +78,18 @@ function addWarning(groupJid, userJid) {
   const data = readAll();
   const k = key(groupJid, userJid);
   data[k] = (data[k] || 0) + 1;
-  writeAll(data);
+  scheduleSave();
   return data[k];
 }
 
 function getWarnings(groupJid, userJid) {
-  const data = readAll();
-  return data[key(groupJid, userJid)] || 0;
+  return readAll()[key(groupJid, userJid)] || 0;
 }
 
 function resetWarnings(groupJid, userJid) {
   const data = readAll();
   delete data[key(groupJid, userJid)];
-  writeAll(data);
+  scheduleSave();
 }
 
-module.exports = { addWarning, getWarnings, resetWarnings };
+module.exports = { addWarning, getWarnings, resetWarnings, flush };

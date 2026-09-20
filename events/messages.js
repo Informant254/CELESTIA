@@ -314,7 +314,9 @@ async function enforceModeration(sock, msg, commands) {
           logger.error(`[${job.tag}] delete failed: ${e.message}`);
         }
       } else {
-        await sock.sendMessage(jid, { text: `${job.struck} — links and spam are not allowed here.` }).catch(() => {});
+        // DMs: nobody but the sender can delete a message (WhatsApp rule),
+        // so delete-only degrades to an instant notice naming the hit.
+        await sock.sendMessage(jid, { text: `${job.struck} — not allowed here.` }).catch(() => {});
       }
       if ((job.tag === 'antitag' || job.tag === 'antitagme') && isGroup) {
         await sock.sendMessage(jid, {

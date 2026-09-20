@@ -4,12 +4,28 @@ const { isOwner } = require('./isOwner');
 
 const sudoPath = path.join(__dirname, '../config/sudoList.json');
 
+// mtime-guarded cache: isSudo runs on every suspicious message, and hitting
+// disk + JSON.parse each time is pure waste. Last-good list survives a
+// corrupt file instead of throwing into message dispatch.
+let cache = { mtime: 0, list: [] };
 function load() {
-  if (fs.existsSync(sudoPath)) return JSON.parse(fs.readFileSync(sudoPath, 'utf8'));
-  return [];
+  try {
+    const st = fs.statSync(sudoPath);
+    if (st.mtimeMs === cache.mtime) return cache.list;
+    const parsed = JSON.parse(fs.readFileSync(sudoPath, 'utf8'));
+    cache = { mtime: st.mtimeMs, list: Array.isArray(parsed) ? parsed : [] };
+    return cache.list;
+  } catch {
+    return cache.list;
+  }
 }
 function save(list) {
   fs.writeFileSync(sudoPath, JSON.stringify(list, null, 2));
+  try {
+    cache = { mtime: fs.statSync(sudoPath).mtimeMs, list };
+  } catch {
+    cache = { mtime: 0, list };
+  }
 }
 
 function isSudo(msg) {

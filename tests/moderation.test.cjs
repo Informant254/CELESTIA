@@ -325,6 +325,35 @@ test('antitagme is group-only', async () => {
   assert.equal(h.blocked.length, 0);
 });
 
+test('inbox antibot kick blocks the bot sender immediately', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ settings: { antibot: 'kick' } });
+  await h.sendDM({ conversation: '$bank' }, DM);
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+  assert.equal(h.removed.length, 0);
+  assert.match(h.sent.at(-1).text, /blocked/);
+});
+
+test('inbox antibot warn strikes then blocks on third', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ settings: { antibot: 'warn' } });
+  await h.sendDM({ conversation: '$bank' }, DM);
+  await h.sendDM({ conversation: '$bank' }, DM);
+  assert.equal(h.blocked.length, 0);
+  assert.match(h.sent.at(-1).text, /warning 2\/3/);
+  await h.sendDM({ conversation: '$bank' }, DM);
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+});
+
+test('inbox antibot on names the hit instead of crying links', async () => {
+  const h = loadMessagesHarness({ settings: { antibot: 'on' } });
+  await h.sendDM({ conversation: '$bank' });
+  assert.equal(h.sent.length, 1);
+  assert.match(h.sent[0].text, /Suspected bot command removed/);
+  assert.ok(!/links and spam/.test(h.sent[0].text), 'no link-specific wording for bot hits');
+  assert.equal(h.blocked.length, 0);
+});
+
 test('bot without admin lets the message flow through untouched', async () => {
   const h = loadMessagesHarness({ privacy: 'public', botAdmin: false, group: { [GROUP]: { antilink: 'kick' } } });
   await h.send(link());
