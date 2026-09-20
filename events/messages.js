@@ -346,6 +346,7 @@ function registerMessageHandler(sock, commands) {
         {
           let _acSkip = false;
           const _acText = extractMessageText(msg.message).trim();
+          const _acContent = require('@whiskeysockets/baileys').normalizeMessageContent(msg.message) || msg.message;
           try {
             for (const cmd of new Set(commands.values())) {
               if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(_acText)) { _acSkip = true; break; }
@@ -356,6 +357,16 @@ function registerMessageHandler(sock, commands) {
             try {
               _autochatHandled = await require('../autochat/index').handleIncoming(sock, msg, _acText);
             } catch (e) { logger.error(`[autochat] ${e.message}`); }
+          } else if (!_acSkip && _acContent?.audioMessage?.ptt) {
+            try {
+              const ac = require('../autochat/index');
+              const speech = require('../utils/speech');
+              if (ac.canHandle(sock, msg) && speech.canTranscribe()) {
+                await sock.sendPresenceUpdate('recording', msg.key.remoteJid).catch(() => {});
+                const transcript = await speech.transcribeMessage(sock, msg);
+                if (transcript) _autochatHandled = await ac.handleIncoming(sock, msg, transcript, { voiceReply: true });
+              }
+            } catch (e) { logger.warn(`[autochat] voice note skipped: ${String(e.message).slice(0, 120)}`); }
           }
         }
         if (_autochatHandled) continue;

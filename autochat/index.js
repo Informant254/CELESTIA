@@ -191,7 +191,15 @@ function needsQuestion(chatId) {
   return mine.length === 2 && !mine.some((m) => m.text.includes('?'));
 }
 
-async function handleIncoming(sock, msg, text) {
+function canHandle(sock, msg) {
+  const chatId = msg.key.remoteJid;
+  if (msg.key.fromMe || mode() === 'off' || !backend.hasKey()) return false;
+  if (isGroup(chatId) && !(mode() === 'all' || isGroupAllowed(chatId))) return false;
+  if (isGroup(chatId) && !groupGate(sock, msg)) return false;
+  return true;
+}
+
+async function handleIncoming(sock, msg, text, options = {}) {
   const chatId = msg.key.remoteJid;
   const t = String(text || '').trim();
   const fromMe = !!msg.key.fromMe;
@@ -231,7 +239,7 @@ async function handleIncoming(sock, msg, text) {
     require('./dialect').harvest(chatId, t);
   } catch { /* dialect never breaks chat */ }
   // ...unless a react says it better. No text, no machinery, just human.
-  if (shouldReact(t)) {
+  if (!options.voiceReply && shouldReact(t)) {
     try {
       const emoji = pickReact(t);
       await sock.sendMessage(chatId, { react: { text: emoji, key: msg.key } });
@@ -260,6 +268,19 @@ async function handleIncoming(sock, msg, text) {
       }
     }
     memory.push(chatId, 'me', replyText);
+
+    if (options.voiceReply) {
+      try {
+        await human.presence(sock, chatId, 'recording', human.readDelayMs(t.length));
+        const audio = await require('../utils/speech').synthesizeVoice(replyText, options.language || 'en-US');
+        const sentMsg = await sock.sendMessage(chatId, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true });
+        noteSent(chatId, sentMsg?.key?.id);
+        await sock.sendPresenceUpdate('paused', chatId).catch(() => {});
+        return true;
+      } catch (e) {
+        console.error('[autochat] voice synthesis failed; using text:', String(e.message).slice(0, 100));
+      }
+    }
 
     // human rhythm: read pause -> typing -> paced bubbles
     await human.presence(sock, chatId, 'composing', human.readDelayMs(t.length));
@@ -290,4 +311,4 @@ async function handleIncoming(sock, msg, text) {
   }
 }
 
-module.exports = { handleIncoming, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList, groupGate, noteSent };
+module.exports = { handleIncoming, canHandle, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList, groupGate, noteSent };
