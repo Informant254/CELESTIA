@@ -270,6 +270,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
       incoming: t,
       pushName: sock.user?.name || null,
       contactName: contactName(msg),
+      flirt: require('./flirt').isAllowed(msg),
     });
     const res = await backend.complete(system, needsQuestion(chatId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user);
     if (!res || !res.text) return false;

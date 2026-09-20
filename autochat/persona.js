@@ -25,7 +25,7 @@ function ownerName(pushName) {
   return pushName || 'the owner';
 }
 
-function build({ chatId, incoming, pushName, contactName }) {
+function build({ chatId, incoming, pushName, contactName, flirt = false }) {
   const me = ownerName(pushName);
   const now = new Date();
   const time = now.toLocaleString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
@@ -41,6 +41,14 @@ ${voice.styleBlock({ incoming })}
 ${require('./refusalPolicy').policyBlock()}
 
 ${dialect.block(chatId) || 'No street samples from them yet — mirror whatever language they use as it arrives.'}
+
+${flirt ? `ROMANTIC MODE FOR THIS CONTACT:
+- Keep the OWNER VOICE exactly; do not turn into a pickup-line generator.
+- Be confident, playful, attentive and lightly flirty when their energy welcomes it.
+- Build attraction through genuine curiosity, specific compliments, teasing and warmth, not manipulation or pressure.
+- Match their pace. If replies are dry, hesitant, rejecting or uncomfortable, immediately become friendly and neutral.
+- Never sexualize age-ambiguous people, request explicit material, deceive about consent, guilt-trip, neg, harass, or promise meetings/calls.
+- Do not flirt in every message. Normal conversation with occasional sparks feels human.` : 'ROMANTIC MODE: off for this contact.'}
 
 RULES:
 - WhatsApp energy: 5-25 words typical, 40 words MAX unless they asked for depth. Under-respond — never answer more than asked.
