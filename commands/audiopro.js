@@ -29,7 +29,7 @@ module.exports = {
       const output = path.join(dir, 'celestia-waveform.mp4');
       await studio.createCard({ text: args.slice(1).join(' ') || 'CELESTIA AUDIO', author: mode === 'masterwave' ? 'MASTERED' : 'NOW PLAYING', output: cover });
       await studio.createWaveform({ input: mode === 'masterwave' ? mastered : input, cover, output });
-      return sock.sendMessage(jid, { video: { url: output }, caption: '✦ CELESTIA Audio Pro' }, { quoted: msg });
+      return sock.sendMessage(jid, { video: fs.readFileSync(output), caption: '✦ CELESTIA Audio Pro' }, { quoted: msg });
     } catch (error) {
       return sock.sendMessage(jid, { text: `❌ Audio Pro: ${error.message}` }, { quoted: msg });
     } finally { wipeDir(dir); }

@@ -76,7 +76,7 @@ module.exports = {
       const output = path.join(dir, 'celestia-faceless.mp4');
       await runOnce(ffmpegPath(), ['-y', '-f', 'concat', '-safe', '0', '-i', manifest, '-i', audio, '-vf', 'scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,format=yuv420p', '-r', '24', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-c:a', 'aac', '-b:a', '64k', '-movflags', '+faststart', '-shortest', output], 600000);
       if (fs.statSync(output).size > studio.WA_LIMIT) throw new Error('Final video exceeded WhatsApp 16MB limit');
-      await sock.sendMessage(jid, { video: { url: output }, mimetype: 'video/mp4', fileName: 'celestia-faceless.mp4', caption: `🎬 *${plan.title}*\n_${plan.scenes.length} scenes · narrated by CELESTIA_` }, { quoted: msg });
+      await sock.sendMessage(jid, { video: fs.readFileSync(output), mimetype: 'video/mp4', fileName: 'celestia-faceless.mp4', caption: `🎬 *${plan.title}*\n_${plan.scenes.length} scenes · narrated by CELESTIA_` }, { quoted: msg });
     } catch (error) {
       console.error('[FACELESS]', String(error.message).slice(0, 180));
       await sock.sendMessage(jid, { text: `❌ Faceless Factory failed: ${error.message}` }, { quoted: msg });

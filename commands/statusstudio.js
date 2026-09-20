@@ -41,11 +41,12 @@ module.exports = {
         fs.writeFileSync(input, media);
         await studio.createCard({ text: args.slice(1).join(' ') || 'NOW PLAYING', author: 'CELESTIA AUDIO', output: cover });
         await studio.createWaveform({ input, cover, output });
+        const video = fs.readFileSync(output);
         if (post) {
-          const count = await studio.postStatus(sock, { video: { url: output }, caption: '' });
+          const count = await studio.postStatus(sock, { video, caption: '' });
           return sock.sendMessage(jid, { text: `✅ Waveform posted to status (${count} recipients).` }, { quoted: msg });
         }
-        return sock.sendMessage(jid, { video: { url: output }, caption: '✦ CELESTIA waveform status' }, { quoted: msg });
+        return sock.sendMessage(jid, { video, caption: '✦ CELESTIA waveform status' }, { quoted: msg });
       }
       return sock.sendMessage(jid, { text: '✦ *CELESTIA STATUS STUDIO*\n\n`.statusstudio quote <words> | <author>`\n`.statusstudio waveform <title>` (reply to audio)\n\nAdd `post` before the mode to publish directly.' }, { quoted: msg });
     } catch (error) {
