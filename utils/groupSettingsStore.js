@@ -53,6 +53,31 @@ function getAll(jid) {
     return { ...(state[jid] || {}) };
 }
 
+let dirty = false;
+let saveTimer = null;
+
+function scheduleSave() {
+    dirty = true;
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        if (!dirty) return;
+        dirty = false;
+        saveToDisk(state);
+    }, 1500);
+    if (saveTimer.unref) saveTimer.unref();
+}
+
+function flush() {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    if (!dirty) return;
+    dirty = false;
+    saveToDisk(state);
+}
+
 function set(jid, key, value) {
     if (!state[jid]) state[jid] = {};
     state[jid][key] = value;
@@ -66,8 +91,8 @@ function set(jid, key, value) {
             console.error('[groupSettingsStore] Failed to persist to PostgreSQL:', err.message);
         });
     } else {
-        saveToDisk(state);
+        scheduleSave();
     }
 }
 
-module.exports = { get, set, getAll, ready };
+module.exports = { get, set, getAll, ready, flush };

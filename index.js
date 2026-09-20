@@ -57,6 +57,10 @@ async function shutdown(exitCode = 0, reason = 'shutdown') {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
+  // Flush debounced stores first — set() only schedules disk writes now.
+  try { require('./utils/settingsStore').flush(); } catch {}
+  try { require('./utils/groupSettingsStore').flush(); } catch {}
+  try { require('./utils/warnings').flush(); } catch {}
   try { guardian?.backupNow(); } catch {}
 
   const socket = currentSocket;

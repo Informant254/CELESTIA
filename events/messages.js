@@ -63,7 +63,16 @@ async function cachedGroupMetadata(sock, jid, ttlMs = 60000) {
 //   off = disabled · on = delete only · warn = delete + 3 strikes then kick · kick = immediate remove.
 // Legacy boolean `true` maps to each feature's historical behavior.
 const __flood = new Map(); // `${jid}::${sender}` -> [timestamps]
-let __badwordsCache = { mtime: 0, list: [] };
+let __badwordsCache = { mtime: 0, list: [], regexes: [] };
+// Flat command list for noprefix scans — the registry is static after boot,
+// so rebuilding a Set + iterating it twice per message is pure waste.
+let __flatCommands = { map: null, arr: [] };
+function flatCommands(commands) {
+  if (__flatCommands.map !== commands) {
+    __flatCommands = { map: commands, arr: [...new Set(commands.values())] };
+  }
+  return __flatCommands.arr;
+}
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -73,7 +82,14 @@ function loadBadwords() {
     const st = fs.statSync(p);
     if (st.mtimeMs !== __badwordsCache.mtime) {
       const parsed = JSON.parse(fs.readFileSync(p, 'utf8'));
-      __badwordsCache = { mtime: st.mtimeMs, list: Array.isArray(parsed) ? parsed : [] };
+      const list = Array.isArray(parsed) ? parsed : [];
+      // Pre-compile once per file change — building a RegExp per word per
+      // message was pure waste on every chat line.
+      const regexes = [];
+      for (const w of list) {
+        try { regexes.push(new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i')); } catch { /* skip bad pattern */ }
+      }
+      __badwordsCache = { mtime: st.mtimeMs, list, regexes };
     }
   } catch { /* keep last good list */ }
   return Array.isArray(__badwordsCache.list) ? __badwordsCache.list : [];
@@ -236,8 +252,8 @@ async function enforceModeration(sock, msg, commands) {
   }
   const bwMode = normMode(s('badword', false), 'kick');
   if (bwMode !== 'off' && text) {
-    const low = text.toLowerCase();
-    if (loadBadwords().some((w) => new RegExp(`\\b${escapeRegExp(w)}\\b`, 'i').test(low))) {
+    loadBadwords();
+    if (__badwordsCache.regexes.some((re) => re.test(text))) {
       jobs.push({ tag: 'badword', mode: bwMode, scope: 'bw', strictAdmin: bwMode === 'on', struck: '🚫 Banned word deleted' });
     }
   }
@@ -363,7 +379,7 @@ function registerMessageHandler(sock, commands) {
 
     for (const msg of messages) {
       stats.received++;
-      console.log('MESSAGE RECEIVED:', config.debugMessages ? msg.key : '[redacted]');
+      if (config.debugMessages) console.log('MESSAGE RECEIVED:', msg.key);
       try {
         if (!msg.message) continue;
         const activePrefix = settingsStore.get('prefix', config.prefix) || '.';
@@ -418,7 +434,7 @@ function registerMessageHandler(sock, commands) {
           const _acText = extractMessageText(msg.message).trim();
           const _acContent = require('@whiskeysockets/baileys').normalizeMessageContent(msg.message) || msg.message;
           try {
-            for (const cmd of new Set(commands.values())) {
+            for (const cmd of flatCommands(commands)) {
               if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(_acText)) { _acSkip = true; break; }
             }
           } catch {}
@@ -720,7 +736,7 @@ function registerMessageHandler(sock, commands) {
         // No-prefix triggers (e.g. emoji-only commands like vv2)
         {
           let earlyNoPrefixCommand = null;
-          for (const cmd of new Set(commands.values())) {
+          for (const cmd of flatCommands(commands)) {
             if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(text)) {
               earlyNoPrefixCommand = cmd;
               break;

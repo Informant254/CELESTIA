@@ -54,6 +54,35 @@ function get(key, fallback = undefined) {
     return key in state ? state[key] : fallback;
 }
 
+// Persistence is trailing-debounced: reads are always fresh from memory,
+// but a burst of sets (voice/dialect learning on every message) costs one
+// disk write instead of one per message (~450µs each at real state sizes).
+// flush() forces a synchronous write — called on graceful shutdown.
+let dirty = false;
+let saveTimer = null;
+
+function scheduleSave() {
+    dirty = true;
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+        saveTimer = null;
+        if (!dirty) return;
+        dirty = false;
+        saveToDisk(state);
+    }, 1500);
+    if (saveTimer.unref) saveTimer.unref();
+}
+
+function flush() {
+    if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    if (!dirty) return;
+    dirty = false;
+    saveToDisk(state);
+}
+
 function set(key, value) {
     state[key] = value;
 
@@ -67,7 +96,7 @@ function set(key, value) {
             console.error('[settingsStore] Failed to persist to PostgreSQL:', err.message);
         });
     } else {
-        saveToDisk(state);
+        scheduleSave();
     }
 }
 
@@ -75,4 +104,4 @@ function getAll() {
     return { ...state };
 }
 
-module.exports = { get, set, getAll, ready };
+module.exports = { get, set, getAll, ready, flush };
