@@ -135,17 +135,6 @@ async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck, dm 
     logger.error(`[${tag}] punish failed: ${e.message}`);
   }
 }
-// One "make me admin" notice per group per hour — without it, a non-admin
-// bot looks broken instead of powerless. Module-scoped and bounded.
-const __adminWarned = new Map();
-function warnNoAdmin(sock, jid) {
-  if (!jid?.endsWith('@g.us')) return;
-  const now = Date.now();
-  if (now - (__adminWarned.get(jid) || 0) < 3600000) return;
-  __adminWarned.set(jid, now);
-  if (__adminWarned.size > 200) __adminWarned.delete(__adminWarned.keys().next().value);
-  sock.sendMessage(jid, { text: '⚠️ I caught spam here but I am not a group admin, so I cannot delete or remove it. Please make me an admin.' }).catch(() => {});
-}
 async function enforceModeration(sock, msg, commands) {
   const jid = msg.key.remoteJid;
   // Groups use delete/kick; personal inboxes use notice/block (WhatsApp
@@ -247,8 +236,6 @@ async function enforceModeration(sock, msg, commands) {
   if (!isBotAdmin(sock, metadata)) {
     // Do NOT consume: swallowing a message we cannot punish breaks member
     // commands outright (e.g. antibot eating every `.ping` it can't kick for).
-    // But say so out loud (throttled) — silent inaction reads as "not working".
-    warnNoAdmin(sock, jid);
     let detail = '';
     try {
       const { getBotIdentifiers, participantMatches } = require('../utils/isAdmin');
