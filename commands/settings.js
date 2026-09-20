@@ -37,6 +37,7 @@ module.exports = {
 ┣ AntiCall: ${onOff(settingsStore.get('anticall', false))}
 ┣ AntiBot: ${onOff(settingsStore.get('antibot', false))}
 ┣ AntiTag: ${onOff(settingsStore.get('antitag', false))}
+┣ AntiTagMe: ${onOff(settingsStore.get('antitagme', false))}
 ┗ BadWord: ${onOff(settingsStore.get('badword', false))}
 
 *🤖 Automation*

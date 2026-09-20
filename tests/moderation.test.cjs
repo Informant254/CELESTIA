@@ -285,6 +285,46 @@ test('antitag catches mass-tags inside ephemeral wrappers', async () => {
   assert.equal(h.removed.length, 1);
 });
 
+const ownerTag = () => ({ extendedTextMessage: { text: 'hey boss', contextInfo: { mentionedJid: ['254700000099@s.whatsapp.net'] } } });
+const strangerTag = () => ({ extendedTextMessage: { text: 'hey you', contextInfo: { mentionedJid: ['254799999999@s.whatsapp.net'] } } });
+
+test('antitagme on deletes owner-tags with notice', async () => {
+  const h = loadMessagesHarness({ settings: { antitagme: 'on' } });
+  await h.send(ownerTag());
+  assert.ok(h.sent[0].delete, 'message deleted');
+  assert.match(h.sent[1].text, /Tagging the owner is not allowed/);
+  assert.equal(h.removed.length, 0);
+});
+
+test('antitagme kick removes non-admins who tag the owner', async () => {
+  const h = loadMessagesHarness({ settings: { antitagme: 'kick' } });
+  await h.send(ownerTag());
+  assert.equal(h.removed.length, 1);
+});
+
+test('antitagme ignores tags of other people', async () => {
+  const h = loadMessagesHarness({ settings: { antitagme: 'kick' } });
+  await h.send(strangerTag());
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.length, 0);
+});
+
+test('antitagme never kicks admins, delete-only', async () => {
+  const h = loadMessagesHarness({ settings: { antitagme: 'kick' } });
+  await h.send(ownerTag(), ADMIN);
+  assert.equal(h.removed.length, 0);
+  assert.ok(h.sent[0].delete, 'message still deleted');
+  assert.match(h.sent[1].text, /Tagging the owner is not allowed/);
+});
+
+test('antitagme is group-only', async () => {
+  const h = loadMessagesHarness({ settings: { antitagme: 'kick' } });
+  await h.sendDM(ownerTag());
+  assert.equal(h.sent.length, 0);
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.blocked.length, 0);
+});
+
 test('bot without admin lets the message flow through untouched', async () => {
   const h = loadMessagesHarness({ privacy: 'public', botAdmin: false, group: { [GROUP]: { antilink: 'kick' } } });
   await h.send(link());

@@ -185,6 +185,7 @@ module.exports = [
           ui.renderInfo('🛡️', 'Antigstatus', gmode(inbox.antigstatus, 'on')),
           ui.renderInfo('🤖', 'Antibot', gmode(globals.get('antibot', false), 'kick')),
           ui.renderInfo('🏷️', 'Antitag', gmode(globals.get('antitag', false), 'on')),
+          ui.renderInfo('🛡️', 'AntiTagMe', gmode(globals.get('antitagme', false), 'on')),
           ui.renderInfo('🚫', 'Badword', gmode(globals.get('badword', false), 'kick')),
         ]) }, { quoted: msg });
       }

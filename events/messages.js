@@ -135,6 +135,30 @@ async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck, dm 
     logger.error(`[${tag}] punish failed: ${e.message}`);
   }
 }
+// Every JID form that means "the owner" — PN, learned LIDs, live socket
+// identity. Mention-matching is exact on the bare user part (LID and PN
+// live in different namespaces, so no cross-namespace digit guessing).
+function ownerBares(sock) {
+  const set = new Set();
+  const add = (v) => {
+    const b = String(v || '').split('@')[0].split(':')[0].trim().toLowerCase();
+    if (!b) return;
+    set.add(b);
+    const d = b.replace(/\D/g, '');
+    if (d) set.add(d);
+  };
+  add(config.ownerNumber);
+  try {
+    add(settingsStore.get('ownerLid', null));
+    add(settingsStore.get('bot_lid', null));
+    add(globalThis.__ownerLid);
+  } catch { /* identity never breaks moderation */ }
+  try {
+    add(sock?.user?.id);
+    add(sock?.user?.lid);
+  } catch { /* identity never breaks moderation */ }
+  return set;
+}
 async function enforceModeration(sock, msg, commands) {
   const jid = msg.key.remoteJid;
   // Groups use delete/kick; personal inboxes use notice/block (WhatsApp
@@ -194,6 +218,22 @@ async function enforceModeration(sock, msg, commands) {
   if (tagMode !== 'off' && mentioned.length > 4) {
     jobs.push({ tag: 'antitag', mode: tagMode, scope: 'tag', strictAdmin: tagMode === 'on', struck: '🏷️ Mass-tag spam deleted' });
   }
+  // Personal shield: nobody may tag the owner. Group-only (DMs cannot
+  // mass-tag anyone), owner-exempt below, admins get delete-only.
+  const meMode = normMode(s('antitagme', false), 'on');
+  if (isGroup && meMode !== 'off' && mentioned.length) {
+    const mine = ownerBares(sock);
+    const taggedMe = mentioned.some((j) => {
+      const b = String(j || '').split('@')[0].split(':')[0].trim().toLowerCase();
+      if (!b) return false;
+      if (mine.has(b)) return true;
+      const d = b.replace(/\D/g, '');
+      return !!d && mine.has(d);
+    });
+    if (taggedMe) {
+      jobs.push({ tag: 'antitagme', mode: meMode, scope: 'me', struck: '🚫 Tagging the owner is not allowed' });
+    }
+  }
   const bwMode = normMode(s('badword', false), 'kick');
   if (bwMode !== 'off' && text) {
     const low = text.toLowerCase();
@@ -232,7 +272,23 @@ async function enforceModeration(sock, msg, commands) {
     senderAdmin = senderIds.some((id) => isSenderAdmin(metadata, id));
     // Admin exemption must return to dispatch, not merely skip each job:
     // the latter consumed admin commands without performing any action.
-    if (senderAdmin) return false;
+    // Exception: the personal shield still deletes an admin's owner-tag
+    // (delete-only — admins can never be kicked).
+    if (senderAdmin) {
+      const meJob = jobs.find((j) => j.tag === 'antitagme');
+      if (!meJob) return false;
+      if (!isBotAdmin(sock, metadata)) return false;
+      try {
+        await sock.sendMessage(jid, { delete: msg.key });
+      } catch (e) {
+        logger.error(`[antitagme] delete failed: ${e.message}`);
+      }
+      await sock.sendMessage(jid, {
+        text: `🚫 Tagging the owner is not allowed — @${sender.split('@')[0]} please don't tag them.`,
+        mentions: [sender],
+      }).catch(() => {});
+      return true;
+    }
   if (!isBotAdmin(sock, metadata)) {
     // Do NOT consume: swallowing a message we cannot punish breaks member
     // commands outright (e.g. antibot eating every `.ping` it can't kick for).
@@ -260,9 +316,11 @@ async function enforceModeration(sock, msg, commands) {
       } else {
         await sock.sendMessage(jid, { text: `${job.struck} — links and spam are not allowed here.` }).catch(() => {});
       }
-      if (job.tag === 'antitag' && isGroup) {
+      if ((job.tag === 'antitag' || job.tag === 'antitagme') && isGroup) {
         await sock.sendMessage(jid, {
-          text: `🏷️ Mass-tag message deleted from @${sender.split('@')[0]}.`,
+          text: job.tag === 'antitagme'
+            ? `🚫 Tagging the owner is not allowed — @${sender.split('@')[0]} please don't tag them.`
+            : `🏷️ Mass-tag message deleted from @${sender.split('@')[0]}.`,
           mentions: [sender],
         }).catch(() => {});
       }
