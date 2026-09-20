@@ -197,6 +197,18 @@ function needsQuestion(chatId, incoming) {
   return Math.random() < Math.min(0.7, Math.max(0.08, learnedRate * 0.72));
 }
 
+// Threaded delivery: the first bubble quotes the triggering message so the
+// reply lands on a specific message instead of dropping randomly; follow-up
+// bubbles stay bare like a real person. Falls back to bare on quote failure.
+async function sendThreaded(sock, chatId, msg, payload, quoteFirst) {
+  if (!quoteFirst) return sock.sendMessage(chatId, payload);
+  try {
+    return await sock.sendMessage(chatId, payload, { quoted: msg });
+  } catch {
+    return sock.sendMessage(chatId, payload);
+  }
+}
+
 function sanitizeReply(text) {
   let value = String(text || '').trim();
   value = value.replace(/^(?:assistant|reply|response|you)\s*:\s*/i, '').replace(/^['"]|['"]$/g, '').trim();
@@ -290,7 +302,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
         const remaining = Math.max(0, human.readDelayMs(t.length) - (Date.now() - generationStarted));
         if (remaining) await human.sleep(remaining);
         const audio = await require('../utils/speech').synthesizeVoice(replyText, options.language || 'en-US');
-        const sentMsg = await sock.sendMessage(chatId, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true });
+        const sentMsg = await sendThreaded(sock, chatId, msg, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true }, true);
         noteSent(chatId, sentMsg?.key?.id);
         memory.push(chatId, 'me', replyText);
         await sock.sendPresenceUpdate('paused', chatId).catch(() => {});
@@ -310,9 +322,9 @@ async function handleIncoming(sock, msg, text, options = {}) {
       const remaining = Math.max(0, Math.min(3000, human.typeDelayMs(parts[i].length) - elapsed));
       if (remaining) await human.sleep(remaining);
       try {
-        // Never quote-reply in autochat: humans answer bare 90% of the time,
-        // and stacked quote bubbles are a classic bot tell.
-        const sentMsg = await sock.sendMessage(chatId, { text: parts[i] });
+        // Threaded reply: first bubble quotes the triggering message so it
+        // answers a specific message; follow-up bubbles stay bare.
+        const sentMsg = await sendThreaded(sock, chatId, msg, { text: parts[i] }, i === 0);
         noteSent(chatId, sentMsg?.key?.id);
       } catch (e) {
         console.error('[autochat] send failed:', String(e.message).slice(0, 100));

@@ -68,12 +68,55 @@ function forget() {
   } catch { /* ignore */ }
 }
 
+// House flavor: curated lines in the SAME logic as taught data — short,
+// capitalized, playful Sheng/English, warm, never explicit or mean.
+// Supplements (never replaces) the owner's stored voice bank.
+const HOUSE_VOICE = [
+  'Hehe wewe ni noma 😂',
+  'Sasa, ukona story?',
+  'Haha umenibamba buana',
+  'Eh, leo umeamua kuniwinda? 😏',
+  'Poa poa, niko hapa 😌',
+  'Wewe na hizo story zako 😭',
+  'Aki you always know vitu',
+  'Wueh, umekuja na energy 🔥',
+  'Hmm, nibambe na gossip?',
+  'Sawa basi, tucheze 😌',
+  'Haha sawa, umeshinda leo',
+  'Aki unanichekesha bure',
+  'Kwani ulimiss kuwa na mimi? 😏',
+  'Niko rada, niambie yote',
+  'Hehe, uko na jokes leo 😂',
+  'Sasa boss, mambo vipi?',
+  'Aki leo umenifurahisha 🔥',
+  'Haya, twende slow slow?',
+  'Wewe huwa unajua kunibamba',
+  'Haha pole, sikukuscan vizuri',
+  'Ebu niambie, ulienda wapi?',
+  'Noma sana, uko juu 😂',
+  'Aki sasa umenifanya nikumiss?',
+  'Poa, lakini usinicheze 😌',
+  'Haha, uko na vibes zako',
+  'Sasa mkurugenzi wa story, niambie 😂',
+  'Niko free, what is the plan?',
+  'Hehe, umejua kunishika 😏',
+];
+
+function houseLines() {
+  return HOUSE_VOICE.slice();
+}
+
+function pool() {
+  const stored = all();
+  return stored.length ? [...stored, ...HOUSE_VOICE] : HOUSE_VOICE.slice();
+}
+
 function count() {
   return all().length;
 }
 
-function profile(lines = all()) {
-  const v = Array.isArray(lines) ? lines.filter(Boolean) : [];
+function profile(lines) {
+  const v = Array.isArray(lines) ? lines.filter(Boolean) : pool();
   if (!v.length) return { count: 0, medianLen: 20, emojiRate: 0.15, questionRate: 0.2, lowercaseRate: 0.5, laughterRate: 0.1 };
   const lengths = v.map((line) => line.length).sort((a, b) => a - b);
   const rate = (fn) => v.filter(fn).length / v.length;
@@ -107,16 +150,21 @@ function pickSamples(v, n = 12, context = '') {
 }
 
 // Style block for the prompt: stats + representative examples.
+// Stored lessons stay authoritative; house flavor blends the same energy.
 function styleBlock({ incoming = '' } = {}) {
-  const v = all();
-  if (!v.length) return 'No voice samples yet — write naturally and I will pick up the style.';
-  const sample = pickSamples(v, 14, incoming);
-  const p = profile(v);
+  const stored = all();
+  const house = houseLines();
+  if (!stored.length && !house.length) return 'No voice samples yet — write naturally and I will pick up the style.';
+  const fromStored = stored.length ? pickSamples(stored, 10, incoming) : [];
+  const fromHouse = pickSamples(house, stored.length ? Math.max(2, 14 - fromStored.length) : Math.min(14, house.length), incoming);
+  const p = profile();
   return [
-    `OWNER STYLE FINGERPRINT (${v.length} taught lines): median ${p.medianLen} chars; emoji ${Math.round(p.emojiRate * 100)}%; questions ${Math.round(p.questionRate * 100)}%; lowercase ${Math.round(p.lowercaseRate * 100)}%; laughter ${Math.round(p.laughterRate * 100)}%.`,
+    `OWNER STYLE FINGERPRINT (${stored.length} taught lines + house flavor): median ${p.medianLen} chars; emoji ${Math.round(p.emojiRate * 100)}%; questions ${Math.round(p.questionRate * 100)}%; lowercase ${Math.round(p.lowercaseRate * 100)}%; laughter ${Math.round(p.laughterRate * 100)}%.`,
     'These relevant real examples are authoritative. Match their cadence, vocabulary, punctuation and restraint; never add slang absent from them:',
-    ...sample.map((l) => `- "${l}"`),
+    ...fromStored.map((l) => `- "${l}"`),
+    'House flavor in the same energy (blend in naturally, same short playful Sheng/English tone):',
+    ...fromHouse.map((l) => `- "${l}"`),
   ].join('\n');
 }
 
-module.exports = { collect, learn, forget, count, profile, styleBlock, pickSamples };
+module.exports = { collect, learn, forget, count, profile, styleBlock, pickSamples, houseLines, pool };
