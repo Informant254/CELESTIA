@@ -15,8 +15,11 @@ module.exports = {
     if (sub === 'on' || sub === 'off') {
       if (sub === 'on') {
         modes.enable(chatId, 'claude');
+        // Group replies are gated on reply/tag like autochat — opting the
+        // group in here is what actually lets the session talk in groups.
+        if (chatId.endsWith('@g.us')) require('../autochat/index').setGroupAllowed(chatId, true);
         return await sock.sendMessage(chatId, {
-          text: '🤖 *CLAUDE AI is live in this chat.*\nJust talk — every message gets a Claude reply. She can also run functions (ask for an image, sticker, clip, or voice readout).\n\n`.claude off` to end the session. `.claude <question>` still works anywhere as a one-shot.'
+          text: '🤖 *CLAUDE AI is live in this chat.*\nJust talk — every message gets a Claude reply. She can also run functions (ask for an image, sticker, clip, or voice readout).' + (chatId.endsWith('@g.us') ? '\n\nIn groups she answers on reply-to-her or tag.' : '') + '\n\n`.claude off` to end the session. `.claude <question>` still works anywhere as a one-shot.'
         }, { quoted: msg });
       }
       const had = modes.disable(chatId);

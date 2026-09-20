@@ -184,6 +184,22 @@ test('claude command toggles its continuous session', async () => {
   }
 });
 
+test('enabling a session inside a group also opts the group in', async () => {
+  const restore = saveRestore([modes.KEY, 'autochat_groups']);
+  const claude = require('../commands/claude');
+  settingsStore.set(modes.KEY, {});
+  settingsStore.set('autochat_groups', []);
+  const sock = { sendMessage: async () => ({ key: { id: 's' } }) };
+  const msg = { key: { remoteJid: '555@g.us', id: 'm', fromMe: true } };
+  try {
+    await claude.execute(sock, msg, ['on'], new Map());
+    assert.equal(modes.active('555@g.us'), 'claude');
+    assert.ok(index.isGroupAllowed('555@g.us'), 'group opted in so reply/tag gating can pass');
+  } finally {
+    restore();
+  }
+});
+
 test('long mode answers split at whatsapp-safe boundaries', () => {
   const parts = modes.splitLong(`${'a'.repeat(3990)}\n${'b'.repeat(100)}`);
   assert.equal(parts.length, 2);

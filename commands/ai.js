@@ -19,7 +19,8 @@ module.exports = {
     if (sub === 'on' || sub === 'off') {
       if (sub === 'on') {
         modes.enable(chatId, 'gpt');
-        return reply('✦ *CELESTIA AI is live in this chat.*\nJust talk — every message gets an answer, and it can run functions (ask for an image, sticker, clip, or voice readout).\n\n`.ai off` to end the session. `.ai <question>` still works anywhere as a one-shot.');
+        if (chatId.endsWith('@g.us')) require('../autochat/index').setGroupAllowed(chatId, true);
+        return reply('✦ *CELESTIA AI is live in this chat.*\nJust talk — every message gets an answer, and it can run functions (ask for an image, sticker, clip, or voice readout).' + (chatId.endsWith('@g.us') ? '\n\nIn groups it answers on reply-to-it or tag.' : '') + '\n\n`.ai off` to end the session. `.ai <question>` still works anywhere as a one-shot.');
       }
       const had = modes.disable(chatId);
       return reply(had ? '✦ AI session ended — back to normal.' : '✦ No AI session was running here.');

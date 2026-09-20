@@ -15,8 +15,9 @@ module.exports = {
     if (sub === "on" || sub === "off") {
       if (sub === "on") {
         modes.enable(chatId, "wormgpt");
+        if (chatId.endsWith('@g.us')) require('../autochat/index').setGroupAllowed(chatId, true);
         return await sock.sendMessage(chatId, {
-          text: "🪱 *WORMGPT is live in this chat.*\nTalk freely — every message gets a WormGPT reply, and it can run functions (ask for an image, sticker, clip, or voice readout).\n\n`.wormgpt off` to end the session. `.wormgpt <prompt>` still works anywhere as a one-shot."
+          text: "🪱 *WORMGPT is live in this chat.*\nTalk freely — every message gets a WormGPT reply, and it can run functions (ask for an image, sticker, clip, or voice readout)." + (chatId.endsWith('@g.us') ? "\n\nIn groups it answers on reply-to-it or tag." : "") + "\n\n`.wormgpt off` to end the session. `.wormgpt <prompt>` still works anywhere as a one-shot."
         }, { quoted: msg });
       }
       const had = modes.disable(chatId);
