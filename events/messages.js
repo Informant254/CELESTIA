@@ -340,8 +340,10 @@ function registerMessageHandler(sock, commands) {
           continue;
         }
 
+        // Continuous AI modes (claude/wormgpt/gpt) are explicit opt-ins, so
+        // they get first chance at ordinary text — ahead of autochat.
         // Autochat is an explicit opt-in DM/group responder, so it gets the
-        // first chance at ordinary text even when command privacy is private.
+        // next chance at ordinary text even when command privacy is private.
         let _autochatHandled = false;
         {
           let _acSkip = false;
@@ -355,7 +357,10 @@ function registerMessageHandler(sock, commands) {
           const _acPrefix = settingsStore.get('prefix', config.prefix) || '.';
           if (!_acSkip && _acText && !_acText.startsWith(_acPrefix)) {
             try {
-              _autochatHandled = await require('../autochat/index').handleIncoming(sock, msg, _acText);
+              _autochatHandled = await require('../autochat/modes').handleIncoming(sock, msg, _acText, commands);
+            } catch (e) { logger.error(`[aimodes] ${e.message}`); }
+            try {
+              if (!_autochatHandled) _autochatHandled = await require('../autochat/index').handleIncoming(sock, msg, _acText, { commands });
             } catch (e) { logger.error(`[autochat] ${e.message}`); }
           } else if (!_acSkip && _acContent?.audioMessage?.ptt) {
             try {

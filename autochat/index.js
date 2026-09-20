@@ -297,6 +297,25 @@ async function handleIncoming(sock, msg, text, options = {}) {
         replyText = sanitizeReply(retry.text);
       }
     }
+    // Operate bot functions first (imagine/video/aisticker/tts), then
+    // deliver the remaining chat text. Needs commands via options.
+    try {
+      const functions = require('./functions');
+      const fx = functions.extract(replyText);
+      if (fx.func && options.commands) {
+        await functions.run(sock, msg, options.commands, fx.func, fx.arg);
+        replyText = fx.clean;
+      }
+    } catch (e) {
+      console.error('[autochat] function failed:', String(e.message).slice(0, 100));
+    }
+    if (!replyText) {
+      memory.push(chatId, 'me', '[ran a function]');
+      try {
+        await sock.sendPresenceUpdate('paused', chatId).catch(() => {});
+      } catch { /* cosmetic */ }
+      return true;
+    }
     if (options.voiceReply) {
       try {
         const remaining = Math.max(0, human.readDelayMs(t.length) - (Date.now() - generationStarted));
