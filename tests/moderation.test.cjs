@@ -261,19 +261,45 @@ test('antitag kick removes immediately', async () => {
   assert.equal(h.removed.length, 1);
 });
 
+test('antitag triggers at five tags and ignores four', async () => {
+  const five = () => ({ extendedTextMessage: { text: 'hi all', contextInfo: { mentionedJid: ['a', 'b', 'c', 'd', 'e'] } } });
+  const four = () => ({ extendedTextMessage: { text: 'hi all', contextInfo: { mentionedJid: ['a', 'b', 'c', 'd'] } } });
+  const h = loadMessagesHarness({ settings: { antitag: 'kick' } });
+  await h.send(five());
+  assert.equal(h.removed.length, 1);
+  const h2 = loadMessagesHarness({ settings: { antitag: 'kick' } });
+  await h2.send(four());
+  assert.equal(h2.removed.length, 0);
+  assert.equal(h2.sent.length, 0);
+});
+
+test('antitag catches mass-tags hidden in image captions', async () => {
+  const h = loadMessagesHarness({ settings: { antitag: 'kick' } });
+  await h.send({ imageMessage: { caption: 'look at this', contextInfo: { mentionedJid: ['a', 'b', 'c', 'd', 'e', 'f'] } } });
+  assert.equal(h.removed.length, 1);
+});
+
+test('antitag catches mass-tags inside ephemeral wrappers', async () => {
+  const h = loadMessagesHarness({ settings: { antitag: 'kick' } });
+  await h.send({ ephemeralMessage: { message: { extendedTextMessage: { text: 'hi all', contextInfo: { mentionedJid: ['a', 'b', 'c', 'd', 'e', 'f'] } } } } });
+  assert.equal(h.removed.length, 1);
+});
+
 test('bot without admin lets the message flow through untouched', async () => {
   const h = loadMessagesHarness({ privacy: 'public', botAdmin: false, group: { [GROUP]: { antilink: 'kick' } } });
   await h.send(link());
-  assert.equal(h.sent.length, 0);
   assert.equal(h.removed.length, 0);
   assert.equal(h.aiCalls(), 1);
+  assert.equal(h.sent.length, 1, 'one throttled make-me-admin notice');
+  assert.match(h.sent[0].text, /not a group admin/);
 });
 
 test('antibot without admin never swallows member commands', async () => {
   const h = loadMessagesHarness({ botAdmin: false, settings: { antibot: 'kick' } });
   await h.send({ conversation: '.ping' });
-  assert.equal(h.sent.length, 0);
   assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.length, 1, 'one throttled make-me-admin notice');
+  assert.match(h.sent[0].text, /not a group admin/);
 });
 
 test('explicit autochat can answer ordinary text while commands remain private', async () => {

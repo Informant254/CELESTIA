@@ -135,6 +135,17 @@ async function modPunish(sock, jid, msg, sender, { tag, mode, scope, struck, dm 
     logger.error(`[${tag}] punish failed: ${e.message}`);
   }
 }
+// One "make me admin" notice per group per hour — without it, a non-admin
+// bot looks broken instead of powerless. Module-scoped and bounded.
+const __adminWarned = new Map();
+function warnNoAdmin(sock, jid) {
+  if (!jid?.endsWith('@g.us')) return;
+  const now = Date.now();
+  if (now - (__adminWarned.get(jid) || 0) < 3600000) return;
+  __adminWarned.set(jid, now);
+  if (__adminWarned.size > 200) __adminWarned.delete(__adminWarned.keys().next().value);
+  sock.sendMessage(jid, { text: '⚠️ I caught spam here but I am not a group admin, so I cannot delete or remove it. Please make me an admin.' }).catch(() => {});
+}
 async function enforceModeration(sock, msg, commands) {
   const jid = msg.key.remoteJid;
   // Groups use delete/kick; personal inboxes use notice/block (WhatsApp
@@ -182,8 +193,16 @@ async function enforceModeration(sock, msg, commands) {
     if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: botWidget ? '🤖 Automated bot message removed' : '🤖 Suspected bot command removed' });
   }
   const tagMode = normMode(s('antitag', false), 'on');
-  const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-  if (tagMode !== 'off' && mentioned.length > 5) {
+  // Mass-tags hide in captions and ephemeral/view-once wrappers too — scan
+  // every container that can carry a contextInfo, not just extended text.
+  const tagCtx = inner?.extendedTextMessage?.contextInfo
+    || inner?.imageMessage?.contextInfo
+    || inner?.videoMessage?.contextInfo
+    || inner?.audioMessage?.contextInfo
+    || inner?.documentMessage?.contextInfo
+    || inner?.stickerMessage?.contextInfo;
+  const mentioned = tagCtx?.mentionedJid || [];
+  if (tagMode !== 'off' && mentioned.length > 4) {
     jobs.push({ tag: 'antitag', mode: tagMode, scope: 'tag', strictAdmin: tagMode === 'on', struck: '🏷️ Mass-tag spam deleted' });
   }
   const bwMode = normMode(s('badword', false), 'kick');
@@ -228,6 +247,8 @@ async function enforceModeration(sock, msg, commands) {
   if (!isBotAdmin(sock, metadata)) {
     // Do NOT consume: swallowing a message we cannot punish breaks member
     // commands outright (e.g. antibot eating every `.ping` it can't kick for).
+    // But say so out loud (throttled) — silent inaction reads as "not working".
+    warnNoAdmin(sock, jid);
     let detail = '';
     try {
       const { getBotIdentifiers, participantMatches } = require('../utils/isAdmin');
