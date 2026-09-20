@@ -58,8 +58,9 @@ async function apix(system, user) {
   }
   // Single text query: compress the persona (voice samples, tone, rules)
   // ahead of the message so teaching actually reaches the model.
-  const compact = String(system || '').replace(/\s+/g, ' ').trim().slice(0, 2500);
-  const q = `${compact}\n\n${user}`.slice(0, 3500);
+  const compact = String(system || '').replace(/\s+/g, ' ').trim().slice(0, 2050);
+  const current = String(user || '').slice(-1400);
+  const q = `${compact}\n\n${current}`;
   for (const model of APIX_MODELS) {
     try {
       const r = await axios.get(`${APIX_BASE}/api/ai/${model}`, {

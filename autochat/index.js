@@ -73,10 +73,12 @@ function pickReact(t) {
 function shouldReact(t) {
   const s = String(t || '').trim();
   if (!s || s.length > 15) return false;
+  if (/\b(?:sick|died|dead|scared|afraid|broke up|hurt|crying|stop|suicide|kill myself|depressed|sorry|pole)\b/i.test(s)) return false;
   if (s.includes('?')) return false;
   if (/https?:\/\//.test(s)) return false;
   if (/^\d{1,2}$/.test(s)) return false;
-  return Math.random() < 0.25;
+  if (!/(?:lol|haha|😂|🤣|thank|asante|shukran|^(?:ok|okay|sawa|poa|yeah|yes|bet)\b|happy|birthday|congrats|hongera)/i.test(s)) return false;
+  return Math.random() < 0.18;
 }
 
 // Message IDs she sent per chat (cap 50) — reply-to-her detection that
@@ -186,9 +188,22 @@ function isRepeat(text, chatId) {
 
 // Flow driver: two straight statements with no question → nudge one
 // genuine follow-up so the conversation breathes instead of stalling.
-function needsQuestion(chatId) {
-  const mine = memory.get(chatId).filter((m) => m.role === 'me').slice(-2);
-  return mine.length === 2 && !mine.some((m) => m.text.includes('?'));
+function needsQuestion(chatId, incoming) {
+  const text = String(incoming || '').trim();
+  if (text.length < 18 || /\?|\b(?:bye|goodnight|good night|later|okay|ok|sawa|thanks|asante|stop|sorry|pole)\b/i.test(text)) return false;
+  const last = memory.get(chatId).filter((m) => m.role === 'me').slice(-1)[0];
+  if (last?.text.includes('?')) return false;
+  const learnedRate = voice.profile().questionRate;
+  return Math.random() < Math.min(0.7, Math.max(0.08, learnedRate * 0.72));
+}
+
+function sanitizeReply(text) {
+  let value = String(text || '').trim();
+  value = value.replace(/^(?:assistant|reply|response|you)\s*:\s*/i, '').replace(/^['"]|['"]$/g, '').trim();
+  value = value.replace(/\n{3,}/g, '\n\n');
+  const words = value.split(/\s+/);
+  if (words.length > 55) value = `${words.slice(0, 55).join(' ').replace(/[,:;-]$/, '')}...`;
+  return value;
 }
 
 function canHandle(sock, msg) {
@@ -248,33 +263,35 @@ async function handleIncoming(sock, msg, text, options = {}) {
     } catch { /* fall through to a text reply */ }
   }
   try {
+    const generationStarted = Date.now();
+    await sock.sendPresenceUpdate(options.voiceReply ? 'recording' : 'composing', chatId).catch(() => {});
     const { system, user } = persona.build({
       chatId,
       incoming: t,
       pushName: sock.user?.name || null,
       contactName: contactName(msg),
     });
-    const res = await backend.complete(system, needsQuestion(chatId) ? `${user}\n(End with one short genuine question about what they just said.)` : user);
+    const res = await backend.complete(system, needsQuestion(chatId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user);
     if (!res || !res.text) return false;
     console.log(`[autochat] engine: ${res.engine || 'unknown'}`);
-    let replyText = res.text;
+    let replyText = sanitizeReply(res.text);
     // Loop guard: a brain stuck repeating one word gets ONE fresh sample.
     if (isDegenerate(replyText, chatId) || isRepeat(replyText, chatId)) {
       console.log('[autochat] degenerate/repeat reply, resampling once');
       const retry = await backend.complete(system, `${user}\n(Say it completely differently from your last replies. Never repeat one word.)`);
       if (retry && retry.text && !isDegenerate(retry.text, chatId) && !isRepeat(retry.text, chatId)) {
         console.log(`[autochat] engine: ${retry.engine || 'unknown'} (resample)`);
-        replyText = retry.text;
+        replyText = sanitizeReply(retry.text);
       }
     }
-    memory.push(chatId, 'me', replyText);
-
     if (options.voiceReply) {
       try {
-        await human.presence(sock, chatId, 'recording', human.readDelayMs(t.length));
+        const remaining = Math.max(0, human.readDelayMs(t.length) - (Date.now() - generationStarted));
+        if (remaining) await human.sleep(remaining);
         const audio = await require('../utils/speech').synthesizeVoice(replyText, options.language || 'en-US');
         const sentMsg = await sock.sendMessage(chatId, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true });
         noteSent(chatId, sentMsg?.key?.id);
+        memory.push(chatId, 'me', replyText);
         await sock.sendPresenceUpdate('paused', chatId).catch(() => {});
         return true;
       } catch (e) {
@@ -283,13 +300,14 @@ async function handleIncoming(sock, msg, text, options = {}) {
     }
 
     // human rhythm: read pause -> typing -> paced bubbles
-    await human.presence(sock, chatId, 'composing', human.readDelayMs(t.length));
     const parts = human.chunk(replyText);
     for (let i = 0; i < parts.length; i++) {
       try {
         await sock.sendPresenceUpdate('composing', chatId);
       } catch { /* cosmetic */ }
-      await human.sleep(human.typeDelayMs(parts[i].length));
+      const elapsed = Date.now() - generationStarted;
+      const remaining = Math.max(0, Math.min(3000, human.typeDelayMs(parts[i].length) - elapsed));
+      if (remaining) await human.sleep(remaining);
       try {
         // Never quote-reply in autochat: humans answer bare 90% of the time,
         // and stacked quote bubbles are a classic bot tell.
@@ -301,6 +319,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
       }
       if (i < parts.length - 1) await human.sleep(900 + Math.random() * 1200);
     }
+    memory.push(chatId, 'me', replyText);
     try {
       await sock.sendPresenceUpdate('paused', chatId);
     } catch { /* cosmetic */ }

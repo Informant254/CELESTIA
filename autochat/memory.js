@@ -47,8 +47,10 @@ function clear(chatId) {
   else buffers.clear();
 }
 
-function format(chatId) {
-  return get(chatId)
+function format(chatId, { excludeLastThem = false } = {}) {
+  const messages = get(chatId);
+  if (excludeLastThem && messages.at(-1)?.role === 'them') messages.pop();
+  return messages
     .map((m) => `${m.role === 'me' ? 'YOU' : 'THEM'}: ${m.text}`)
     .join('\n');
 }

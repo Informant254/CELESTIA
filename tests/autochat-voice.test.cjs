@@ -54,14 +54,35 @@ test('openai fallback uses the configured model', async () => {
   }
 });
 
-test('voice sampling spreads across the bank instead of newest-only', () => {
-  const bank = Array.from({ length: 200 }, (_, i) => `line ${i}`);
-  const picked = voice.pickSamples(bank);
+test('voice sampling retrieves lessons relevant to the current message', () => {
+  const bank = Array.from({ length: 196 }, (_, i) => `ordinary line ${i}`).concat([
+    'football match was crazy fr', 'that goal was actually wild', 'we deserved that win', 'match day energy',
+  ]);
+  const picked = voice.pickSamples(bank, 12, 'that football match and goal were wild');
   assert.equal(picked.length, 12);
-  assert.ok(picked.includes('line 0'), 'oldest taught lines survive');
-  assert.ok(picked.includes(bank.at(-1)) || picked.includes('line 183'), 'recent lines included');
+  assert.ok(picked.includes('football match was crazy fr'));
+  assert.ok(picked.includes('that goal was actually wild'));
   assert.equal(new Set(picked).size, picked.length);
   assert.deepEqual(voice.pickSamples(['a', 'b']), ['a', 'b']);
+});
+
+test('manual teaching applies the same secret and duplicate filters', () => {
+  const previous = settingsStore.get('autochat_voice', []);
+  try {
+    settingsStore.set('autochat_voice', []);
+    assert.equal(voice.learn('hello there\nHELLO THERE!!\nsk-or-v1-abcdefghijklmnopqrstuvwxyz'), 1);
+    assert.equal(voice.count(), 1);
+  } finally {
+    settingsStore.set('autochat_voice', previous);
+  }
+});
+
+test('voice profile measures taught habits instead of imposing defaults', () => {
+  const p = voice.profile(['Hello?', 'You good?', 'I AM HERE']);
+  assert.equal(p.count, 3);
+  assert.equal(p.medianLen, 9);
+  assert.equal(Math.round(p.questionRate * 100), 67);
+  assert.equal(p.lowercaseRate, 0);
 });
 
 test('apix query carries the persona and voice samples, not a generic suffix', async () => {
@@ -84,5 +105,21 @@ test('apix query carries the persona and voice samples, not a generic suffix', a
     axios.get = orig;
     if (previousCodexHome === undefined) delete process.env.CODEX_HOME;
     else process.env.CODEX_HOME = previousCodexHome;
+  }
+});
+
+test('Apix truncation always preserves the complete current message', async () => {
+  const orig = axios.get;
+  const previousCodexHome = process.env.CODEX_HOME;
+  process.env.CODEX_HOME = `${process.cwd()}/test-no-codex-auth`;
+  let captured = '';
+  axios.get = async (_url, opts) => { captured = opts.params.q; return { data: { status: true, result: 'ok' } }; };
+  try {
+    const current = 'CURRENT-MESSAGE-' + 'x'.repeat(900);
+    await backend.complete('SYSTEM-' + 's'.repeat(6000), current);
+    assert.ok(captured.includes(current));
+  } finally {
+    axios.get = orig;
+    if (previousCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = previousCodexHome;
   }
 });
