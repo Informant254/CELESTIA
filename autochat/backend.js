@@ -20,6 +20,10 @@ function openrouterKey() {
   return settingsStore.get('openrouter_key', null) || process.env.OPENROUTER_API_KEY || null;
 }
 
+function openzenKey() {
+  return settingsStore.get('openzen_key', null) || process.env.OPENZEN_API_KEY || process.env.OPENCODE_API_KEY || null;
+}
+
 function apixKey() {
   return settingsStore.get('apix_key', null) || process.env.APIX_KEY || null;
 }
@@ -31,7 +35,7 @@ function openaiKey() {
 function hasKey() {
   let localEnabled = false;
   try { localEnabled = require('./local').status().enabled; } catch {}
-  return !!(codexStatus().authenticated || apixKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
+  return !!(codexStatus().authenticated || apixKey() || openzenKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
 }
 
 function codexStatus() {
@@ -84,6 +88,53 @@ const OR_MODELS = [
   'nex-agi/nex-n2.5-pro:free',
   'google/gemma-4-31b-it:free',
 ];
+
+// OpenCode Zen gateway — OpenAI-compatible, hosts genuinely free models.
+// Key resolution: settingsStore (.autochat setkey openzen) -> env.
+const ZEN_BASE = process.env.OPENZEN_BASE || 'https://opencode.ai/zen/v1';
+const ZEN_MODELS = [
+  'deepseek-v4-flash-free',
+  'qwen3.6-plus-free',
+  'minimax-m3-free',
+];
+
+async function openzen(system, user) {
+  const key = openzenKey();
+  if (!key) return null;
+  let axios;
+  try {
+    axios = require('axios');
+  } catch {
+    return null;
+  }
+  for (const model of ZEN_MODELS) {
+    try {
+      const r = await axios.post(
+        `${ZEN_BASE}/chat/completions`,
+        {
+          model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          max_tokens: 300,
+          temperature: 0.9,
+        },
+        {
+          timeout: 45000,
+          headers: { Authorization: `Bearer ${key}` },
+        }
+      );
+      const text = r.data?.choices?.[0]?.message?.content;
+      if (text && text.trim()) return { text: text.trim(), engine: `openzen/${model}` };
+    } catch (e) {
+      const detail = e.response?.data?.error?.message || e.message;
+      console.error('[autochat] openzen failed', model, String(detail).slice(0, 100));
+      if (isAuthFailure(e)) break;
+    }
+  }
+  return null;
+}
 
 async function openrouter(system, user) {
   const key = openrouterKey();
@@ -193,6 +244,8 @@ async function complete(system, user) {
   }
   const ax = await apix(system, user);
   if (ax) return ax;
+  const zen = await openzen(system, user);
+  if (zen) return zen;
   const or = await openrouter(system, user);
   if (or) return or;
   const prompt = `${system}\n\n---\n\n${user}`;
@@ -220,4 +273,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
+module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), openzenKey: () => !!openzenKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };

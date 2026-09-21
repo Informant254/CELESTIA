@@ -121,6 +121,12 @@ module.exports = {
         settingsStore.set('openrouter_key', key);
         return reply('🤖 OpenRouter key stored — free models first, Gemini as backup.');
       }
+      if (which === 'openzen' || which === 'zen') {
+        const key = (args[2] || '').trim();
+        if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey openzen <key>`');
+        settingsStore.set('openzen_key', key);
+        return reply('🤖 OpenZen key stored — free models in line right after Apix.');
+      }
       if (which === 'openai') {
         const key = (args[2] || '').trim();
         if (!key || key.length < 10) return reply('🤖 Usage: `.autochat setkey openai <key>`');
@@ -171,7 +177,7 @@ module.exports = {
       `  🔌 *Mode* : ${mode.toUpperCase()}`,
       `  🎭 *Vibe* : ${(settingsStore.get('autochat_vibe', 'savage') || 'savage').toUpperCase()}`,
       `  👥 *Groups* : ${groupList().length} opted in`,
-      `  🧠 *AI keys* : Apix ${backend.apixKey() ? 'SET' : '—'} · OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'} · OpenAI ${backend.openaiKey() ? `SET (${backend.openaiModel()})` : '—'}`,
+      `  🧠 *AI keys* : Apix ${backend.apixKey() ? 'SET' : '—'} · Zen ${backend.openzenKey() ? 'SET' : '—'} · OR ${backend.openrouterKey() ? 'SET' : '—'} · Gemini ${backend.geminiKey() ? 'SET' : '—'} · OpenAI ${backend.openaiKey() ? `SET (${backend.openaiModel()})` : '—'}`,
       `  ✦ *ChatGPT Plus* : ${backend.codexStatus().authenticated ? `CONNECTED (${require('../autochat/codex').model()})` : 'NOT CONNECTED'}`,
       `  🏠 *Local* : ${require('../autochat/local').status().enabled ? 'ON' : 'OFF'}`,
       `  🎙️ *Voice* : ${voice.count()} samples`,
