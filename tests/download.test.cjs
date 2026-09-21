@@ -129,3 +129,35 @@ test('yt-dlp omits --cookies when no cookie file exists', () => {
     delete require.cache[require.resolve('../download/ytdlp')];
   }
 });
+
+test('yt-dlp routes YouTube through the configured commercial proxy', () => {
+  const prev = process.env.YOUTUBE_PROXY;
+  process.env.YOUTUBE_PROXY = 'http://user:pass@proxy.example.com:8000';
+  delete require.cache[require.resolve('../download/ytdlp')];
+  try {
+    const fresh = require('../download/ytdlp');
+    const args = fresh.baseArgs('/tmp/work', '/usr/bin/ffmpeg', null);
+    const i = args.indexOf('--proxy');
+    assert.ok(i >= 0, '--proxy present');
+    assert.equal(args[i + 1], process.env.YOUTUBE_PROXY);
+  } finally {
+    if (prev === undefined) delete process.env.YOUTUBE_PROXY;
+    else process.env.YOUTUBE_PROXY = prev;
+    delete require.cache[require.resolve('../download/ytdlp')];
+  }
+});
+
+test('yt-dlp rejects unsupported proxy URL schemes', () => {
+  const prev = process.env.YOUTUBE_PROXY;
+  process.env.YOUTUBE_PROXY = 'file:///etc/passwd';
+  delete require.cache[require.resolve('../download/ytdlp')];
+  try {
+    const fresh = require('../download/ytdlp');
+    assert.equal(fresh.youtubeProxy(), null);
+    assert.ok(!fresh.baseArgs('/tmp/work', '/usr/bin/ffmpeg', null).includes('--proxy'));
+  } finally {
+    if (prev === undefined) delete process.env.YOUTUBE_PROXY;
+    else process.env.YOUTUBE_PROXY = prev;
+    delete require.cache[require.resolve('../download/ytdlp')];
+  }
+});

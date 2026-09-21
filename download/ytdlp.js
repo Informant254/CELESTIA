@@ -31,6 +31,15 @@ function cookieFile() {
   return null;
 }
 
+function youtubeProxy() {
+  const value = String(process.env.YOUTUBE_PROXY || '').trim();
+  if (!value) return null;
+  let parsed;
+  try { parsed = new URL(value); } catch { return null; }
+  if (!['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'].includes(parsed.protocol)) return null;
+  return value;
+}
+
 // workDir -> Set<ChildProcess>
 const live = new Map();
 
@@ -82,6 +91,8 @@ function baseArgs(workDir, ffmpeg, maxBytes) {
   if (maxBytes) a.push('--max-filesize', String(maxBytes));
   const cookies = cookieFile();
   if (cookies) a.push('--cookies', cookies);
+  const proxy = youtubeProxy();
+  if (proxy) a.push('--proxy', proxy);
   return a;
 }
 
@@ -161,4 +172,4 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   return { file, size };
 }
 
-module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile };
+module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile, youtubeProxy };
