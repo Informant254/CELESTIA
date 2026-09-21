@@ -15,6 +15,23 @@ const logger = require('./logger');
 
 const TERMINAL = new Set(['FILE_TOO_LARGE', 'DEPENDENCY_MISSING']);
 
+function soundcloudPlan(title) {
+  const cleaned = String(title || '')
+    .replace(/\s*[([]\s*(official\s+)?(music\s+)?(video|audio|lyrics?|visuali[sz]er)[^\])]*[\])]/ig, '')
+    .trim();
+  const parts = cleaned.split(/\s+-\s+/);
+  if (parts.length < 2) return null;
+  const artist = parts.shift().trim();
+  const track = parts.join(' - ').trim();
+  if (!artist || !track) return null;
+  const regex = (value) => value.replace(/[\\.^$|?*+()[\]{}]/g, '\\$&');
+  const reject = '(?i)(cover|remix|karaoke|tribute|instrumental|slowed|reverb|nightcore|sped up)';
+  return {
+    url: `scsearch10:${artist} ${track}`,
+    filter: `uploader ~= (?i)${regex(artist)} & title ~= (?i)${regex(track)} & title !~= ${reject}`,
+  };
+}
+
 // file exists · size>0 · not partial · inspectable · expected stream present
 async function validateFile(file, isAudio) {
   if (!file || !fs.existsSync(file)) throw new Error('Validated: file missing after download.');
@@ -62,11 +79,13 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   // Free commercial-safe fallback for songs: avoid YouTube's datacenter-IP
   // wall entirely and ask yt-dlp for the closest SoundCloud result. This is
   // audio-only; video still needs a trusted proxy or provider.
-  if (isAudio && title) {
+  const sc = isAudio ? soundcloudPlan(title) : null;
+  if (sc) {
     try {
       const r = await ytdlp.attempt({
-        url: `scsearch1:${title}`,
+        url: sc.url,
         selector: null,
+        extra: ['--match-filter', sc.filter],
         audio: true,
         workDir,
         onProgress,
@@ -169,4 +188,4 @@ function isAmbiguous(query, results) {
   return false;
 }
 
-module.exports = { downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle };
+module.exports = { downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle, soundcloudPlan };

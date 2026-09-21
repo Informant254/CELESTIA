@@ -172,7 +172,7 @@ test('audio fallback tries SoundCloud before direct APIs', async () => {
   require.cache[ytdlpPath] = { id: ytdlpPath, filename: ytdlpPath, loaded: true, exports: {
     attempt: async ({ url }) => {
       calls.push(url);
-      if (!String(url).startsWith('scsearch1:')) throw new Error('youtube blocked');
+      if (!String(url).startsWith('scsearch10:')) throw new Error('youtube blocked');
       return { file: '/tmp/sc.mp3', size: 10 };
     },
   } };
@@ -190,10 +190,20 @@ test('audio fallback tries SoundCloud before direct APIs', async () => {
       url: 'https://youtube.com/watch?v=x', title: 'Artist - Song', isAudio: true, workDir: '/tmp', maxBytes: 100,
     });
     assert.equal(result.strategy, 'soundcloud-search');
-    assert.equal(calls.at(-1), 'scsearch1:Artist - Song');
+    assert.equal(calls.at(-1), 'scsearch10:Artist Song');
   } finally {
     fs.existsSync = exists;
     fs.statSync = stat;
     for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
   }
+});
+
+test('SoundCloud fallback requires artist-owned original recording', () => {
+  const fallback = require('../download/fallback');
+  const plan = fallback.soundcloudPlan('Adele - Hello (Official Music Video)');
+  assert.equal(plan.url, 'scsearch10:Adele Hello');
+  assert.match(plan.filter, /uploader ~= \(\?i\)Adele/);
+  assert.match(plan.filter, /title ~= \(\?i\)Hello/);
+  assert.match(plan.filter, /cover\|remix\|karaoke/);
+  assert.equal(fallback.soundcloudPlan('hello'), null, 'ambiguous title is not guessed');
 });
