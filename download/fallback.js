@@ -75,7 +75,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     logger.download({ tag, strategy: 'api-direct', status: 'success' });
     return { file, size: buf.length, engine: 'api-direct', strategy: 'api-direct' };
   } catch (e2) {
-    logger.download({ tag, strategy: 'api-direct', status: 'failed', reason: classify(e2) });
+    logger.download({ tag, strategy: 'api-direct', status: 'failed', reason: classify(e2), detail: String(e2.message || '').slice(0, 120) });
     throw e2;
   }
 }

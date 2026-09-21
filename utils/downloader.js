@@ -20,6 +20,16 @@ try {
 }
 
 const TIMEOUT = 60000;
+// Fallback download APIs get a shorter fuse — a dead provider must fail
+// fast so the next one gets its chance inside the job timeout.
+const API_TIMEOUT = 30000;
+// Optional davidcyriltech API key (their endpoints now 402 without one).
+// Set DAVIDCYRIL_APIKEY and both davidcyril fallbacks authenticate.
+function dcUrl(endpoint, videoUrl) {
+  const key = process.env.DAVIDCYRIL_APIKEY || '';
+  const base = `https://apis.davidcyriltech.my.id/download/${endpoint}?url=${encodeURIComponent(videoUrl)}`;
+  return key ? `${base}&apikey=${encodeURIComponent(key)}` : base;
+}
 
 function isPublicIp(address) {
   const ip = String(address || '').replace(/^\[|\]$/g, '').split('%')[0];
@@ -116,25 +126,11 @@ async function ytSearch(query) {
 
 async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
   const errs = [];
-  // 1) davidcyril (savetube CDN links — playable from anywhere)
-  try {
-    const r = await axios.get(
-      `https://apis.davidcyriltech.my.id/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-      { timeout: TIMEOUT }
-    );
-    const res = r.data?.result;
-    if (r.data?.success && res?.download_url) {
-      return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle };
-    }
-    throw new Error('no audio link');
-  } catch (e) {
-    errs.push('davidcyril: ' + (e.response?.status || e.message));
-  }
-  // 2) bk9 (googlevideo links — may be region/IP-locked, fallback only)
+  // 1) bk9 first — verified alive, links stream cross-network.
   try {
     const r = await axios.get(
       `https://api.bk9.dev/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
-      { timeout: TIMEOUT }
+      { timeout: API_TIMEOUT }
     );
     const b = r.data?.BK9;
     if (r.data?.status && b?.downloadUrl) {
@@ -144,15 +140,24 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
   } catch (e) {
     errs.push('bk9: ' + (e.response?.status || e.message));
   }
+  // 2) davidcyril (needs DAVIDCYRIL_APIKEY since they gated it — without a
+  // key this fails fast and costs nothing).
+  try {
+    const r = await axios.get(dcUrl('ytmp3', videoUrl), { timeout: API_TIMEOUT });
+    const res = r.data?.result;
+    if (r.data?.success && res?.download_url) {
+      return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle };
+    }
+    throw new Error('no audio link');
+  } catch (e) {
+    errs.push('davidcyril: ' + (e.response?.status || e.message));
+  }
   throw new Error('Audio download failed (' + errs.join(' · ') + '). Try again later.');
 }
 
 async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video') {
   try {
-    const r = await axios.get(
-      `https://apis.davidcyriltech.my.id/download/ytmp4?url=${encodeURIComponent(videoUrl)}`,
-      { timeout: TIMEOUT }
-    );
+    const r = await axios.get(dcUrl('ytmp4', videoUrl), { timeout: API_TIMEOUT });
     const res = r.data?.result;
     if (r.data?.success && res?.download_url) {
       return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle, quality: res.quality || '' };

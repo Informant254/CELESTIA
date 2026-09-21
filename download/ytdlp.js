@@ -40,6 +40,10 @@ function abortDir(workDir) {
 function baseArgs(workDir, ffmpeg, maxBytes) {
   const a = [
     '--no-warnings',
+    // YouTube now serves JS challenges on datacenter IPs — without a JS
+    // runtime every player request dies as EXTRACTOR_ERROR. Node is
+    // guaranteed present (the bot runs on it).
+    '--js-runtimes', 'node',
     '--retries', '3',
     '--fragment-retries', '3',
     '--extractor-retries', '3',
@@ -136,4 +140,4 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   return { file, size };
 }
 
-module.exports = { attempt, abortDir, findOutput };
+module.exports = { attempt, abortDir, findOutput, baseArgs };

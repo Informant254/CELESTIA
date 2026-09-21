@@ -1,0 +1,92 @@
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+
+const ytdlp = require('../download/ytdlp');
+
+// utils/downloader binds axios at require time, so each stub test needs a
+// fresh copy — otherwise the first stub leaks into later tests.
+function freshDownloader() {
+  delete require.cache[require.resolve('../utils/downloader')];
+  return require('../utils/downloader');
+}
+
+test('yt-dlp carries a node JS runtime for YouTube challenges', () => {
+  const args = ytdlp.baseArgs('/tmp/work', '/usr/bin/ffmpeg', null);
+  const i = args.indexOf('--js-runtimes');
+  assert.ok(i >= 0, '--js-runtimes present');
+  assert.equal(args[i + 1], 'node');
+  assert.ok(Array.isArray(args));
+});
+
+test('audio fallback tries bk9 before davidcyril', async () => {
+  const axiosPath = require.resolve('axios');
+  const orig = require.cache[axiosPath]?.exports;
+  const calls = [];
+  require.cache[axiosPath] = {
+    id: axiosPath, filename: axiosPath, loaded: true,
+    exports: {
+      get: async (url) => {
+        calls.push(url);
+        return { data: { status: true, BK9: { downloadUrl: 'https://example.com/f.mp3', title: 'T' } } };
+      },
+    },
+  };
+  try {
+    const dl = freshDownloader();
+    const r = await dl.ytAudio('https://www.youtube.com/watch?v=x');
+    assert.equal(r.url, 'https://example.com/f.mp3');
+    assert.equal(calls.length, 1, 'first provider wins, no wasted calls');
+    assert.match(calls[0], /api\.bk9\.dev/, 'bk9 attempted first');
+  } finally {
+    if (orig === undefined) delete require.cache[axiosPath];
+    else require.cache[axiosPath].exports = orig;
+  }
+});
+
+test('audio fallback reaches davidcyril when bk9 fails', async () => {
+  const axiosPath = require.resolve('axios');
+  const orig = require.cache[axiosPath]?.exports;
+  const calls = [];
+  require.cache[axiosPath] = {
+    id: axiosPath, filename: axiosPath, loaded: true,
+    exports: {
+      get: async (url) => {
+        calls.push(url);
+        if (url.includes('bk9')) throw Object.assign(new Error('boom'), { response: { status: 500 } });
+        return { data: { success: true, result: { download_url: 'https://example.com/g.mp3', title: 'G' } } };
+      },
+    },
+  };
+  try {
+    const dl = freshDownloader();
+    const r = await dl.ytAudio('https://www.youtube.com/watch?v=x');
+    assert.equal(r.url, 'https://example.com/g.mp3');
+    assert.equal(calls.length, 2);
+    assert.match(calls[1], /davidcyriltech/, 'davidcyril second');
+  } finally {
+    if (orig === undefined) delete require.cache[axiosPath];
+    else require.cache[axiosPath].exports = orig;
+  }
+});
+
+test('davidcyril API key is attached when configured', async () => {
+  const axiosPath = require.resolve('axios');
+  const orig = require.cache[axiosPath]?.exports;
+  const calls = [];
+  const prevKey = process.env.DAVIDCYRIL_APIKEY;
+  process.env.DAVIDCYRIL_APIKEY = 'test-key-123';
+  require.cache[axiosPath] = {
+    id: axiosPath, filename: axiosPath, loaded: true,
+    exports: { get: async (url) => { calls.push(url); throw new Error('down'); } },
+  };
+  try {
+    const dl = freshDownloader();
+    await assert.rejects(() => dl.ytVideo('https://www.youtube.com/watch?v=x'), /Video download failed/);
+    assert.ok(calls.some((u) => u.includes('apikey=test-key-123')), 'key attached as query param');
+  } finally {
+    if (prevKey === undefined) delete process.env.DAVIDCYRIL_APIKEY;
+    else process.env.DAVIDCYRIL_APIKEY = prevKey;
+    if (orig === undefined) delete require.cache[axiosPath];
+    else require.cache[axiosPath].exports = orig;
+  }
+});
