@@ -14,6 +14,27 @@ const { classify, isRetryable } = require('./errors');
 const logger = require('./logger');
 
 const TERMINAL = new Set(['FILE_TOO_LARGE', 'DEPENDENCY_MISSING']);
+let youtubeBlockFailures = 0;
+let youtubeBlockedUntil = 0;
+
+function youtubeCircuitOpen(now = Date.now()) {
+  if (youtubeBlockedUntil && now >= youtubeBlockedUntil) {
+    youtubeBlockedUntil = 0;
+    youtubeBlockFailures = 0;
+  }
+  return youtubeBlockedUntil > now;
+}
+
+function recordYouTubeResult(category, now = Date.now()) {
+  if (category !== 'RATE_LIMITED' && category !== 'YOUTUBE_BLOCKED') {
+    if (!category) youtubeBlockFailures = 0;
+    return;
+  }
+  youtubeBlockFailures += 1;
+  if (youtubeBlockFailures >= cfg.YOUTUBE_CIRCUIT_FAILURES) {
+    youtubeBlockedUntil = now + cfg.YOUTUBE_CIRCUIT_COOLDOWN_MS;
+  }
+}
 
 function soundcloudPlan(title) {
   const cleaned = String(title || '')
@@ -57,19 +78,21 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   const byteLimit = maxBytes || (isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES);
   let lastErr = null;
 
-  for (const s of strategies) {
+  for (const s of youtubeCircuitOpen() ? [] : strategies) {
     try {
       const r = await ytdlp.attempt({
         url, selector: s.selector, extra: s.extra, audio: isAudio,
         workDir, onProgress, maxBytes: byteLimit,
       });
       await validateFile(r.file, isAudio);
+      recordYouTubeResult(null);
       logger.download({ tag, strategy: s.name, status: 'success' });
       return { ...r, engine: 'yt-dlp', strategy: s.name };
     } catch (e) {
       lastErr = e;
       const cat = classify(e);
-      logger.download({ tag, strategy: s.name, status: 'failed', reason: cat });
+      recordYouTubeResult(cat);
+      logger.download({ tag, strategy: s.name, status: 'failed', reason: cat, circuit: youtubeCircuitOpen() ? 'open' : 'closed' });
       if (TERMINAL.has(cat)) throw e;
       if (!isRetryable(e)) break;
       logger.fallback({ tag, from: s.name });
@@ -192,4 +215,7 @@ function isAmbiguous(query, results) {
   return false;
 }
 
-module.exports = { downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle, soundcloudPlan };
+module.exports = {
+  downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle, soundcloudPlan,
+  youtubeCircuitOpen, recordYouTubeResult,
+};

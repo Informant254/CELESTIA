@@ -1,7 +1,7 @@
 /**
  * download/errors.js — smart failure classification + user messages.
  *
- * Categories: NETWORK_ERROR, EXTRACTOR_ERROR, FORMAT_ERROR, FFMPEG_ERROR,
+ * Categories: NETWORK_ERROR, RATE_LIMITED, YOUTUBE_BLOCKED, EXTRACTOR_ERROR, FORMAT_ERROR, FFMPEG_ERROR,
  * FILE_TOO_LARGE, UNAVAILABLE_MEDIA, TIMEOUT, DEPENDENCY_MISSING, UNKNOWN_ERROR.
  *
  * Internals stay in logs. Users only ever see the final friendly message.
@@ -17,7 +17,8 @@ function classify(err) {
   if (/ffmpeg_missing|ffprobe_missing|dependency/.test(m)) return 'DEPENDENCY_MISSING';
   if (/too large|max-filesize|exceeds.*cap|over the .* limit/.test(m)) return 'FILE_TOO_LARGE';
   if (/timed out|timeout|overall time budget/.test(m)) return 'TIMEOUT';
-  if (/sign in to confirm|not a bot|bot.*check/.test(m)) return 'EXTRACTOR_ERROR';
+  if (/http error 429|status code 429|too many requests|rate.?limit/.test(m)) return 'RATE_LIMITED';
+  if (/http error 403|status code 403|sign in to confirm|not a bot|bot.*check/.test(m)) return 'YOUTUBE_BLOCKED';
   if (/private|login|cookies|age.*gate|drm|paywall/.test(m)) return 'UNAVAILABLE_MEDIA';
   if (/unavailable|removed|deleted|404|not found|no video|no results|empty/.test(m)) return 'UNAVAILABLE_MEDIA';
   if (/requested format|requested quality|format not available|no file|extraction/.test(m)) return 'FORMAT_ERROR';
@@ -34,6 +35,8 @@ const RETRYABLE = {
   EXTRACTOR_ERROR: true,
   FFMPEG_ERROR: true,
   UNKNOWN_ERROR: true,
+  RATE_LIMITED: false,
+  YOUTUBE_BLOCKED: false,
   FILE_TOO_LARGE: false,
   UNAVAILABLE_MEDIA: false,
   DEPENDENCY_MISSING: false,

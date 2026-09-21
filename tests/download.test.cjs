@@ -162,6 +162,25 @@ test('yt-dlp rejects unsupported proxy URL schemes', () => {
   }
 });
 
+test('yt-dlp accepts one configured literal source address', () => {
+  const prev = process.env.YOUTUBE_SOURCE_ADDRESS;
+  process.env.YOUTUBE_SOURCE_ADDRESS = '2001:db8::42';
+  delete require.cache[require.resolve('../download/ytdlp')];
+  try {
+    const fresh = require('../download/ytdlp');
+    const args = fresh.baseArgs('/tmp/work', '/usr/bin/ffmpeg', null);
+    const i = args.indexOf('--source-address');
+    assert.ok(i >= 0);
+    assert.equal(args[i + 1], '2001:db8::42');
+    process.env.YOUTUBE_SOURCE_ADDRESS = 'not-an-ip';
+    assert.equal(fresh.sourceAddress(), null);
+  } finally {
+    if (prev === undefined) delete process.env.YOUTUBE_SOURCE_ADDRESS;
+    else process.env.YOUTUBE_SOURCE_ADDRESS = prev;
+    delete require.cache[require.resolve('../download/ytdlp')];
+  }
+});
+
 test('audio fallback tries SoundCloud before direct APIs', async () => {
   const ytdlpPath = require.resolve('../download/ytdlp');
   const ffmpegPath = require.resolve('../download/ffmpeg');

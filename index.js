@@ -374,6 +374,9 @@ healthApp.get('/wolftech', (req, res) => res.json({ tribute: wolfTech.tribute, l
 healthApp.get('/api/ai/:model', (req, res) => require('./utils/aiRelay').handleRelay(req, res));
 const HEALTH_PORT = config.dashboardPort;
 healthServer = healthApp.listen(HEALTH_PORT, '0.0.0.0', () => logger.info(`ðŸŒ CELESTIA Health server on 0.0.0.0:${HEALTH_PORT} -> /health /qr /wolftech ðŸº`));
+require('./download/engines').ensureYtDlp()
+  .then((bin) => logger.info(`[download] verified current yt-dlp: ${bin}`))
+  .catch((error) => logger.warn(`[download] yt-dlp update check failed: ${error.message}`));
 
 function restoreSettingsFromEnv() {
   const settingsPath = path.join(__dirname, 'config', 'botSettings.json');

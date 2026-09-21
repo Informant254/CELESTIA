@@ -22,6 +22,8 @@ module.exports = {
   MAX_VIDEO_BYTES: parseInt(process.env.DL_MAX_VIDEO_BYTES || '', 10) || 100 * 1024 * 1024,
   MAX_AUDIO_BYTES: parseInt(process.env.DL_MAX_AUDIO_BYTES || '', 10) || 64 * 1024 * 1024,
   YTDLP_SOCKET_TIMEOUT: 30,
+  YOUTUBE_CIRCUIT_FAILURES: parseInt(process.env.DL_YOUTUBE_CIRCUIT_FAILURES || '', 10) || 3,
+  YOUTUBE_CIRCUIT_COOLDOWN_MS: parseInt(process.env.DL_YOUTUBE_CIRCUIT_COOLDOWN_MS || '', 10) || 10 * 60 * 1000,
   // hard ceiling per download attempt (kills stalled spawns)
   YTDLP_OVERALL_TIMEOUT_MS: parseInt(process.env.DL_OVERALL_TIMEOUT_MS || '', 10) || 25 * 60 * 1000,
   // max length of a user search query

@@ -18,14 +18,11 @@ const BIN_DIR = path.join(__dirname, 'bin');
 const TMP_DIR = path.join(__dirname, '..', 'downloads', 'tmp');
 
 const YTDLP_ASSET = { win32: 'yt-dlp.exe', linux: 'yt-dlp', darwin: 'yt-dlp_macos' }[process.platform] || 'yt-dlp';
-const YTDLP_VERSION = '2026.08.19';
-const YTDLP_URL = `https://github.com/yt-dlp/yt-dlp/releases/download/${YTDLP_VERSION}/${YTDLP_ASSET}`;
-const YTDLP_SHA256 = {
-  'yt-dlp.exe': '66674953fe251b89f4d08c5f0e35e0728679bd67ab3d7d05c0562af101dd3e7a',
-  'yt-dlp': '1fa6733c37ea6fb51c99ad8fe785e7b7e5f3246c9b980230329d4fb72ed8d4d6',
-  'yt-dlp_macos': '0f192b7ec147ab6288885d6351d9ab67367640029b4377576ef46dd79cf7b202',
-};
+const YTDLP_RELEASE_BASE = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download';
+const YTDLP_SUMS_URL = `${YTDLP_RELEASE_BASE}/SHA2-256SUMS`;
+const YTDLP_URL = `${YTDLP_RELEASE_BASE}/${YTDLP_ASSET}`;
 let ensurePromise = null;
+let ensuredBin = null;
 
 function ytdlpPath() {
   return path.join(BIN_DIR, YTDLP_ASSET);
@@ -50,6 +47,17 @@ function get(url, redirects = 5) {
   });
 }
 
+function sha256(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function expectedChecksum(manifest, asset = YTDLP_ASSET) {
+  const escaped = asset.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = String(manifest || '').match(new RegExp(`^([a-f0-9]{64})\\s+\\*?${escaped}$`, 'im'));
+  if (!match) throw new Error(`Official yt-dlp checksum manifest does not contain ${asset}.`);
+  return match[1].toLowerCase();
+}
+
 function runOnce(bin, args, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
     execFile(bin, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
@@ -61,23 +69,34 @@ function runOnce(bin, args, timeoutMs = 20000) {
 
 async function installYtDlp() {
   const bin = ytdlpPath();
+  let currentValid = false;
   if (fs.existsSync(bin)) {
-    try {
-      await runOnce(bin, ['--version'], 20000);
-      return bin; // present AND executes
-    } catch {
-      try { fs.unlinkSync(bin); } catch { /* re-download below */ }
-    }
+    try { await runOnce(bin, ['--version'], 20000); currentValid = true; } catch {}
   }
+
+  let expected;
+  try {
+    expected = expectedChecksum((await get(YTDLP_SUMS_URL)).toString('utf8'));
+  } catch (error) {
+    if (currentValid) return bin;
+    throw new Error(`Could not retrieve official yt-dlp checksums: ${error.message}`);
+  }
+
+  if (currentValid) {
+    try {
+      if (sha256(fs.readFileSync(bin)) === expected) return bin;
+    } catch { /* replace below */ }
+  }
+
   fs.mkdirSync(BIN_DIR, { recursive: true });
   const tmp = bin + '.part';
   const buf = await get(YTDLP_URL);
   if (!buf || buf.length < 1024 * 1024) {
     throw new Error('yt-dlp download looked truncated — refusing to install.');
   }
-  const digest = crypto.createHash('sha256').update(buf).digest('hex');
-  if (digest !== YTDLP_SHA256[YTDLP_ASSET]) {
-    throw new Error(`yt-dlp ${YTDLP_VERSION} failed SHA-256 verification.`);
+  const digest = sha256(buf);
+  if (digest !== expected) {
+    throw new Error('Latest yt-dlp binary failed official SHA-256 verification.');
   }
   fs.writeFileSync(tmp, buf);
   if (process.platform !== 'win32') {
@@ -89,8 +108,11 @@ async function installYtDlp() {
 }
 
 function ensureYtDlp() {
+  if (ensuredBin) return Promise.resolve(ensuredBin);
   if (!ensurePromise) {
-    ensurePromise = installYtDlp().finally(() => { ensurePromise = null; });
+    ensurePromise = installYtDlp()
+      .then((bin) => { ensuredBin = bin; return bin; })
+      .finally(() => { ensurePromise = null; });
   }
   return ensurePromise;
 }
@@ -174,4 +196,4 @@ async function status() {
   return out;
 }
 
-module.exports = { ensureYtDlp, ytdlpPath, ffmpegPath, ffprobePath, aria2cPath, tmpDir, status, runOnce };
+module.exports = { ensureYtDlp, ytdlpPath, ffmpegPath, ffprobePath, aria2cPath, tmpDir, status, runOnce, expectedChecksum, sha256 };

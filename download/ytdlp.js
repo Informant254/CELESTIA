@@ -6,6 +6,7 @@
  */
 const { spawn } = require('child_process');
 const fs = require('fs');
+const net = require('net');
 const path = require('path');
 const cfg = require('./config');
 const { ensureYtDlp, ffmpegPath, aria2cPath } = require('./engines');
@@ -18,16 +19,8 @@ const PARTIAL_RE = /\.(part|temp|tmp|ytdl)$/i;
 // "Sign in to confirm you're not a bot" wall usually falls.
 // NEVER commit that file — it's a live YouTube session, like SESSION_ID.
 function cookieFile() {
-  const candidates = [
-    process.env.YOUTUBE_COOKIES_FILE || '',
-    path.join(__dirname, '..', 'cookies', 'youtube.txt'),
-    path.join(__dirname, '..', 'cookies.txt'),
-  ].filter(Boolean);
-  for (const f of candidates) {
-    try {
-      if (fs.existsSync(f) && fs.statSync(f).size > 0) return f;
-    } catch { /* try next */ }
-  }
+  const file = String(process.env.YOUTUBE_COOKIES_FILE || '').trim();
+  try { if (file && fs.existsSync(file) && fs.statSync(file).size > 0) return file; } catch {}
   return null;
 }
 
@@ -38,6 +31,11 @@ function youtubeProxy() {
   try { parsed = new URL(value); } catch { return null; }
   if (!['http:', 'https:', 'socks4:', 'socks4a:', 'socks5:', 'socks5h:'].includes(parsed.protocol)) return null;
   return value;
+}
+
+function sourceAddress() {
+  const value = String(process.env.YOUTUBE_SOURCE_ADDRESS || '').trim();
+  return net.isIP(value) ? value : null;
 }
 
 // workDir -> Set<ChildProcess>
@@ -93,6 +91,8 @@ function baseArgs(workDir, ffmpeg, maxBytes) {
   if (cookies) a.push('--cookies', cookies);
   const proxy = youtubeProxy();
   if (proxy) a.push('--proxy', proxy);
+  const source = sourceAddress();
+  if (source) a.push('--source-address', source);
   return a;
 }
 
@@ -172,4 +172,4 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   return { file, size };
 }
 
-module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile, youtubeProxy };
+module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile, youtubeProxy, sourceAddress };
