@@ -99,6 +99,27 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     }
   }
 
+  // Apix first among providers: same-host proxied bytes survive the
+  // datacenter-IP wall that kills raw googlevideo links. Needs an Apix key
+  // (chat: .autochat setkey apix <key>) — skipped silently without one.
+  try {
+    const api = require('../utils/downloader');
+    const r = isAudio
+      ? await api.apixAudio(url, title)
+      : await api.apixVideo(url, title);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
+    if (!buf.length) throw new Error('Apix download was empty.');
+    const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
+    fs.writeFileSync(file, buf);
+    await validateFile(file, isAudio);
+    logger.download({ tag, strategy: 'apix', status: 'success' });
+    return { file, size: buf.length, engine: 'apix', strategy: 'apix' };
+  } catch (e) {
+    lastErr = e;
+    logger.download({ tag, strategy: 'apix', status: 'failed', reason: classify(e) });
+    logger.fallback({ tag, from: 'apix' });
+  }
+
   // Free commercial-safe fallback for songs: avoid YouTube's datacenter-IP
   // wall entirely and ask yt-dlp for the closest SoundCloud result. This is
   // audio-only; video still needs a trusted proxy or provider.

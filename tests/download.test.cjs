@@ -199,7 +199,7 @@ test('audio fallback tries SoundCloud before direct APIs', async () => {
     streams: async () => [{ codec_type: 'audio' }],
     probe: async () => ({ size: 10, duration: 180 }),
   } };
-  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: { ytAudio: async () => { throw new Error('API should not run'); } } };
+  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: { apixAudio: async () => { throw new Error('no Apix key configured'); }, ytAudio: async () => { throw new Error('API should not run'); } } };
   const fs = require('node:fs');
   const exists = fs.existsSync;
   const stat = fs.statSync;
@@ -228,4 +228,42 @@ test('SoundCloud fallback requires artist-owned original recording', () => {
   assert.match(plan.filter, /title ~= \(\?i\)Hello/);
   assert.match(plan.filter, /cover\|remix\|karaoke/);
   assert.equal(fallback.soundcloudPlan('hello'), null, 'ambiguous title is not guessed');
+});
+
+test('apix audio resolves a same-host proxied download URL', async () => {
+  const axiosPath = require.resolve('axios');
+  const orig = require.cache[axiosPath]?.exports;
+  const prev = process.env.APIX_KEY;
+  process.env.APIX_KEY = 'test-apix-key';
+  require.cache[axiosPath] = {
+    id: axiosPath, filename: axiosPath, loaded: true,
+    exports: {
+      get: async (url) => {
+        assert.match(url, /apix\.wolvarex\.com\/api\/download\/youtube\/mp3/, 'apix mp3 endpoint');
+        assert.match(url, /key=test-apix-key/, 'key attached');
+        return { data: { success: true, title: 'T', downloadUrl: 'https://apix.wolvarex.com/api/music/proxy?id=x&format=mp3' } };
+      },
+    },
+  };
+  try {
+    const dl = freshDownloader();
+    const r = await dl.apixAudio('https://www.youtube.com/watch?v=x');
+    assert.equal(r.url, 'https://apix.wolvarex.com/api/music/proxy?id=x&format=mp3&key=test-apix-key');
+  } finally {
+    if (prev === undefined) delete process.env.APIX_KEY;
+    else process.env.APIX_KEY = prev;
+    if (orig === undefined) delete require.cache[axiosPath];
+    else require.cache[axiosPath].exports = orig;
+  }
+});
+
+test('apix audio fails fast with a clear message when no key is set', async () => {
+  const prev = process.env.APIX_KEY;
+  delete process.env.APIX_KEY;
+  try {
+    const dl = freshDownloader();
+    await assert.rejects(() => dl.apixAudio('https://www.youtube.com/watch?v=x'), /no Apix key/);
+  } finally {
+    if (prev !== undefined) process.env.APIX_KEY = prev;
+  }
 });

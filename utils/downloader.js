@@ -124,6 +124,52 @@ async function ytSearch(query) {
   }
 }
 
+// Apix key: chat-set key wins, env is the deploy fallback. The same key
+// unlocks Apix AI and Apix downloads.
+function apixKey() {
+  try {
+    const store = require('./settingsStore');
+    const k = store.get('apix_key', null);
+    if (k) return k;
+  } catch { /* settings unavailable in tests */ }
+  return process.env.APIX_KEY || null;
+}
+
+const APIX_BASE = 'https://apix.wolvarex.com';
+
+// Apix serves the bytes proxied from its own host (/api/music/proxy), so
+// these links fetch fine from datacenter IPs — unlike raw googlevideo URLs.
+async function apixMedia(kind, videoUrl, fallbackTitle) {
+  const key = apixKey();
+  if (!key) throw new Error('no Apix key configured');
+  const r = await axios.get(
+    `${APIX_BASE}/api/download/youtube/${kind}?url=${encodeURIComponent(videoUrl)}&key=${encodeURIComponent(key)}`,
+    { timeout: API_TIMEOUT }
+  );
+  const url = r.data?.downloadUrl || r.data?.proxyUrl;
+  if (r.data?.success && url) {
+    const fileUrl = url.includes('key=') ? url : url + `&key=${encodeURIComponent(key)}`;
+    return { url: await validateDownloadUrl(fileUrl), title: r.data?.title || fallbackTitle };
+  }
+  throw new Error(r.data?.error || 'no media link');
+}
+
+async function apixAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
+  try {
+    return await apixMedia('mp3', videoUrl, fallbackTitle);
+  } catch (e) {
+    throw new Error('Apix audio failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
+async function apixVideo(videoUrl, fallbackTitle = 'YouTube Video') {
+  try {
+    return await apixMedia('mp4', videoUrl, fallbackTitle);
+  } catch (e) {
+    throw new Error('Apix video failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
 async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
   const errs = [];
   // 1) bk9 first — verified alive, links stream cross-network.
@@ -235,4 +281,4 @@ function cleanName(s, ext) {
   return String(s || 'media').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 80) + ext;
 }
 
-module.exports = { ytSearch, ytAudio, ytVideo, bk9Social, firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName, isPublicIp, validateDownloadUrl, downloadBuffer };
+module.exports = { ytSearch, ytAudio, ytVideo, apixAudio, apixVideo, bk9Social, firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName, isPublicIp, validateDownloadUrl, downloadBuffer };
