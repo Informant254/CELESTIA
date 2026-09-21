@@ -161,3 +161,39 @@ test('yt-dlp rejects unsupported proxy URL schemes', () => {
     delete require.cache[require.resolve('../download/ytdlp')];
   }
 });
+
+test('audio fallback tries SoundCloud before direct APIs', async () => {
+  const ytdlpPath = require.resolve('../download/ytdlp');
+  const ffmpegPath = require.resolve('../download/ffmpeg');
+  const apiPath = require.resolve('../utils/downloader');
+  const fallbackPath = require.resolve('../download/fallback');
+  const originals = new Map([ytdlpPath, ffmpegPath, apiPath, fallbackPath].map((p) => [p, require.cache[p]]));
+  const calls = [];
+  require.cache[ytdlpPath] = { id: ytdlpPath, filename: ytdlpPath, loaded: true, exports: {
+    attempt: async ({ url }) => {
+      calls.push(url);
+      if (!String(url).startsWith('scsearch1:')) throw new Error('youtube blocked');
+      return { file: '/tmp/sc.mp3', size: 10 };
+    },
+  } };
+  require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: { streams: async () => [{ codec_type: 'audio' }] } };
+  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: { ytAudio: async () => { throw new Error('API should not run'); } } };
+  const fs = require('node:fs');
+  const exists = fs.existsSync;
+  const stat = fs.statSync;
+  fs.existsSync = (p) => p === '/tmp/sc.mp3' || exists(p);
+  fs.statSync = (p) => p === '/tmp/sc.mp3' ? { size: 10 } : stat(p);
+  delete require.cache[fallbackPath];
+  try {
+    const fallback = require('../download/fallback');
+    const result = await fallback.downloadWithFallback({
+      url: 'https://youtube.com/watch?v=x', title: 'Artist - Song', isAudio: true, workDir: '/tmp', maxBytes: 100,
+    });
+    assert.equal(result.strategy, 'soundcloud-search');
+    assert.equal(calls.at(-1), 'scsearch1:Artist - Song');
+  } finally {
+    fs.existsSync = exists;
+    fs.statSync = stat;
+    for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
+  }
+});

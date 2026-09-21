@@ -59,6 +59,31 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     }
   }
 
+  // Free commercial-safe fallback for songs: avoid YouTube's datacenter-IP
+  // wall entirely and ask yt-dlp for the closest SoundCloud result. This is
+  // audio-only; video still needs a trusted proxy or provider.
+  if (isAudio && title) {
+    try {
+      const r = await ytdlp.attempt({
+        url: `scsearch1:${title}`,
+        selector: null,
+        audio: true,
+        workDir,
+        onProgress,
+        maxBytes: byteLimit,
+      });
+      await validateFile(r.file, true);
+      logger.download({ tag, strategy: 'soundcloud-search', status: 'success' });
+      return { ...r, engine: 'yt-dlp', strategy: 'soundcloud-search' };
+    } catch (e) {
+      lastErr = e;
+      const cat = classify(e);
+      logger.download({ tag, strategy: 'soundcloud-search', status: 'failed', reason: cat });
+      if (TERMINAL.has(cat)) throw e;
+      logger.fallback({ tag, from: 'soundcloud-search' });
+    }
+  }
+
   // Tertiary: direct HTTP of an API-resolved URL (single attempt).
   if (lastErr && TERMINAL.has(classify(lastErr))) throw lastErr;
   try {
