@@ -34,7 +34,7 @@ const CATEGORIES = [
   { key: 'auto', icon: '🤖', title: 'AUTOMATION', poem: 'she moves while you sleep', cmds: ['autoread', 'autoview', 'autolike', 'autotyping', 'autorecording', 'autobio', 'anticall', 'wapresence', 'vv', 'vv2', 'save', 'save1'] },
   { key: 'games', icon: '🎮', title: 'ARCADE & FUN', poem: 'play among the planets', cmds: ['game', 'answer', 'rps', 'tictactoe', 'wordguess', 'guess', 'wgend', 'mathquiz', 'mans', 'joke', 'quote', 'zodiac', 'common', 'ttend'] },
   { key: 'football', icon: '⚽', title: 'FOOTBALL ZONE', poem: 'twenty-two hearts, one law', cmds: ['epl', 'eplscorers', 'laliga', 'laligascorers', 'seriea', 'serieascorers', 'bundesliga', 'bundesligascorers', 'ligue1', 'ligue1scorers', 'ucl', 'uclscorers', 'euro', 'fifa', 'fifaplayoffs', 'news', 'livescore', 'standings', 'playersearch', 'teamsearch'] },
-  { key: 'utility', icon: '🧰', title: 'UTILITY BELT', poem: 'everything else worth carrying', cmds: ['calc', 'define', 'wiki', 'ytsearch', 'base', 'unbase', 'trt', 'lyrics', 'lyrics2', 'ison', 'getpfp', 'upload', 'url', 'clearcache', 'eval', 'shell', 'fetch', 'cat', 'getfile', 'getcmd', 'enc', 'compile-py', 'compile-js', 'compile-c', 'compile-c++', 'disp-1', 'disp-7', 'disp-90', 'disp-off'] },
+  { key: 'utility', icon: '🧰', title: 'UTILITY BELT', poem: 'everything else worth carrying', cmds: ['calc', 'define', 'wiki', 'search', 'ytsearch', 'base', 'unbase', 'trt', 'lyrics', 'lyrics2', 'ison', 'getpfp', 'upload', 'url', 'clearcache', 'eval', 'shell', 'fetch', 'cat', 'getfile', 'getcmd', 'enc', 'compile-py', 'compile-js', 'compile-c', 'compile-c++', 'disp-1', 'disp-7', 'disp-90', 'disp-off'] },
 ];
 
 const HOUSES = [
