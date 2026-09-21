@@ -92,6 +92,10 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
         maxBytes: byteLimit,
       });
       await validateFile(r.file, true);
+      const media = await ffmpeg.probe(r.file);
+      if (media.duration && media.duration < 30) {
+        throw new Error('SoundCloud returned a preview instead of the full recording.');
+      }
       logger.download({ tag, strategy: 'soundcloud-search', status: 'success' });
       return { ...r, engine: 'yt-dlp', strategy: 'soundcloud-search' };
     } catch (e) {

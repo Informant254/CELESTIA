@@ -176,7 +176,10 @@ test('audio fallback tries SoundCloud before direct APIs', async () => {
       return { file: '/tmp/sc.mp3', size: 10 };
     },
   } };
-  require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: { streams: async () => [{ codec_type: 'audio' }] } };
+  require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: {
+    streams: async () => [{ codec_type: 'audio' }],
+    probe: async () => ({ size: 10, duration: 180 }),
+  } };
   require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: { ytAudio: async () => { throw new Error('API should not run'); } } };
   const fs = require('node:fs');
   const exists = fs.existsSync;
