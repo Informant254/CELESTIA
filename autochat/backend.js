@@ -24,6 +24,10 @@ function openzenKey() {
   return settingsStore.get('openzen_key', null) || process.env.OPENZEN_API_KEY || process.env.OPENCODE_API_KEY || null;
 }
 
+function groqKey() {
+  return settingsStore.get('groq_key', null) || process.env.GROQ_API_KEY || null;
+}
+
 function apixKey() {
   return settingsStore.get('apix_key', null) || process.env.APIX_KEY || null;
 }
@@ -35,7 +39,7 @@ function openaiKey() {
 function hasKey() {
   let localEnabled = false;
   try { localEnabled = require('./local').status().enabled; } catch {}
-  return !!(codexStatus().authenticated || apixKey() || openzenKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
+  return !!(codexStatus().authenticated || apixKey() || groqKey() || openzenKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
 }
 
 function codexStatus() {
@@ -83,6 +87,53 @@ async function apix(system, user) {
   }
   return null;
 }
+// Groq — OpenAI-compatible, generous free tier. Verified live model IDs;
+// failover covers rotations.
+const GROQ_BASE = process.env.GROQ_BASE || 'https://api.groq.com/openai/v1';
+const GROQ_MODELS = [
+  'openai/gpt-oss-120b',
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-20b',
+];
+
+async function groq(system, user) {
+  const key = groqKey();
+  if (!key) return null;
+  let axios;
+  try {
+    axios = require('axios');
+  } catch {
+    return null;
+  }
+  for (const model of GROQ_MODELS) {
+    try {
+      const r = await axios.post(
+        `${GROQ_BASE}/chat/completions`,
+        {
+          model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          max_tokens: 300,
+          temperature: 0.9,
+        },
+        {
+          timeout: 45000,
+          headers: { Authorization: `Bearer ${key}` },
+        }
+      );
+      const text = r.data?.choices?.[0]?.message?.content;
+      if (text && text.trim()) return { text: text.trim(), engine: `groq/${model}` };
+    } catch (e) {
+      const detail = e.response?.data?.error?.message || e.message;
+      console.error('[autochat] groq failed', model, String(detail).slice(0, 100));
+      if (isAuthFailure(e)) break;
+    }
+  }
+  return null;
+}
+
 const OR_MODELS = [
   'z-ai/glm-5.2:free',
   'nex-agi/nex-n2.5-pro:free',
@@ -244,6 +295,8 @@ async function complete(system, user) {
   }
   const ax = await apix(system, user);
   if (ax) return ax;
+  const gq = await groq(system, user);
+  if (gq) return gq;
   const zen = await openzen(system, user);
   if (zen) return zen;
   const or = await openrouter(system, user);
@@ -273,4 +326,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), openzenKey: () => !!openzenKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
+module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), openzenKey: () => !!openzenKey(), groqKey: () => !!groqKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
