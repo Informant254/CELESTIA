@@ -138,7 +138,8 @@ module.exports = [
       }
 
       groupSettingsStore.set(jid, 'welcome', mode === 'on');
-      await sock.sendMessage(jid, { text: `✅ Welcome messages turned ${mode}.` }, { quoted: msg });
+      const masterOff = require('../utils/settingsStore').get('welcomegoodbye', undefined) === false;
+      await sock.sendMessage(jid, { text: `✅ Welcome messages turned ${mode}.` + (mode === 'on' && masterOff ? '\n\n⚠️ Global master is OFF — run `.welcomegoodbye on` (owner) to let welcomes through.' : '') }, { quoted: msg });
     }
   },
 
@@ -159,7 +160,8 @@ module.exports = [
       }
 
       groupSettingsStore.set(jid, 'goodbye', mode === 'on');
-      await sock.sendMessage(jid, { text: `✅ Goodbye messages turned ${mode}.` }, { quoted: msg });
+      const masterOff = require('../utils/settingsStore').get('welcomegoodbye', undefined) === false;
+      await sock.sendMessage(jid, { text: `✅ Goodbye messages turned ${mode}.` + (mode === 'on' && masterOff ? '\n\n⚠️ Global master is OFF — run `.welcomegoodbye on` (owner) to let goodbyes through.' : '') }, { quoted: msg });
     }
   },
 

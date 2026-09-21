@@ -756,72 +756,7 @@ async function startBotOnce() {
 
     sock.ev.on('group-participants.update', async (event) => {
       try {
-        if (!event?.id) return;
-        const metadata = await sock.groupMetadata(event.id);
-        groupCache.set(event.id, metadata);
-
-        const settingsStore = require('./utils/settingsStore');
-        const groupSettingsStore = require('./utils/groupSettingsStore');
-        const perGroup = groupSettingsStore.getAll(event.id);
-
-        if (perGroup.pdm && (event.action === 'promote' || event.action === 'demote')) {
-          const authorJid = event.author || '';
-          const authorTag = authorJid ? `@${authorJid.split('@')[0]}` : 'an Admin';
-
-          for (const entry of event.participants) {
-            const participantJid = entry.phoneNumber || entry.id || entry;
-            const participantTag = `@${participantJid.split('@')[0]}`;
-
-            const mentions = [participantJid];
-            if (authorJid) mentions.push(authorJid);
-
-            if (event.action === 'promote') {
-              await sock.sendMessage(event.id, {
-                text: `*ðŸ‘‘ ${authorTag} has crowned ${participantTag}.*`,
-                mentions: mentions,
-              });
-            }
-
-            if (event.action === 'demote') {
-              await sock.sendMessage(event.id, {
-                text: `*ðŸ“‰ ${authorTag} has demoted ${participantTag}.*`,
-                mentions: mentions,
-              });
-            }
-          }
-          return;
-        }
-
-
-        if (settingsStore.get('welcomegoodbye', false)) {
-          const groupSettingsStore = require('./utils/groupSettingsStore');
-          const perGroup = groupSettingsStore.getAll(event.id);
-
-          for (const entry of event.participants) {
-            const participant = entry.phoneNumber || entry.id || entry;
-            if (event.action === 'add' && perGroup.welcome) {
-              await sock.sendMessage(event.id, {
-                text: `ðŸ‘‹ Welcome @${participant.split('@')[0]} to *${metadata.subject}*! Glad to have you here.`,
-                mentions: [participant],
-              });
-            } else if (event.action === 'remove' && perGroup.goodbye) {
-              await sock.sendMessage(event.id, {
-                text: `ðŸ˜¡ @${participant.split('@')[0]} has left *${metadata.subject}*. Goodbye idiot!`,
-                mentions: [participant],
-              });
-            }
-          }
-        }
-
-        if (perGroup.setgreet && event.action === 'add') {
-          for (const entry of event.participants) {
-            const participant = entry.phoneNumber || entry.id || entry;
-            await sock.sendMessage(event.id, {
-              text: `*Hi @${participant.split('@')[0]}, this is âœ¨ CELESTIA - The Most Beautiful Bot âœ¨, glad to have you here*\n> ðŸŒ¸ Heavenly elegance`,
-              mentions: [participant],
-            });
-          }
-        }
+        await require('./utils/greeter').handleParticipantsUpdate(sock, event);
       } catch (error) {
         logger.error(`[groupCache] Failed to update metadata for ${event?.id}: ${error.message}`);
       }
