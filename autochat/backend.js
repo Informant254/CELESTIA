@@ -28,6 +28,10 @@ function groqKey() {
   return settingsStore.get('groq_key', null) || process.env.GROQ_API_KEY || null;
 }
 
+function nvidiaKey() {
+  return settingsStore.get('nvidia_key', null) || process.env.NVIDIA_API_KEY || null;
+}
+
 function apixKey() {
   return settingsStore.get('apix_key', null) || process.env.APIX_KEY || null;
 }
@@ -39,7 +43,7 @@ function openaiKey() {
 function hasKey() {
   let localEnabled = false;
   try { localEnabled = require('./local').status().enabled; } catch {}
-  return !!(codexStatus().authenticated || apixKey() || groqKey() || openzenKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
+  return !!(codexStatus().authenticated || apixKey() || groqKey() || nvidiaKey() || openzenKey() || openrouterKey() || geminiKey() || openaiKey() || localEnabled);
 }
 
 function codexStatus() {
@@ -139,6 +143,51 @@ const OR_MODELS = [
   'nex-agi/nex-n2.5-pro:free',
   'google/gemma-4-31b-it:free',
 ];
+
+// NVIDIA NIM — OpenAI-compatible. Only account-entitled models answer;
+// verified live: mistralai/mistral-nemotron. Anything else fails over.
+const NVIDIA_BASE = process.env.NVIDIA_BASE || 'https://integrate.api.nvidia.com/v1';
+const NVIDIA_MODELS = [
+  'mistralai/mistral-nemotron',
+];
+
+async function nvidia(system, user) {
+  const key = nvidiaKey();
+  if (!key) return null;
+  let axios;
+  try {
+    axios = require('axios');
+  } catch {
+    return null;
+  }
+  for (const model of NVIDIA_MODELS) {
+    try {
+      const r = await axios.post(
+        `${NVIDIA_BASE}/chat/completions`,
+        {
+          model,
+          messages: [
+            { role: 'system', content: system },
+            { role: 'user', content: user },
+          ],
+          max_tokens: 300,
+          temperature: 0.9,
+        },
+        {
+          timeout: 45000,
+          headers: { Authorization: `Bearer ${key}` },
+        }
+      );
+      const text = r.data?.choices?.[0]?.message?.content;
+      if (text && text.trim()) return { text: text.trim(), engine: `nvidia/${model}` };
+    } catch (e) {
+      const detail = e.response?.data?.detail || e.response?.data?.title || e.message;
+      console.error('[autochat] nvidia failed', model, String(detail).slice(0, 100));
+      if (isAuthFailure(e)) break;
+    }
+  }
+  return null;
+}
 
 // OpenCode Zen gateway — OpenAI-compatible, hosts genuinely free models.
 // Key resolution: settingsStore (.autochat setkey openzen) -> env.
@@ -297,6 +346,8 @@ async function complete(system, user) {
   if (ax) return ax;
   const gq = await groq(system, user);
   if (gq) return gq;
+  const nv = await nvidia(system, user);
+  if (nv) return nv;
   const zen = await openzen(system, user);
   if (zen) return zen;
   const or = await openrouter(system, user);
@@ -326,4 +377,4 @@ async function complete(system, user) {
   return null;
 }
 
-module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), openzenKey: () => !!openzenKey(), groqKey: () => !!groqKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
+module.exports = { complete, hasKey, codexStatus, geminiKey: () => !!geminiKey(), openrouterKey: () => !!openrouterKey(), openzenKey: () => !!openzenKey(), groqKey: () => !!groqKey(), nvidiaKey: () => !!nvidiaKey(), apixKey: () => !!apixKey(), openaiKey: () => !!openaiKey(), openaiModel, openai };
