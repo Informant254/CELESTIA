@@ -90,3 +90,42 @@ test('davidcyril API key is attached when configured', async () => {
     else require.cache[axiosPath].exports = orig;
   }
 });
+
+test('yt-dlp uses YouTube cookies when a cookie file is present', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const p = require('node:path');
+  const prev = process.env.YOUTUBE_COOKIES_FILE;
+  const tmp = p.join(fs.mkdtempSync(p.join(os.tmpdir(), 'ck-')), 'youtube.txt');
+  fs.writeFileSync(tmp, '# Netscape HTTP Cookie File\n.youtube.com\tTRUE\t/\tTRUE\t0\tSID\txyz\n');
+  process.env.YOUTUBE_COOKIES_FILE = tmp;
+  try {
+    delete require.cache[require.resolve('../download/ytdlp')];
+    const fresh = require('../download/ytdlp');
+    assert.equal(fresh.cookieFile(), tmp);
+    const args = fresh.baseArgs('/tmp/work', '/usr/bin/ffmpeg', null);
+    const i = args.indexOf('--cookies');
+    assert.ok(i >= 0, '--cookies present');
+    assert.equal(args[i + 1], tmp);
+  } finally {
+    if (prev === undefined) delete process.env.YOUTUBE_COOKIES_FILE;
+    else process.env.YOUTUBE_COOKIES_FILE = prev;
+    try { fs.unlinkSync(tmp); } catch {}
+    delete require.cache[require.resolve('../download/ytdlp')];
+  }
+});
+
+test('yt-dlp omits --cookies when no cookie file exists', () => {
+  const prev = process.env.YOUTUBE_COOKIES_FILE;
+  delete process.env.YOUTUBE_COOKIES_FILE;
+  delete require.cache[require.resolve('../download/ytdlp')];
+  try {
+    const fresh = require('../download/ytdlp');
+    assert.equal(fresh.cookieFile(), null);
+    const args = fresh.baseArgs('/tmp/work', '/usr/bin/ffmpeg', null);
+    assert.ok(!args.includes('--cookies'), 'no --cookies without a file');
+  } finally {
+    if (prev !== undefined) process.env.YOUTUBE_COOKIES_FILE = prev;
+    delete require.cache[require.resolve('../download/ytdlp')];
+  }
+});

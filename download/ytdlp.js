@@ -12,6 +12,25 @@ const { ensureYtDlp, ffmpegPath, aria2cPath } = require('./engines');
 
 const PARTIAL_RE = /\.(part|temp|tmp|ytdl)$/i;
 
+// YouTube trusts a logged-in session far more than a datacenter IP.
+// If the owner drops their browser cookies at cookies/youtube.txt (or
+// YOUTUBE_COOKIES_FILE), every attempt authenticates as them and the
+// "Sign in to confirm you're not a bot" wall usually falls.
+// NEVER commit that file — it's a live YouTube session, like SESSION_ID.
+function cookieFile() {
+  const candidates = [
+    process.env.YOUTUBE_COOKIES_FILE || '',
+    path.join(__dirname, '..', 'cookies', 'youtube.txt'),
+    path.join(__dirname, '..', 'cookies.txt'),
+  ].filter(Boolean);
+  for (const f of candidates) {
+    try {
+      if (fs.existsSync(f) && fs.statSync(f).size > 0) return f;
+    } catch { /* try next */ }
+  }
+  return null;
+}
+
 // workDir -> Set<ChildProcess>
 const live = new Map();
 
@@ -61,6 +80,8 @@ function baseArgs(workDir, ffmpeg, maxBytes) {
     '-o', path.join(workDir, 'out.%(ext)s'),
   ];
   if (maxBytes) a.push('--max-filesize', String(maxBytes));
+  const cookies = cookieFile();
+  if (cookies) a.push('--cookies', cookies);
   return a;
 }
 
@@ -140,4 +161,4 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   return { file, size };
 }
 
-module.exports = { attempt, abortDir, findOutput, baseArgs };
+module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile };

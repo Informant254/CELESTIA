@@ -38,6 +38,10 @@ pairing_sessions/
 # GitHub auth artifacts - NEVER COMMIT
 .gh-*.txt
 
+# YouTube session cookies for yt-dlp - NEVER COMMIT (live login session)
+cookies/
+cookies.txt
+
 *.log
 config/groupSettings.json
 
