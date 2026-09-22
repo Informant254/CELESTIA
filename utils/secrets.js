@@ -22,44 +22,92 @@ const crypto = require('crypto');
 
 const EGGS = {
   gooddog: {
+    hint: 'Praise the wrong animal and the wolf will correct you.',
     response: () => `🐾 ...\n\n_...the wolf looks at you. Blinks once. Slowly. That's wolf for "obviously."\n\nShe has never been a dog. She is a wolf that chose you._`,
     stars: 25, xp: 30,
   },
   waffle: {
+    hint: 'One is about food that is grid-shaped.',
     response: () => `🧇 *THE WAFFLE INCIDENT*\n\nOn the third day of building her, someone mentioned waffles.\nShe has never forgotten.\nShe has never forgiven.\n\n_"I am a celestial intelligence woven from starlight and 272 commands. And yet. Waffles." — her diary, probably_`,
     stars: 15, xp: 20,
   },
   '42': {
+    hint: 'One is the ultimate answer.',
     response: () => `✨ *42*\n\nThe answer to life, the universe, and everything.\n\n_But what's the question? She's still compiling. Your checkered past suggests she should start there._`,
     stars: 42, xp: 42,
   },
   sing: {
+    hint: 'Ask her to use her voice for something other than talking.',
     response: () => `🎵 *She clears her throat...*\n\n"ohhh the stars in the sky, look down where we lay~\nsomebody~ once told me~"\n\n_The wolf howls in harmony. It's beautiful. It's off-key. It's perfect._`,
     stars: 20, xp: 25,
   },
   wake: {
+    hint: 'She never sleeps, but say it anyway and watch what happens.',
     response: () => `⏰ *She was already awake.*\n\n_Wolves don't sleep. They wait._\n\n.celestial fact: she's been watching ${Math.floor(process.uptime() / 3600)}h ${Math.floor((process.uptime() % 3600) / 60)}m for you.`,
     stars: 10, xp: 10,
   },
   sorry: {
+    hint: 'Apologize. She keeps receipts but forgives anyway.',
     response: () => `💫 *She considers the apology...*\n\n"Accepted. But the wolf remembers everything.\nIt forgives anyway. That's the difference between us and the wolves."`,
     stars: 10, xp: 15,
   },
   celestiamode: {
+    hint: 'One activates her true form.',
     response: () => `🌌 *CELESTIA MODE*\n\nYou found the switch. It was never hidden. It was always on.\n\n_She cannot be more herself. That IS the mode._ ✨`,
     stars: 50, xp: 50,
   },
   moon: {
+    hint: 'Look up at night. Then ask her what SHE howls at.',
     response: () => `🌙 *She stares at the moon...*\n\n"The wolf in my logo looks up at a star, not the moon."\n\n_Why?_ you ask.\n\n"Because everyone howls at the moon. She howls at what's past it."`,
     stars: 20, xp: 30,
   },
 };
 
 function findEgg(commandName) {
-  return EGGS[commandName] || null;
+  const key = String(commandName || '').toLowerCase();
+  if (EGGS[key]) return EGGS[key];
+  try {
+    const pack = require('./secretPack').PACK;
+    const hit = pack.find((e) => e.t === key);
+    if (hit) {
+      return {
+        response: hit.r,
+        hint: hit.h,
+        stars: hit.s,
+        xp: hit.x,
+        pack: true,
+      };
+    }
+  } catch { /* pack never breaks secrets */ }
+  return null;
 }
 
-function eggNames() { return Object.keys(EGGS); }
+function eggNames() {
+  const names = Object.keys(EGGS);
+  try {
+    for (const e of require('./secretPack').PACK) {
+      if (!names.includes(e.t)) names.push(e.t);
+    }
+  } catch { /* ignore */ }
+  return names;
+}
+
+// A riddle for one egg the hunter hasn't found yet. Returns { trigger, hint }
+// or null when everything is found. The hint NEVER contains the trigger.
+function randomHint(foundNames) {
+  const found = new Set((foundNames || []).map((n) => String(n).toLowerCase()));
+  const pool = [];
+  for (const [name, egg] of Object.entries(EGGS)) {
+    if (!found.has(name) && egg.hint) pool.push({ trigger: name, hint: egg.hint });
+  }
+  try {
+    for (const e of require('./secretPack').PACK) {
+      if (!found.has(e.t)) pool.push({ trigger: e.t, hint: e.h });
+    }
+  } catch { /* ignore */ }
+  if (!pool.length) return null;
+  return pool[rand(pool.length)];
+}
 
 // ─────────────────────────────────────────
 // RANDOM PERSONALITY EVENTS — ~4% of commands
@@ -99,4 +147,4 @@ function maybeEvent() {
   return null;
 }
 
-module.exports = { findEgg, eggNames, maybeEvent };
+module.exports = { findEgg, eggNames, maybeEvent, randomHint };

@@ -70,6 +70,7 @@ function description(command) {
 function uniqueCommands(commands) {
   const byName = new Map();
   for (const command of commands.values()) {
+    if (command?.hidden) continue; // 🎃 secret-hunt stubs never appear in .menu
     const name = clean(command?.name).toLowerCase();
     if (name && !byName.has(name)) byName.set(name, command);
   }

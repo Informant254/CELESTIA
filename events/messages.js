@@ -871,6 +871,18 @@ function registerMessageHandler(sock, commands) {
                   }
                 } catch { /* never break */ }
 
+                // 🔎 rare secret-hunt rumor (~1 in 100 commands): a riddle
+                // for an egg not yet found. Never names the trigger.
+                try {
+                  if (Math.random() < 0.012) {
+                    const secrets2 = require('../utils/secrets');
+                    const rumor = secrets2.randomHint(game.load().eggsFound);
+                    if (rumor) {
+                      gameToast.push(`🔎 *RUMOR:* ${rumor.hint}\n_${secrets2.eggNames().length} secrets hide in her. That was one trail._`);
+                    }
+                  }
+                } catch { /* never break */ }
+
                 if (!gameToast.length) gameToast = null;
               }
             } catch { /* game never breaks the bot */ }
