@@ -342,14 +342,14 @@ async function complete(system, user) {
       console.error('[autochat] codex unavailable:', String(e.message).slice(0, 100));
     }
   }
-  // Operator default: OpenAI answers first when its key is set (skipped
-  // silently without one). Everything else is failover.
+  // Operator default: Groq's free tier answers first (key verified live).
+  // OpenAI slots in only if you add a key AND Groq fails — free stays default.
+  const gq = await groq(system, user);
+  if (gq) return gq;
   const o = await openai(system, user);
   if (o) return { text: o, engine: `openai/${openaiModel()}` };
   const ax = await apix(system, user);
   if (ax) return ax;
-  const gq = await groq(system, user);
-  if (gq) return gq;
   const nv = await nvidia(system, user);
   if (nv) return nv;
   const zen = await openzen(system, user);

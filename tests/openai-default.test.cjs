@@ -19,16 +19,16 @@ function stubCodexOff() {
   };
 }
 
-function stubLocalOff() {
-  const localPath = require.resolve('../autochat/local');
-  const orig = require.cache[localPath]?.exports;
-  require.cache[localPath] = {
-    id: localPath, filename: localPath, loaded: true,
-    exports: { status: () => ({ enabled: false }), generate: async () => null },
+function stubAxios(postImpl) {
+  const axiosPath = require.resolve('axios');
+  const orig = require.cache[axiosPath]?.exports;
+  require.cache[axiosPath] = {
+    id: axiosPath, filename: axiosPath, loaded: true,
+    exports: { post: postImpl },
   };
   return () => {
-    if (orig === undefined) delete require.cache[localPath];
-    else require.cache[localPath].exports = orig;
+    if (orig === undefined) delete require.cache[axiosPath];
+    else require.cache[axiosPath].exports = orig;
   };
 }
 
@@ -41,33 +41,24 @@ function clearKeys() {
   return () => { for (const [k, v] of Object.entries(saved)) process.env[k] = v; };
 }
 
-test('openai is the default brain when its key is set', async () => {
-  const openaiPath = require.resolve('openai');
-  const orig = require.cache[openaiPath]?.exports;
-  const calls = [];
-  function FakeOpenAI(opts) {
-    calls.push(opts);
-    this.chat = { completions: { create: async () => ({ choices: [{ message: { content: 'oi default' } }] }) } };
-  }
-  require.cache[openaiPath] = { id: openaiPath, filename: openaiPath, loaded: true, exports: { default: FakeOpenAI } };
+test('groq free tier is the default brain even when an openai key exists', async () => {
+  const unaxios = stubAxios(async (url) => {
+    assert.match(url, /groq\.com/);
+    return { data: { choices: [{ message: { content: 'groq default' } }] } };
+  });
   const unkeys = clearKeys();
-  process.env.OPENAI_API_KEY = 'sk-test';
   process.env.GROQ_API_KEY = 'gsk-test';
+  process.env.OPENAI_API_KEY = 'sk-test';
   const uncodex = stubCodexOff();
-  const unlocal = stubLocalOff();
   try {
     const backend = freshBackend();
-    assert.ok(backend.openaiKey(), 'key detected');
     const res = await backend.complete('sys', 'hi');
-    assert.equal(res.text, 'oi default');
-    assert.match(res.engine, /^openai\//);
-    assert.equal(calls[0].apiKey, 'sk-test');
+    assert.equal(res.text, 'groq default');
+    assert.match(res.engine, /^groq\//);
   } finally {
-    unlocal();
     uncodex();
     unkeys();
-    if (orig === undefined) delete require.cache[openaiPath];
-    else require.cache[openaiPath].exports = orig;
+    unaxios();
     delete require.cache[require.resolve('../autochat/backend')];
   }
 });
