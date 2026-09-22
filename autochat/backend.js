@@ -342,6 +342,10 @@ async function complete(system, user) {
       console.error('[autochat] codex unavailable:', String(e.message).slice(0, 100));
     }
   }
+  // Operator default: OpenAI answers first when its key is set (skipped
+  // silently without one). Everything else is failover.
+  const o = await openai(system, user);
+  if (o) return { text: o, engine: `openai/${openaiModel()}` };
   const ax = await apix(system, user);
   if (ax) return ax;
   const gq = await groq(system, user);
@@ -372,8 +376,6 @@ async function complete(system, user) {
   } catch (e) {
     console.error('[autochat] local failed:', String(e.message).slice(0, 100));
   }
-  const o = await openai(system, user);
-  if (o) return { text: o, engine: 'openai' };
   return null;
 }
 
