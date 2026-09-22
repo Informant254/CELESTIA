@@ -181,6 +181,50 @@ test('yt-dlp accepts one configured literal source address', () => {
   }
 });
 
+test('apix is always tried first and wins without touching yt-dlp', async () => {
+  const ytdlpPath = require.resolve('../download/ytdlp');
+  const ffmpegPath = require.resolve('../download/ffmpeg');
+  const apiPath = require.resolve('../utils/downloader');
+  const fallbackPath = require.resolve('../download/fallback');
+  const originals = new Map([ytdlpPath, ffmpegPath, apiPath, fallbackPath].map((p) => [p, require.cache[p]]));
+  let ytdlpCalls = 0;
+  require.cache[ytdlpPath] = { id: ytdlpPath, filename: ytdlpPath, loaded: true, exports: {
+    attempt: async () => { ytdlpCalls++; throw new Error('yt-dlp should not run'); },
+  } };
+  require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: {
+    streams: async () => [{ codec_type: 'audio' }],
+    probe: async () => ({ size: 10, duration: 180 }),
+  } };
+  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {
+    apixAudio: async () => ({ url: 'https://apix.wolvarex.com/api/music/proxy?id=x', title: 'T' }),
+    downloadBuffer: async () => Buffer.from('FAKEMP3'),
+  } };
+  const fs = require('node:fs');
+  const exists = fs.existsSync;
+  const stat = fs.statSync;
+  const written = [];
+  const writeFile = fs.writeFileSync;
+  fs.existsSync = (p) => String(p).endsWith('out.mp3') || exists(p);
+  fs.statSync = (p) => String(p).endsWith('out.mp3') ? { size: 7 } : stat(p);
+  fs.writeFileSync = (p, d) => { written.push(String(p)); };
+  delete require.cache[fallbackPath];
+  try {
+    const fallback = require('../download/fallback');
+    const result = await fallback.downloadWithFallback({
+      url: 'https://youtube.com/watch?v=x', title: 'Artist - Song', isAudio: true, workDir: '/tmp', maxBytes: 100,
+    });
+    assert.equal(result.strategy, 'apix');
+    assert.equal(result.engine, 'apix');
+    assert.equal(ytdlpCalls, 0, 'yt-dlp never attempted');
+    assert.ok(written.some((p) => p.endsWith('out.mp3')), 'bytes written');
+  } finally {
+    fs.existsSync = exists;
+    fs.statSync = stat;
+    fs.writeFileSync = writeFile;
+    for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
+  }
+});
+
 test('audio fallback tries SoundCloud before direct APIs', async () => {
   const ytdlpPath = require.resolve('../download/ytdlp');
   const ffmpegPath = require.resolve('../download/ffmpeg');

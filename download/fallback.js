@@ -78,6 +78,28 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   const byteLimit = maxBytes || (isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES);
   let lastErr = null;
 
+  // Apix FIRST, always: same-host proxied bytes survive the datacenter-IP
+  // wall that kills raw googlevideo links. Needs an Apix key (chat:
+  // .autochat setkey apix <key>) — throws fast without one and everything
+  // below stays as failover.
+  try {
+    const api = require('../utils/downloader');
+    const r = isAudio
+      ? await api.apixAudio(url, title)
+      : await api.apixVideo(url, title);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
+    if (!buf.length) throw new Error('Apix download was empty.');
+    const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
+    fs.writeFileSync(file, buf);
+    await validateFile(file, isAudio);
+    logger.download({ tag, strategy: 'apix', status: 'success' });
+    return { file, size: buf.length, engine: 'apix', strategy: 'apix' };
+  } catch (e) {
+    lastErr = e;
+    logger.download({ tag, strategy: 'apix', status: 'failed', reason: classify(e) });
+    logger.fallback({ tag, from: 'apix' });
+  }
+
   for (const s of youtubeCircuitOpen() ? [] : strategies) {
     try {
       const r = await ytdlp.attempt({
@@ -97,27 +119,6 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
       if (!isRetryable(e)) break;
       logger.fallback({ tag, from: s.name });
     }
-  }
-
-  // Apix first among providers: same-host proxied bytes survive the
-  // datacenter-IP wall that kills raw googlevideo links. Needs an Apix key
-  // (chat: .autochat setkey apix <key>) — skipped silently without one.
-  try {
-    const api = require('../utils/downloader');
-    const r = isAudio
-      ? await api.apixAudio(url, title)
-      : await api.apixVideo(url, title);
-    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
-    if (!buf.length) throw new Error('Apix download was empty.');
-    const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
-    fs.writeFileSync(file, buf);
-    await validateFile(file, isAudio);
-    logger.download({ tag, strategy: 'apix', status: 'success' });
-    return { file, size: buf.length, engine: 'apix', strategy: 'apix' };
-  } catch (e) {
-    lastErr = e;
-    logger.download({ tag, strategy: 'apix', status: 'failed', reason: classify(e) });
-    logger.fallback({ tag, from: 'apix' });
   }
 
   // Free commercial-safe fallback for songs: avoid YouTube's datacenter-IP
