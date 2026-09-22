@@ -260,6 +260,12 @@ async function handleIncoming(sock, msg, text, options = {}) {
   }
   if (!backend.hasKey()) return false; // silent without a key — status shows why
 
+  // One message, one answer: redeliveries (decrypt retries, history/con reconnect
+  // replays) that pass the gates above must not run the brain chain again —
+  // that's the double-reply-different-models bug. Declines never claim, so
+  // fall-through to other handlers keeps working.
+  if (!require('./dedup').claim('auto', chatId, msg.key?.id)) return true;
+
   // Incoming from a contact: buffer it, learn their street language, answer.
   memory.push(chatId, 'them', t);
   try {

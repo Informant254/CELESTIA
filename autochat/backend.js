@@ -342,7 +342,9 @@ async function complete(system, user) {
       console.error('[autochat] codex unavailable:', String(e.message).slice(0, 100));
     }
   }
-  // Operator default: Groq's free tier answers first (key verified live).
+  // Operator default: Groq's free tier answers first — highest free limits
+  // of any key on file (30 RPM / 1,000 req/day / 200k tokens/day on
+  // gpt-oss-120b; Gemini ~250/day, OpenRouter-free ~50/day trail it).
   // OpenAI slots in only if you add a key AND Groq fails — free stays default.
   const gq = await groq(system, user);
   if (gq) return gq;

@@ -127,6 +127,10 @@ async function handleIncoming(sock, msg, text, commands) {
   }
   if (!backend.hasKey()) return false;
 
+  // Same redelivery guard as autochat (own namespace — modes and autochat run
+  // sequentially per delivery, but each answers a given message at most once).
+  if (!require('./dedup').claim('modes', chatId, msg.key?.id)) return true;
+
   const id = memId(m, chatId);
   memory.push(id, 'them', t);
   try {
