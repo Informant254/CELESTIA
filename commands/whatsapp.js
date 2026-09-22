@@ -8,6 +8,10 @@ function resolveJid(msg) {
     : rawJid;
 }
 
+function digits(jid) {
+  return String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
 function getQuoted(sock, msg) {
   const jid = resolveJid(msg);
   const ctx = msg.message?.extendedTextMessage?.contextInfo;
@@ -75,17 +79,18 @@ module.exports = [
     }
 
     const quotedParticipant = ctx.participantPn || ctx.participantAlt || ctx.participant;
-    const quotedDigits = quotedParticipant?.split('@')[0]?.split(':')[0];
-    const botNumber = sock.user?.id?.split(':')[0];
-    const isOwnMessage = !!botNumber && quotedDigits === botNumber;
+    const quotedDigits = digits(quotedParticipant);
+    // The bot's own messages may be addressed by PN or LID — match both.
+    const selfIds = new Set([sock.user?.id, sock.user?.lid].filter(Boolean).map(digits));
+    const isOwnMessage = !!quotedDigits && selfIds.has(quotedDigits);
 
     if (jid.endsWith('@g.us') && !isOwnMessage) {
       const groupMetadata = await sock.groupMetadata(jid);
-      const botJid = (sock.user?.id || '').split(':')[0] + '@s.whatsapp.net';
 
-      const botParticipant = groupMetadata.participants.find(
-        participant => participant.id === botJid
-      );
+      const botParticipant = (groupMetadata.participants || []).find((participant) => {
+        const ids = [participant.id, participant.phoneNumber].filter(Boolean).map(digits);
+        return ids.some((id) => id && selfIds.has(id));
+      });
 
       const isBotAdmin =
         botParticipant &&
@@ -93,7 +98,7 @@ module.exports = [
 
       if (!isBotAdmin) {
         return sock.sendMessage(jid, {
-          text: '*Are you an admin ???.*'
+          text: '*I need admin rights in this group to delete messages.*'
         }, { quoted: msg });
       }
     }
