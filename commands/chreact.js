@@ -112,6 +112,9 @@ module.exports = {
           target = `${target}@newsletter`;
         }
         await sock.newsletterFollow(target);
+        try {
+          await sock.newsletterUnmute(target).catch(() => {});
+        } catch { /* unmute best-effort: muted channels may not push posts */ }
         const list = chreact.channels();
         if (!list.includes(target)) {
           list.push(target);

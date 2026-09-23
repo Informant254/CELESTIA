@@ -381,6 +381,11 @@ function registerMessageHandler(sock, commands) {
       stats.received++;
       if (config.debugMessages) console.log('MESSAGE RECEIVED:', msg.key);
       try {
+        // Newsletter visibility probe: log EVERYTHING from channels, even
+        // payload-less receipts, so we can prove delivery reaches us.
+        if (String(msg.key?.remoteJid || '').endsWith('@newsletter')) {
+          console.log(`[chreact] newsletter traffic: id=${msg.key?.id} server_id=${msg.key?.server_id} fromMe=${!!msg.key?.fromMe} hasMessage=${!!msg.message} type=${type}`);
+        }
         if (!msg.message) continue;
         // ⚡ CHANNEL REACTOR — newsletter posts get a delayed reaction and
         // nothing else (never commands, moderation, or autochat).
