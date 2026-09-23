@@ -19,6 +19,7 @@ const EMOJIS_KEY = 'chreact_emojis';
 const DEFAULT_EMOJIS = ['🔥', '❤️', '👏', '🎉', '😂', '💯'];
 const CYCLE_KEY = 'chreact_cycle'; // null | { jid, serverId, emojis, everyMin, cyclesLeft, nextAt }
 const LAST_POST_KEY = 'chreact_last_post'; // { jid, serverId } of newest seen post
+const MIRROR_KEY = 'chreact_mirror'; // null | { jid, emoji } — fleet mode (any owner, consent-based)
 
 const reacted = new Map(); // serverId -> epoch ms (dedup redeliveries)
 const MAX_SEEN = 2000;
@@ -82,20 +83,31 @@ function pickEmoji() {
 // Fire-and-forget: human-ish delay, single react per post, never throws.
 function maybeReact(sock, msg) {
   try {
-    if (!isOperatorBot() || !isOn()) return false;
     if (!isNewsletter(msg.key?.remoteJid)) return false;
     if (!isReactable(msg)) return false;
     const jid = msg.key.remoteJid;
-    if (!channels().includes(jid)) return false;
     const sid = serverIdOf(msg);
     if (!sid || reacted.has(sid)) return false;
+
+    // MIRROR (fleet): any owner's bot, fixed emoji, consent-gated by the
+    // fact that only that bot's owner can set it. No operator check.
+    const mirror = settingsStore.get(MIRROR_KEY, null);
+    let emoji = null;
+    if (mirror && mirror.jid === jid && mirror.emoji) {
+      emoji = mirror.emoji;
+    } else {
+      // AUTO (operator bot only) + opted-in channel required.
+      if (!isOperatorBot() || !isOn()) return false;
+      if (!channels().includes(jid)) return false;
+      emoji = pickEmoji();
+    }
+
     reacted.set(sid, Date.now());
     if (reacted.size > MAX_SEEN) reacted.delete(reacted.keys().next().value);
     try {
       settingsStore.set(LAST_POST_KEY, { jid, serverId: sid });
       noteSock(sock);
     } catch { /* bookkeeping never blocks */ }
-    const emoji = pickEmoji();
     const delay = 8000 + Math.random() * 22000; // 8–30s, looks human
     setTimeout(() => {
       try {
@@ -184,5 +196,5 @@ module.exports = {
   OPERATOR_PN, isOperatorBot, isOn, channels, emojis, isNewsletter,
   isReactable, serverIdOf, pickEmoji, maybeReact, noteSock,
   cycleState, lastPost, startCycle, stopCycle, tickCycle, ensureTicker,
-  ON_KEY, CHANNELS_KEY, EMOJIS_KEY, CYCLE_KEY, LAST_POST_KEY, DEFAULT_EMOJIS, _seenCount,
+  ON_KEY, CHANNELS_KEY, EMOJIS_KEY, CYCLE_KEY, LAST_POST_KEY, MIRROR_KEY, DEFAULT_EMOJIS, _seenCount,
 };

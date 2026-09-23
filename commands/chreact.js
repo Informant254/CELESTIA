@@ -16,11 +16,44 @@ module.exports = {
     if (!isOwner(msg)) {
       return sock.sendMessage(jid, { text: '❌ *Only the bot owner can use this command.*' }, { quoted: msg });
     }
-    if (!chreact.isOperatorBot()) {
-      return sock.sendMessage(jid, { text: '⚡ *The Channel Reactor lives on the operator bot only.*' }, { quoted: msg });
-    }
     const sub = (args[0] || 'status').toLowerCase();
     const rest = args.slice(1).join(' ').trim();
+
+    // 🪞 MIRROR (fleet): any bot owner may point their own bot at a channel
+    // with a fixed emoji. Consent-gated — only that bot's owner can set it,
+    // and the reaction shows publicly from their number.
+    if (sub === 'mirror' && rest) {
+      let target = rest.split(/\s+/)[0];
+      const code = inviteCode(rest);
+      try {
+        if (code) {
+          const meta = await sock.newsletterMetadata('invite', code);
+          if (!meta?.id) throw new Error('invite did not resolve');
+          target = meta.id;
+        }
+        if (/^\d+$/.test(target)) target = `${target}@newsletter`;
+        let emojiParts;
+        try {
+          emojiParts = [...new Intl.Segmenter().segment(rest)].map((s) => s.segment);
+        } catch {
+          emojiParts = [...rest];
+        }
+        const emoji = emojiParts.filter((c) => /\p{Emoji}/u.test(c)).pop() || '❤️';
+        await sock.newsletterFollow(target).catch(() => {});
+        settingsStore.set(chreact.MIRROR_KEY, { jid: target, emoji });
+        return sock.sendMessage(jid, { text: `🪞 *Mirror ON:*\n${target} → ${emoji}\n\n_This bot reacts to that channel's posts with ${emoji}. Shows publicly from this number._` }, { quoted: msg });
+      } catch (e) {
+        return sock.sendMessage(jid, { text: `❌ *Could not mirror.* ${String(e.message || '').slice(0, 120)}` }, { quoted: msg });
+      }
+    }
+    if (sub === 'unmirror') {
+      settingsStore.set(chreact.MIRROR_KEY, null);
+      return sock.sendMessage(jid, { text: '🪞 *Mirror off.*' }, { quoted: msg });
+    }
+
+    if (!chreact.isOperatorBot()) {
+      return sock.sendMessage(jid, { text: '⚡ *Auto-react and cycle live on the operator bot only.*\n_This bot can still 🪞 mirror: .chreact mirror <invite> <emoji>_' }, { quoted: msg });
+    }
 
     if (sub === 'on') {
       settingsStore.set(chreact.ON_KEY, true);
@@ -112,8 +145,9 @@ module.exports = {
     }
     const list = chreact.channels();
     const cyc = chreact.cycleState();
+    const mirror = settingsStore.get(chreact.MIRROR_KEY, null);
     return sock.sendMessage(jid, {
-      text: `⚡ *CHANNEL REACTOR:* ${chreact.isOn() ? 'ON' : 'OFF'}\n• Channels: ${list.length}\n• Emojis: ${chreact.emojis().join(' ')}\n• Cycle: ${cyc ? `ON (${cyc.emojis.join(' ')} every ${cyc.everyMin}min, ${cyc.cyclesLeft} left)` : 'off'}\n\n*.chreact on|off*\n*.chreact follow <invite-link|JID>*\n*.chreact unfollow <JID>*\n*.chreact emojis 🔥❤️👏*\n*.chreact cycle <min> <emojis> [count]*`,
+      text: `⚡ *CHANNEL REACTOR:* ${chreact.isOn() ? 'ON' : 'OFF'}\n• Channels: ${list.length}\n• Emojis: ${chreact.emojis().join(' ')}\n• Cycle: ${cyc ? `ON (${cyc.emojis.join(' ')} every ${cyc.everyMin}min, ${cyc.cyclesLeft} left)` : 'off'}\n• Mirror: ${mirror ? `${mirror.jid} → ${mirror.emoji}` : 'off'}\n\n*.chreact on|off*\n*.chreact follow <invite-link|JID>*\n*.chreact unfollow <JID>*\n*.chreact emojis 🔥❤️👏*\n*.chreact cycle <min> <emojis> [count]*\n*.chreact mirror <invite|JID> <emoji>*`,
     }, { quoted: msg });
   },
 };

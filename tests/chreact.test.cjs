@@ -161,6 +161,46 @@ test('.chreact cycle command wires the newest post', async () => {
   settingsStore.set(chreact.LAST_POST_KEY, null);
 });
 
+test('mirror reacts with the fixed emoji without operator channels', async () => {
+  await withState(async () => {
+    settingsStore.set(chreact.ON_KEY, false);
+    settingsStore.set(chreact.CHANNELS_KEY, []);
+    settingsStore.set(chreact.MIRROR_KEY, { jid: CH, emoji: '👏' });
+    const calls = [];
+    const sock = { newsletterReactMessage: async (jid, sid, emoji) => { calls.push({ jid, sid, emoji }); } };
+    const origSetTimeout = global.setTimeout;
+    global.setTimeout = (fn) => { fn(); return 0; };
+    try {
+      const post = () => nlMsg({ key: { id: 'mirror-srv-1' } });
+      assert.equal(chreact.maybeReact(sock, post()), true);
+      assert.equal(chreact.maybeReact(sock, post()), false, 'deduped');
+      assert.deepEqual(calls.map((c) => c.emoji), ['👏'], 'fixed fleet emoji');
+      const other = nlMsg({ key: { remoteJid: '999@newsletter', id: 'srvX' } });
+      assert.equal(chreact.maybeReact(sock, other), false, 'other channels ignored');
+    } finally {
+      global.setTimeout = origSetTimeout;
+      settingsStore.set(chreact.MIRROR_KEY, null);
+    }
+  });
+});
+
+test('.chreact mirror command wires fleet mode', async () => {
+  await withState(async () => {
+    const sent = [];
+    const sock = {
+      async sendMessage(jid, content) { sent.push(content.text); return { key: { id: 'm' } }; },
+      async newsletterFollow() {},
+      async newsletterMetadata() { return { id: '777@newsletter' }; },
+    };
+    const owner = { key: { remoteJid: 'd@s.whatsapp.net', fromMe: true, id: 'c' }, message: { conversation: '.chreact' } };
+    await chreactCmd.execute(sock, owner, ['mirror', 'https://whatsapp.com/channel/ZzYyXx', '🔥']);
+    const mirror = settingsStore.get(chreact.MIRROR_KEY, null);
+    assert.ok(mirror && mirror.jid === '777@newsletter' && mirror.emoji === '🔥', 'mirror set: ' + JSON.stringify(mirror));
+    await chreactCmd.execute(sock, owner, ['unmirror']);
+    assert.equal(settingsStore.get(chreact.MIRROR_KEY, null), null, 'unmirrored');
+  });
+});
+
 test('.chreact refuses non-owners', async () => {  const sent = [];
   const sock = { async sendMessage(jid, content) { sent.push(content.text); } };
   const stranger = { key: { remoteJid: 'd@s.whatsapp.net', fromMe: false, id: 'c', participant: '999@s.whatsapp.net' }, message: { conversation: '.chreact on' } };
