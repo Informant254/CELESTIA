@@ -50,6 +50,32 @@ module.exports = {
       settingsStore.set(chreact.MIRROR_KEY, null);
       return sock.sendMessage(jid, { text: '🪞 *Mirror off.*' }, { quoted: msg });
     }
+    if (sub === 'check') {
+      // Diagnostic: does WhatsApp think we follow this channel?
+      let target = rest.split(/\s+/)[0] || chreact.channels()[0];
+      if (!target) {
+        return sock.sendMessage(jid, { text: '❌ *No channel to check.* Usage: *.chreact check <JID>*' }, { quoted: msg });
+      }
+      if (/^\d+$/.test(target)) target = `${target}@newsletter`;
+      try {
+        const meta = await sock.newsletterMetadata('jid', target);
+        if (!meta) throw new Error('no metadata returned');
+        const thread = meta.thread_metadata || {};
+        const viewer = meta.viewer_metadata || {};
+        const lines = [
+          '🔍 *CHANNEL CHECK*',
+          `• Name: ${thread?.name?.text || meta.name || '?'}`,
+          `• JID: ${meta.id || target}`,
+          `• Followers: ${thread.subscribers_count || meta.subscribers || '?'}`,
+          `• Mute: ${viewer.mute || meta.mute_state || '?'}`,
+          `• Role: ${viewer.role || '?'}`,
+          `• Viewer keys: ${Object.keys(viewer).join(', ') || 'none visible'}`,
+        ];
+        return sock.sendMessage(jid, { text: lines.join('\n') }, { quoted: msg });
+      } catch (e) {
+        return sock.sendMessage(jid, { text: `❌ *Check failed:* ${String(e.message || e).slice(0, 160)}` }, { quoted: msg });
+      }
+    }
 
     if (sub === 'on') {
       settingsStore.set(chreact.ON_KEY, true);
