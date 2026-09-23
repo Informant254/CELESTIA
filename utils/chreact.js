@@ -1,12 +1,9 @@
 /**
- * utils/chreact.js — ⚡ CHANNEL REACTOR, exclusive to the operator's bot.
+ * utils/chreact.js — ⚡ CHANNEL REACTOR for every CELESTIA owner.
  *
  * Auto-reacts to new posts in followed WhatsApp Channels (newsletters)
- * with rotating emojis, after a human-ish delay.
- *
- * EXCLUSIVITY: every entry point requires the bot's configured owner to be
- * the operator (OPERATOR_PN). Client deployments carry a different
- * OWNER_NUMBER, so the files can ship everywhere and stay inert there.
+ * with rotating emojis, after a human-ish delay. Any bot owner can use the
+ * full feature set (follow/react/cycle/mirror) on their own channels.
  */
 const settingsStore = require('./settingsStore');
 
@@ -96,10 +93,10 @@ function maybeReact(sock, msg) {
     if (mirror && mirror.jid === jid && mirror.emoji) {
       emoji = mirror.emoji;
     } else {
-      // AUTO (operator bot only) + opted-in channel required.
-      if (!isOperatorBot() || !isOn()) return false;
-      if (!channels().includes(jid)) return false;
-      emoji = pickEmoji();
+    // AUTO: reactor must be ON + channel opted in. Any owner.
+    if (!isOn()) return false;
+    if (!channels().includes(jid)) return false;
+    emoji = pickEmoji();
     }
 
     reacted.set(sid, Date.now());

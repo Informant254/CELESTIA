@@ -33,9 +33,25 @@ function withState(fn) {
   }
 }
 
-test('exclusive to the operator bot', () => {
-  assert.equal(chreact.OPERATOR_PN, '254118266549');
-  assert.equal(chreact.isOperatorBot(), true, 'this repo is the operator bot');
+test('open to every CELESTIA owner, not just the operator', async () => {
+  const config = require('../config/config');
+  const prevOwner = config.ownerNumber;
+  config.ownerNumber = '234000000001';
+  await withState(async () => {
+    settingsStore.set(chreact.ON_KEY, true);
+    settingsStore.set(chreact.CHANNELS_KEY, [CH]);
+    const calls = [];
+    const sock = { newsletterReactMessage: async (jid, sid, emoji) => { calls.push(emoji); } };
+    const origSetTimeout = global.setTimeout;
+    global.setTimeout = (fn) => { fn(); return 0; };
+    try {
+      assert.equal(chreact.maybeReact(sock, nlMsg({ key: { id: 'open-owner-1' } })), true);
+      assert.equal(calls.length, 1, 'any owner bot reacts');
+    } finally {
+      global.setTimeout = origSetTimeout;
+      config.ownerNumber = prevOwner;
+    }
+  });
 });
 
 test('maybeReact ignores non-newsletters, reactions, and protocol', async () => {

@@ -10,7 +10,7 @@ function inviteCode(input) {
 module.exports = {
   name: 'chreact',
   aliases: ['channelreact'],
-  description: '⚡ Auto-react to followed Channel posts (operator only). .chreact on|off|follow|unfollow|list|emojis|status',
+  description: '⚡ Auto-react to Channel posts (owner only). .chreact on|off|follow|cycle|mirror|status',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     if (!isOwner(msg)) {
@@ -49,10 +49,6 @@ module.exports = {
     if (sub === 'unmirror') {
       settingsStore.set(chreact.MIRROR_KEY, null);
       return sock.sendMessage(jid, { text: '🪞 *Mirror off.*' }, { quoted: msg });
-    }
-
-    if (!chreact.isOperatorBot()) {
-      return sock.sendMessage(jid, { text: '⚡ *Auto-react and cycle live on the operator bot only.*\n_This bot can still 🪞 mirror: .chreact mirror <invite> <emoji>_' }, { quoted: msg });
     }
 
     if (sub === 'on') {
