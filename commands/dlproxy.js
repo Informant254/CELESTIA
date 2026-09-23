@@ -27,13 +27,22 @@ module.exports = {
       settingsStore.set('dlproxy_key', null);
       return sock.sendMessage(jid, { text: '📴 *Own proxy disabled — Apix/yt-dlp chain takes over.*' }, { quoted: msg });
     }
+    if (sub === 'apixonly' && args[1]) {
+      const on = args[1].toLowerCase() === 'on';
+      settingsStore.set('download_apix_only', on);
+      return sock.sendMessage(jid, {
+        text: on
+          ? '🔒 *APIX-ONLY mode ON.*\n_Downloads use Apix exclusively — no yt-dlp, no free APIs. If Apix fails, the download fails._'
+          : '🔓 *APIX-ONLY mode OFF.*\n_Full fallback chain restored._',
+      }, { quoted: msg });
+    }
     let status = 'not configured';
     try {
       const self = require('../utils/dlproxy');
       status = self.configured() ? `ON → ${self.baseUrl()}` : 'not configured';
     } catch { /* ignore */ }
     return sock.sendMessage(jid, {
-      text: `🔌 *OWN DOWNLOAD PROXY:* ${status}\n\n• *.dlproxy url <tunnel-url>*\n• *.dlproxy key <client-key>*\n• *.dlproxy off*\n\n_Order: your proxy → Apix → yt-dlp → free APIs._`,
+      text: `🔌 *OWN DOWNLOAD PROXY:* ${status}\n\n• *.dlproxy url <tunnel-url>*\n• *.dlproxy key <client-key>*\n• *.dlproxy off*\n• *.dlproxy apixonly on|off*\n\n_Order: your proxy → Apix → yt-dlp → free APIs (or Apix alone in apix-only)._`,
     }, { quoted: msg });
   },
 };

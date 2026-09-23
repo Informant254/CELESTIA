@@ -61,6 +61,26 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   const byteLimit = maxBytes || (isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES);
   let lastErr = null;
 
+  // APIX-ONLY mode (per-bot policy): skip everything but Apix. Set via
+  // .dlproxy apixonly on — the operator's call, never the default.
+  let apixOnly = false;
+  try {
+    apixOnly = require('../utils/settingsStore').get('download_apix_only', false) === true;
+  } catch { /* default off */ }
+  if (apixOnly) {
+    const api = require('../utils/downloader');
+    const r = isAudio
+      ? await api.apixAudio(url, title)
+      : await api.apixVideo(url, title);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
+    if (!buf.length) throw new Error('Apix download was empty.');
+    const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
+    fs.writeFileSync(file, buf);
+    await validateFile(file, isAudio);
+    logger.download({ tag, strategy: 'apix', status: 'success' });
+    return { file, size: buf.length, engine: 'apix', strategy: 'apix' };
+  }
+
   // Your own proxy FIRST (independence lane): configured via
   // .dlproxy url|key — skips silently when unset.
   try {

@@ -225,6 +225,40 @@ test('apix is always tried first and wins without touching yt-dlp', async () => 
   }
 });
 
+test('apix-only mode skips every fallback and fails fast', async () => {
+  const settingsStore = require('../utils/settingsStore');
+  const prev = settingsStore.get('download_apix_only', undefined);
+  settingsStore.set('download_apix_only', true);
+  const ytdlpPath = require.resolve('../download/ytdlp');
+  const ffmpegPath = require.resolve('../download/ffmpeg');
+  const apiPath = require.resolve('../utils/downloader');
+  const fallbackPath = require.resolve('../download/fallback');
+  const originals = new Map([ytdlpPath, ffmpegPath, apiPath, fallbackPath].map((p) => [p, require.cache[p]]));
+  let ytdlpCalls = 0;
+  require.cache[ytdlpPath] = { id: ytdlpPath, filename: ytdlpPath, loaded: true, exports: {
+    attempt: async () => { ytdlpCalls++; throw new Error('should not run'); },
+  } };
+  require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: {
+    streams: async () => [{ codec_type: 'audio' }],
+  } };
+  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {
+    apixAudio: async () => { throw new Error('Apix down'); },
+  } };
+  delete require.cache[fallbackPath];
+  try {
+    const fallback = require('../download/fallback');
+    await assert.rejects(
+      () => fallback.downloadWithFallback({ url: 'https://youtube.com/watch?v=x', title: 'T', isAudio: true, workDir: '/tmp', maxBytes: 100 }),
+      /Apix down/
+    );
+    assert.equal(ytdlpCalls, 0, 'no fallback attempted');
+  } finally {
+    for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
+    if (prev === undefined) settingsStore.set('download_apix_only', false);
+    else settingsStore.set('download_apix_only', prev);
+  }
+});
+
 test('audio fallback goes to direct APIs when apix and yt-dlp fail', async () => {
   const ytdlpPath = require.resolve('../download/ytdlp');
   const ffmpegPath = require.resolve('../download/ffmpeg');
