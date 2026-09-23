@@ -33,7 +33,7 @@ module.exports = {
       status = self.configured() ? `ON → ${self.baseUrl()}` : 'not configured';
     } catch { /* ignore */ }
     return sock.sendMessage(jid, {
-      text: `🔌 *OWN DOWNLOAD PROXY:* ${status}\n\n• *.dlproxy url <tunnel-url>*\n• *.dlproxy key <client-key>*\n• *.dlproxy off*\n\n_Order: your proxy → Apix → yt-dlp → SoundCloud → free APIs._`,
+      text: `🔌 *OWN DOWNLOAD PROXY:* ${status}\n\n• *.dlproxy url <tunnel-url>*\n• *.dlproxy key <client-key>*\n• *.dlproxy off*\n\n_Order: your proxy → Apix → yt-dlp → free APIs._`,
     }, { quoted: msg });
   },
 };

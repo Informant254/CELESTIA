@@ -36,23 +36,6 @@ function recordYouTubeResult(category, now = Date.now()) {
   }
 }
 
-function soundcloudPlan(title) {
-  const cleaned = String(title || '')
-    .replace(/\s*[([]\s*(official\s+)?(music\s+)?(video|audio|lyrics?|visuali[sz]er)[^\])]*[\])]/ig, '')
-    .trim();
-  const parts = cleaned.split(/\s+-\s+/);
-  if (parts.length < 2) return null;
-  const artist = parts.shift().trim();
-  const track = parts.join(' - ').trim();
-  if (!artist || !track) return null;
-  const regex = (value) => value.replace(/[\\.^$|?*+()[\]{}]/g, '\\$&');
-  const reject = '(?i)(cover|remix|karaoke|tribute|instrumental|slowed|reverb|nightcore|sped up)';
-  return {
-    url: `scsearch10:${artist} ${track}`,
-    filter: `uploader ~= (?i)${regex(artist)} & title ~= (?i)${regex(track)} & title !~= ${reject}`,
-  };
-}
-
 // file exists · size>0 · not partial · inspectable · expected stream present
 async function validateFile(file, isAudio) {
   if (!file || !fs.existsSync(file)) throw new Error('Validated: file missing after download.');
@@ -136,37 +119,6 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
       if (TERMINAL.has(cat)) throw e;
       if (!isRetryable(e)) break;
       logger.fallback({ tag, from: s.name });
-    }
-  }
-
-  // Free commercial-safe fallback for songs: avoid YouTube's datacenter-IP
-  // wall entirely and ask yt-dlp for the closest SoundCloud result. This is
-  // audio-only; video still needs a trusted proxy or provider.
-  const sc = isAudio ? soundcloudPlan(title) : null;
-  if (sc) {
-    try {
-      const r = await ytdlp.attempt({
-        url: sc.url,
-        selector: null,
-        extra: ['--match-filter', sc.filter],
-        audio: true,
-        workDir,
-        onProgress,
-        maxBytes: byteLimit,
-      });
-      await validateFile(r.file, true);
-      const media = await ffmpeg.probe(r.file);
-      if (media.duration && media.duration < 30) {
-        throw new Error('SoundCloud returned a preview instead of the full recording.');
-      }
-      logger.download({ tag, strategy: 'soundcloud-search', status: 'success' });
-      return { ...r, engine: 'yt-dlp', strategy: 'soundcloud-search' };
-    } catch (e) {
-      lastErr = e;
-      const cat = classify(e);
-      logger.download({ tag, strategy: 'soundcloud-search', status: 'failed', reason: cat });
-      if (TERMINAL.has(cat)) throw e;
-      logger.fallback({ tag, from: 'soundcloud-search' });
     }
   }
 
@@ -256,6 +208,6 @@ function isAmbiguous(query, results) {
 }
 
 module.exports = {
-  downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle, soundcloudPlan,
+  downloadWithFallback, validateFile, relevance, bestRelevant, isAmbiguous, sameTitle,
   youtubeCircuitOpen, recordYouTubeResult,
 };

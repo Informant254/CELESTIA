@@ -225,7 +225,7 @@ test('apix is always tried first and wins without touching yt-dlp', async () => 
   }
 });
 
-test('audio fallback tries SoundCloud before direct APIs', async () => {
+test('audio fallback goes to direct APIs when apix and yt-dlp fail', async () => {
   const ytdlpPath = require.resolve('../download/ytdlp');
   const ffmpegPath = require.resolve('../download/ffmpeg');
   const apiPath = require.resolve('../utils/downloader');
@@ -235,43 +235,40 @@ test('audio fallback tries SoundCloud before direct APIs', async () => {
   require.cache[ytdlpPath] = { id: ytdlpPath, filename: ytdlpPath, loaded: true, exports: {
     attempt: async ({ url }) => {
       calls.push(url);
-      if (!String(url).startsWith('scsearch10:')) throw new Error('youtube blocked');
-      return { file: '/tmp/sc.mp3', size: 10 };
+      throw new Error('youtube blocked');
     },
   } };
   require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: {
     streams: async () => [{ codec_type: 'audio' }],
     probe: async () => ({ size: 10, duration: 180 }),
   } };
-  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: { apixAudio: async () => { throw new Error('no Apix key configured'); }, ytAudio: async () => { throw new Error('API should not run'); } } };
+  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {
+    apixAudio: async () => { throw new Error('no Apix key configured'); },
+    ytAudio: async () => ({ url: 'https://example.com/f.mp3', title: 'T' }),
+    downloadBuffer: async () => Buffer.from('DIRECTMP3'),
+  } };
   const fs = require('node:fs');
   const exists = fs.existsSync;
   const stat = fs.statSync;
-  fs.existsSync = (p) => p === '/tmp/sc.mp3' || exists(p);
-  fs.statSync = (p) => p === '/tmp/sc.mp3' ? { size: 10 } : stat(p);
+  const writeFile = fs.writeFileSync;
+  fs.existsSync = (p) => String(p).endsWith('out.mp3') || exists(p);
+  fs.statSync = (p) => String(p).endsWith('out.mp3') ? { size: 9 } : stat(p);
+  fs.writeFileSync = () => {};
   delete require.cache[fallbackPath];
   try {
     const fallback = require('../download/fallback');
     const result = await fallback.downloadWithFallback({
       url: 'https://youtube.com/watch?v=x', title: 'Artist - Song', isAudio: true, workDir: '/tmp', maxBytes: 100,
     });
-    assert.equal(result.strategy, 'soundcloud-search');
-    assert.equal(calls.at(-1), 'scsearch10:Artist Song');
+    assert.equal(result.strategy, 'api-direct');
+    assert.ok(calls.length > 0, 'yt-dlp tried first');
+    assert.ok(!calls.some((u) => String(u).startsWith('scsearch')), 'no soundcloud anywhere');
   } finally {
     fs.existsSync = exists;
     fs.statSync = stat;
+    fs.writeFileSync = writeFile;
     for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
   }
-});
-
-test('SoundCloud fallback requires artist-owned original recording', () => {
-  const fallback = require('../download/fallback');
-  const plan = fallback.soundcloudPlan('Adele - Hello (Official Music Video)');
-  assert.equal(plan.url, 'scsearch10:Adele Hello');
-  assert.match(plan.filter, /uploader ~= \(\?i\)Adele/);
-  assert.match(plan.filter, /title ~= \(\?i\)Hello/);
-  assert.match(plan.filter, /cover\|remix\|karaoke/);
-  assert.equal(fallback.soundcloudPlan('hello'), null, 'ambiguous title is not guessed');
 });
 
 test('apix audio resolves a same-host proxied download URL', async () => {
