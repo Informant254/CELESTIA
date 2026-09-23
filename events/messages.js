@@ -390,6 +390,34 @@ function registerMessageHandler(sock, commands) {
           } catch { /* reactor never breaks chat */ }
           continue;
         }
+        // 🪞 MIRROR NETWORK — learn LID↔PN contacts, then handle fleet
+        // traffic (agent envelopes + master replies) before anything else.
+        const _isGroupJid = String(msg.key?.remoteJid || '').endsWith('@g.us');
+        try {
+          require('../utils/mirror').noteContact(msg);
+        } catch { /* learning never breaks chat */ }
+        if (!msg.key?.fromMe && !_isGroupJid && String(msg.key?.remoteJid || '') !== 'status@broadcast') {
+          try {
+            const mirror = require('../utils/mirror');
+            const dmText = mirror.extractText(msg);
+            // Agent side: obey linked master only, agent must be ON.
+            if (mirror.agentOn() && mirror.isMasterSender(msg, mirror.getMaster())) {
+              if (mirror.parseEnvelope(dmText) !== null) {
+                await mirror.runAgentCommand(sock, msg, commands);
+                continue;
+              }
+            }
+            // Master side: collect fleet replies into pending exec calls.
+            const fleetHit = mirror.matchesFleet(msg);
+            if (fleetHit) {
+              const res = mirror.parseResult(dmText);
+              if (res !== null) {
+                mirror.feedResult(fleetHit, res);
+                continue;
+              }
+            }
+          } catch { /* mirror never breaks chat */ }
+        }
         const activePrefix = settingsStore.get('prefix', config.prefix) || '.';
         const incomingText = extractMessageText(msg.message).trim();
         const incomingName = incomingText.startsWith(activePrefix)
