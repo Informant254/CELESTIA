@@ -81,7 +81,10 @@ function pickEmoji() {
 function maybeReact(sock, msg) {
   try {
     if (!isNewsletter(msg.key?.remoteJid)) return false;
-    if (!isReactable(msg)) return false;
+    if (!isReactable(msg)) {
+      console.log('[chreact] skip: not reactable content');
+      return false;
+    }
     const jid = msg.key.remoteJid;
     const sid = serverIdOf(msg);
     if (!sid || reacted.has(sid)) return false;
@@ -93,10 +96,16 @@ function maybeReact(sock, msg) {
     if (mirror && mirror.jid === jid && mirror.emoji) {
       emoji = mirror.emoji;
     } else {
-    // AUTO: reactor must be ON + channel opted in. Any owner.
-    if (!isOn()) return false;
-    if (!channels().includes(jid)) return false;
-    emoji = pickEmoji();
+      // AUTO: reactor must be ON + channel opted in. Any owner.
+      if (!isOn()) {
+        console.log('[chreact] skip: reactor OFF');
+        return false;
+      }
+      if (!channels().includes(jid)) {
+        console.log(`[chreact] skip: ${jid} not in followed list`);
+        return false;
+      }
+      emoji = pickEmoji();
     }
 
     reacted.set(sid, Date.now());
@@ -106,11 +115,19 @@ function maybeReact(sock, msg) {
       noteSock(sock);
     } catch { /* bookkeeping never blocks */ }
     const delay = 8000 + Math.random() * 22000; // 8–30s, looks human
+    console.log(`[chreact] queued ${emoji} on ${jid} sid=${sid} in ${Math.round(delay / 1000)}s`);
     setTimeout(() => {
       try {
         const p = sock.newsletterReactMessage?.(jid, sid, emoji);
-        if (p && typeof p.catch === 'function') p.catch(() => {});
-      } catch { /* silent */ }
+        if (p && typeof p.then === 'function') {
+          p.then(
+            () => console.log(`[chreact] reacted ${emoji} on ${jid}`),
+            (e) => console.log(`[chreact] react FAILED: ${String(e.message || e).slice(0, 160)}`)
+          );
+        }
+      } catch (e) {
+        console.log(`[chreact] react FAILED: ${String(e.message || e).slice(0, 160)}`);
+      }
     }, delay);
     return true;
   } catch {
