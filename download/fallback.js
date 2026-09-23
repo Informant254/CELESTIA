@@ -92,7 +92,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     return { file, size: r.buf.length, engine: 'dlproxy', strategy: 'dlproxy' };
   } catch (e) {
     lastErr = e;
-    logger.download({ tag, strategy: 'dlproxy', status: 'failed', reason: classify(e) });
+    logger.download({ tag, strategy: 'dlproxy', status: 'failed', reason: classify(e), detail: String(e.message || '').slice(0, 120) });
     logger.fallback({ tag, from: 'dlproxy' });
   }
 
