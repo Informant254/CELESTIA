@@ -382,6 +382,14 @@ function registerMessageHandler(sock, commands) {
       if (config.debugMessages) console.log('MESSAGE RECEIVED:', msg.key);
       try {
         if (!msg.message) continue;
+        // ⚡ CHANNEL REACTOR — newsletter posts get a delayed reaction and
+        // nothing else (never commands, moderation, or autochat).
+        if (String(msg.key?.remoteJid || '').endsWith('@newsletter')) {
+          try {
+            require('../utils/chreact').maybeReact(sock, msg);
+          } catch { /* reactor never breaks chat */ }
+          continue;
+        }
         const activePrefix = settingsStore.get('prefix', config.prefix) || '.';
         const incomingText = extractMessageText(msg.message).trim();
         const incomingName = incomingText.startsWith(activePrefix)
