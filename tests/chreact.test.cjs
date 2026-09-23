@@ -120,8 +120,48 @@ test('.chreact command: on/off/emojis/list/follow/unfollow', async () => {
   });
 });
 
-test('.chreact refuses non-owners', async () => {
+test('cycle rotates emojis then stops', async () => {
+  settingsStore.set(chreact.CYCLE_KEY, null);
+  const calls = [];
+  const sock = { newsletterReactMessage: async (jid, sid, emoji) => { calls.push(emoji); } };
+  const st = chreact.startCycle({ jid: CH, serverId: 'srv9', emojis: ['🔥', '❤️'], everyMin: 2, maxCycles: 3 });
+  assert.ok(st, 'cycle started');
+  assert.equal(st.everyMin, 2);
+  // force due
+  const due = () => {
+    const s = chreact.cycleState();
+    s.nextAt = Date.now() - 1;
+    settingsStore.set(chreact.CYCLE_KEY, s);
+  };
+  due(); assert.equal(await chreact.tickCycle(sock), true);
+  due(); assert.equal(await chreact.tickCycle(sock), true);
+  due(); assert.equal(await chreact.tickCycle(sock), true);
+  assert.deepEqual(calls, ['🔥', '❤️', '🔥'], 'rotates in order');
+  assert.equal(chreact.cycleState(), null, 'stops after max cycles');
+  assert.equal(await chreact.tickCycle(sock), false, 'quiet without state');
+  chreact.stopCycle();
+});
+
+test('.chreact cycle command wires the newest post', async () => {
   const sent = [];
+  const sock = {
+    async sendMessage(jid, content) { sent.push(content.text); return { key: { id: 'm' } }; },
+  };
+  const owner = { key: { remoteJid: 'd@s.whatsapp.net', fromMe: true, id: 'c' }, message: { conversation: '.chreact' } };
+  settingsStore.set(chreact.CYCLE_KEY, null);
+  settingsStore.set(chreact.LAST_POST_KEY, null);
+  await chreactCmd.execute(sock, owner, ['cycle', '10', '🔥❤️']);
+  assert.ok(sent.some((t) => /No channel post seen/.test(t)), 'needs a post first');
+  settingsStore.set(chreact.LAST_POST_KEY, { jid: CH, serverId: 'srv7' });
+  await chreactCmd.execute(sock, owner, ['cycle', '10', '🔥❤️']);
+  const st = chreact.cycleState();
+  assert.ok(st && st.serverId === 'srv7' && st.everyMin === 10, 'cycle armed on newest post');
+  await chreactCmd.execute(sock, owner, ['stopcycle']);
+  assert.equal(chreact.cycleState(), null, 'stopped');
+  settingsStore.set(chreact.LAST_POST_KEY, null);
+});
+
+test('.chreact refuses non-owners', async () => {  const sent = [];
   const sock = { async sendMessage(jid, content) { sent.push(content.text); } };
   const stranger = { key: { remoteJid: 'd@s.whatsapp.net', fromMe: false, id: 'c', participant: '999@s.whatsapp.net' }, message: { conversation: '.chreact on' } };
   await chreactCmd.execute(sock, stranger, ['on']);

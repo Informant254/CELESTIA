@@ -17,6 +17,8 @@ const ON_KEY = 'chreact_on';
 const CHANNELS_KEY = 'chreact_channels'; // [newsletterJid, ...] opted in
 const EMOJIS_KEY = 'chreact_emojis';
 const DEFAULT_EMOJIS = ['🔥', '❤️', '👏', '🎉', '😂', '💯'];
+const CYCLE_KEY = 'chreact_cycle'; // null | { jid, serverId, emojis, everyMin, cyclesLeft, nextAt }
+const LAST_POST_KEY = 'chreact_last_post'; // { jid, serverId } of newest seen post
 
 const reacted = new Map(); // serverId -> epoch ms (dedup redeliveries)
 const MAX_SEEN = 2000;
@@ -89,6 +91,10 @@ function maybeReact(sock, msg) {
     if (!sid || reacted.has(sid)) return false;
     reacted.set(sid, Date.now());
     if (reacted.size > MAX_SEEN) reacted.delete(reacted.keys().next().value);
+    try {
+      settingsStore.set(LAST_POST_KEY, { jid, serverId: sid });
+      noteSock(sock);
+    } catch { /* bookkeeping never blocks */ }
     const emoji = pickEmoji();
     const delay = 8000 + Math.random() * 22000; // 8–30s, looks human
     setTimeout(() => {
@@ -105,8 +111,78 @@ function maybeReact(sock, msg) {
 
 function _seenCount() { return reacted.size; }
 
+// ── CYCLE MODE: keep one post visibly alive ──
+// WhatsApp keeps ONE reaction per account, so "50 reactions" from one bot
+// is impossible — each new emoji replaces the last. Cycling rotates the
+// emoji on your latest post every N minutes, re-pinging followers with
+// activity for hours. Honest heat, not fake counts.
+let ticker = null;
+let liveSock = null;
+
+function cycleState() {
+  const v = settingsStore.get(CYCLE_KEY, null);
+  return v && typeof v === 'object' ? v : null;
+}
+
+function lastPost() {
+  const v = settingsStore.get(LAST_POST_KEY, null);
+  return v && v.jid && v.serverId ? v : null;
+}
+
+function startCycle({ jid, serverId, emojis: list, everyMin, maxCycles }) {
+  const clean = [...new Set((list || []).filter(Boolean))].slice(0, 12);
+  if (!jid || !serverId || !clean.length) return null;
+  const every = Math.min(120, Math.max(2, Number(everyMin) || 10));
+  const total = Math.min(100, Math.max(1, Number(maxCycles) || 24));
+  const state = { jid, serverId, emojis: clean, everyMin: every, cyclesLeft: total, nextAt: Date.now() + every * 60000, idx: 0 };
+  settingsStore.set(CYCLE_KEY, state);
+  ensureTicker();
+  return state;
+}
+
+function stopCycle() {
+  settingsStore.set(CYCLE_KEY, null);
+  if (ticker) { clearInterval(ticker); ticker = null; }
+}
+
+async function tickCycle(sock) {
+  const st = cycleState();
+  if (!st) { if (ticker) { clearInterval(ticker); ticker = null; } return false; }
+  if (Date.now() < st.nextAt || st.cyclesLeft <= 0) return false;
+  const emoji = st.emojis[st.idx % st.emojis.length];
+  try {
+    await sock.newsletterReactMessage(st.jid, st.serverId, emoji);
+  } catch {
+    return false;
+  }
+  st.idx += 1;
+  st.cyclesLeft -= 1;
+  st.nextAt = Date.now() + st.everyMin * 60000;
+  if (st.cyclesLeft <= 0) {
+    settingsStore.set(CYCLE_KEY, null);
+    if (ticker) { clearInterval(ticker); ticker = null; }
+  } else {
+    settingsStore.set(CYCLE_KEY, st);
+  }
+  return true;
+}
+
+function ensureTicker() {
+  if (ticker || !cycleState()) return;
+  ticker = setInterval(() => {
+    if (liveSock) tickCycle(liveSock).catch(() => {});
+  }, 30000);
+  if (ticker.unref) ticker.unref();
+}
+
+function noteSock(sock) {
+  liveSock = sock;
+  ensureTicker();
+}
+
 module.exports = {
   OPERATOR_PN, isOperatorBot, isOn, channels, emojis, isNewsletter,
-  isReactable, serverIdOf, pickEmoji, maybeReact,
-  ON_KEY, CHANNELS_KEY, EMOJIS_KEY, DEFAULT_EMOJIS, _seenCount,
+  isReactable, serverIdOf, pickEmoji, maybeReact, noteSock,
+  cycleState, lastPost, startCycle, stopCycle, tickCycle, ensureTicker,
+  ON_KEY, CHANNELS_KEY, EMOJIS_KEY, CYCLE_KEY, LAST_POST_KEY, DEFAULT_EMOJIS, _seenCount,
 };

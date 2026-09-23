@@ -83,9 +83,37 @@ module.exports = {
         text: list.length ? `⚡ *Reacting in ${list.length} channel(s):*\n${list.map((c) => `• ${c}`).join('\n')}` : '⚡ *No channels yet.*\n_Use .chreact follow <invite-link or JID>_',
       }, { quoted: msg });
     }
+    if (sub === 'cycle') {
+      // .chreact cycle <minutes> <emojis...> — rotate the emoji on the
+      // newest seen post. Optional 3rd arg: total rotations (default 24).
+      const everyMin = Math.min(120, Math.max(2, parseInt(rest.split(/\s+/)[0], 10) || 10));
+      let parts;
+      try {
+        parts = [...new Intl.Segmenter().segment(args.slice(2).join(' '))].map((s) => s.segment);
+      } catch {
+        parts = [...args.slice(2).join(' ')];
+      }
+      let list = [...new Set(parts.filter((c) => /\p{Emoji}/u.test(c)))].slice(0, 12);
+      if (!list.length) list = chreact.emojis();
+      const maxCycles = Math.min(100, Math.max(1, parseInt(args[args.length - 1], 10) && /^\d+$/.test(args[args.length - 1]) ? parseInt(args[args.length - 1], 10) : 24));
+      const post = chreact.lastPost();
+      if (!post) {
+        return sock.sendMessage(jid, { text: '❌ *No channel post seen yet.*\n_Post something first (or wait for the next post), then start the cycle._' }, { quoted: msg });
+      }
+      const st = chreact.startCycle({ jid: post.jid, serverId: post.serverId, emojis: list, everyMin, maxCycles });
+      chreact.noteSock(sock);
+      return sock.sendMessage(jid, {
+        text: `🔁 *CYCLE ON:* ${list.join(' ')} every ${st.everyMin}min × ${st.cyclesLeft}\n_Post: ${post.jid}_\n\n_One reaction per account is WhatsApp's rule — cycling keeps it visibly alive instead._`,
+      }, { quoted: msg });
+    }
+    if (sub === 'stopcycle' || sub === 'cycleoff') {
+      chreact.stopCycle();
+      return sock.sendMessage(jid, { text: '🔁 *Cycle stopped.*' }, { quoted: msg });
+    }
     const list = chreact.channels();
+    const cyc = chreact.cycleState();
     return sock.sendMessage(jid, {
-      text: `⚡ *CHANNEL REACTOR:* ${chreact.isOn() ? 'ON' : 'OFF'}\n• Channels: ${list.length}\n• Emojis: ${chreact.emojis().join(' ')}\n\n*.chreact on|off*\n*.chreact follow <invite-link|JID>*\n*.chreact unfollow <JID>*\n*.chreact emojis 🔥❤️👏*`,
+      text: `⚡ *CHANNEL REACTOR:* ${chreact.isOn() ? 'ON' : 'OFF'}\n• Channels: ${list.length}\n• Emojis: ${chreact.emojis().join(' ')}\n• Cycle: ${cyc ? `ON (${cyc.emojis.join(' ')} every ${cyc.everyMin}min, ${cyc.cyclesLeft} left)` : 'off'}\n\n*.chreact on|off*\n*.chreact follow <invite-link|JID>*\n*.chreact unfollow <JID>*\n*.chreact emojis 🔥❤️👏*\n*.chreact cycle <min> <emojis> [count]*`,
     }, { quoted: msg });
   },
 };
