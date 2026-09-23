@@ -78,7 +78,25 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   const byteLimit = maxBytes || (isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES);
   let lastErr = null;
 
-  // Apix FIRST, always: same-host proxied bytes survive the datacenter-IP
+  // Your own proxy FIRST (independence lane): configured via
+  // .dlproxy url|key — skips silently when unset.
+  try {
+    const self = require('../utils/dlproxy');
+    const r = isAudio
+      ? await self.dlproxyAudio(url)
+      : await self.dlproxyVideo(url);
+    const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
+    fs.writeFileSync(file, r.buf);
+    await validateFile(file, isAudio);
+    logger.download({ tag, strategy: 'dlproxy', status: 'success' });
+    return { file, size: r.buf.length, engine: 'dlproxy', strategy: 'dlproxy' };
+  } catch (e) {
+    lastErr = e;
+    logger.download({ tag, strategy: 'dlproxy', status: 'failed', reason: classify(e) });
+    logger.fallback({ tag, from: 'dlproxy' });
+  }
+
+  // Apix second: same-host proxied bytes survive the datacenter-IP
   // wall that kills raw googlevideo links. Needs an Apix key (chat:
   // .autochat setkey apix <key>) — throws fast without one and everything
   // below stays as failover.

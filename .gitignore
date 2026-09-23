@@ -52,3 +52,6 @@ download/bin/
 downloads/
 # On-server LLM weights (bootstrapped at runtime, ~800MB — never commit)
 autochat/models/
+
+# Download proxy: client keys are secrets — NEVER COMMIT
+dlproxy/keys.json
