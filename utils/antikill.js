@@ -74,8 +74,9 @@ async function handleEvent(sock, event) {
   if (!event || event.action !== 'remove') return false;
   const group = event.id;
   if (!group || !isOn(group)) return false;
-  const removed = event.participants || [];
-  if (!removed.length) return false;
+  const removed = (event.participants || []).filter((p) => p && (typeof p === 'string' || typeof p.id === 'string'));
+  const removedJids = removed.map((p) => (typeof p === 'string' ? p : p.id));
+  if (!removedJids.length) return false;
   const author = event.author;
 
   let metadata;
@@ -90,14 +91,14 @@ async function handleEvent(sock, event) {
   // The bot itself got kicked — can't act from outside; scream for help.
   const botIds = (() => { try { return require('./isAdmin').getBotIdentifiers(sock); } catch { return new Set(); } })();
   const { participantMatches } = require('./isAdmin');
-  const botKicked = removed.some((r) => participantMatches({ id: r }, botIds));
+  const botKicked = removedJids.some((r) => participantMatches({ id: r }, botIds));
   if (botKicked && !alertCooling(group)) {
     await alertOwner(sock, `🚨 *ANTIKILL:* I was removed from *${metadata.subject || group}* by ${author || 'unknown'}.\n_Re-add me so I can restore the group._`);
   }
 
   if (!botIsAdmin) {
-    if (!alertCooling(group) && removed.length >= 2) {
-      await alertOwner(sock, `🚨 *ANTIKILL (${metadata.subject || group}):* ${removed.length} member(s) removed by ${author || 'unknown'} — I'm not admin, can't restore.`);
+    if (!alertCooling(group) && removedJids.length >= 2) {
+      await alertOwner(sock, `🚨 *ANTIKILL (${metadata.subject || group}):* ${removedJids.length} member(s) removed by ${author || 'unknown'} — I'm not admin, can't restore.`);
     }
     return true;
   }
@@ -109,7 +110,7 @@ async function handleEvent(sock, event) {
 
   let restored = 0;
   const restoredNames = [];
-  for (const victim of removed) {
+  for (const victim of removedJids) {
     if (participantMatches({ id: victim }, botIds)) continue; // self: alerted above
     if (isOwnerJid(victim, ownerPn)) {
       // Owner kicked — emergency restore + maximum response.

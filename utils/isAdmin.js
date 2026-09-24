@@ -9,7 +9,14 @@
  */
 
 function normalize(jid) {
-  if (!jid) return null;
+  if (jid === null || jid === undefined) return null;
+  if (typeof jid !== 'string') {
+    try {
+      jid = String(jid);
+    } catch {
+      return null;
+    }
+  }
   const atIndex = jid.indexOf('@');
   if (atIndex === -1) return jid;
   const idPart = jid.slice(0, atIndex).split(':')[0]; // strip device suffix like ":48"
