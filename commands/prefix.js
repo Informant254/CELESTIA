@@ -25,6 +25,12 @@ module.exports = {
       return sock.sendMessage(jid, { text: '❌ Keep the prefix short — 1 to 3 characters works best.' }, { quoted: msg });
     }
 
+    // Letters/digits hijack normal chat (e.g. prefix "x" swallows every
+    // message starting with x and kills ".menu"). Symbols only.
+    if (/[a-zA-Z0-9]/.test(newPrefix)) {
+      return sock.sendMessage(jid, { text: '❌ *Letters and numbers can’t be the prefix* — they eat normal messages.\n\nPick a symbol like `.` `!` `#` `/` `*` instead.' }, { quoted: msg });
+    }
+
     settingsStore.set('prefix', newPrefix);
 
     await sock.sendMessage(jid, {
