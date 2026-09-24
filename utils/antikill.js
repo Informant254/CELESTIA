@@ -11,7 +11,7 @@ const { isBotAdmin } = require('./isAdmin');
 const { isOwner } = require('./isOwner');
 
 const STRIKE_WINDOW_MS = 10 * 60 * 1000;
-const STRIKE_LIMIT = 3;
+const DEFAULT_STRIKE_LIMIT = 3;
 const ALERT_COOLDOWN_MS = 5 * 60 * 1000;
 
 const strikes = new Map(); // `${group}:${author}` -> { count, since }
@@ -130,9 +130,15 @@ async function handleEvent(sock, event) {
   }
 
   // Strike the attacker; persistent attackers get demoted + removed.
+  // Limit is per-group (`.antikill warns <n>`), default 3.
   if (author && !authorIsOwner && !authorIsBot) {
     const n = strike(group, author);
-    if (n >= STRIKE_LIMIT) {
+    let limit = DEFAULT_STRIKE_LIMIT;
+    try {
+      const g = require('./groupSettingsStore').get(group, 'antikill_limit', DEFAULT_STRIKE_LIMIT);
+      if (Number(g) >= 1 && Number(g) <= 10) limit = Number(g);
+    } catch { /* default */ }
+    if (n >= limit) {
       try {
         await sock.groupParticipantsUpdate(group, [author], 'demote');
       } catch { /* may fail on creator/superadmin */ }

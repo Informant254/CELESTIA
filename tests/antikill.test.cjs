@@ -70,6 +70,63 @@ test('silent when flag off', async () => {
   });
 });
 
+const dmOwnerInbox = (text) => ({
+  key: { remoteJid: '999@s.whatsapp.net', fromMe: true, id: 'c' },
+  message: { conversation: text },
+});
+
+function inboxSock(groupId = GROUP) {
+  const sent = [];
+  return {
+    sent,
+    user: { id: '254700000001@s.whatsapp.net' },
+    async groupMetadata(j) {
+      assert.equal(j, groupId);
+      return { id: groupId, subject: 'Remote Fort', participants: [{ id: '254700000001@s.whatsapp.net', admin: 'admin' }] };
+    },
+    async groupGetInviteInfo(code) {
+      assert.equal(code, 'InviteCode1234567890');
+      return { id: groupId, subject: 'Remote Fort' };
+    },
+    async sendMessage(jid, content) { sent.push({ jid, text: content.text }); return { key: { id: 'm' } }; },
+  };
+}
+
+test('inbox arms antikill + warns on a remote group', async () => {
+  const G = '120363666666666666@g.us';
+  const prevFlag = groupSettingsStore.get(G, 'antikill', undefined);
+  const prevLimit = groupSettingsStore.get(G, 'antikill_limit', undefined);
+  const sock = inboxSock(G);
+  try {
+    await antikillCmd.execute(sock, dmOwnerInbox('.antikill'), [G, 'on']);
+    assert.equal(groupSettingsStore.get(G, 'antikill'), true);
+    assert.ok(sock.sent.every((m) => m.jid === '999@s.whatsapp.net'), 'replies in inbox');
+    await antikillCmd.execute(sock, dmOwnerInbox('.antikill'), [G, 'warns', '1']);
+    assert.equal(groupSettingsStore.get(G, 'antikill_limit'), 1);
+    // limit 1 → first hostile kick neutralizes immediately
+    const live = mockSock();
+    live.groupMetadata = async () => ({ id: G, subject: 'Remote Fort', participants: [{ id: '254700000001@s.whatsapp.net', admin: 'admin' }, { id: ATTACKER }, { id: VICTIM1 }] });
+    await antikill.handleEvent(live, { id: G, participants: [VICTIM1], action: 'remove', author: ATTACKER });
+    assert.ok(live.calls.some((c) => c.action === 'demote'), 'one-strike justice');
+  } finally {
+    groupSettingsStore.set(G, 'antikill', prevFlag);
+    groupSettingsStore.set(G, 'antikill_limit', prevLimit);
+  }
+});
+
+test('inbox with invite link resolves the group', async () => {
+  const G = '120363555555555555@g.us';
+  const prevFlag = groupSettingsStore.get(G, 'antikill', undefined);
+  const sock = inboxSock(G);
+  try {
+    await antikillCmd.execute(sock, dmOwnerInbox('.antikill'), ['https://chat.whatsapp.com/InviteCode1234567890', 'on']);
+    assert.equal(groupSettingsStore.get(G, 'antikill'), true);
+    assert.ok(sock.sent.some((m) => /Remote Fort/.test(m.text)), 'group named in reply');
+  } finally {
+    groupSettingsStore.set(G, 'antikill', prevFlag);
+  }
+});
+
 test('.antikill command toggles (admin gate)', async () => {
   const prev = groupSettingsStore.get(GROUP, 'antikill', undefined);
   const sent = [];
