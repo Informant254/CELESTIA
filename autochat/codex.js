@@ -8,7 +8,7 @@ const path = require('path');
 const settingsStore = require('../utils/settingsStore');
 
 const SANDBOX = path.join(os.tmpdir(), 'celestia-codex-text');
-let active = false;
+let queue = Promise.resolve();
 
 function home() {
   return process.env.CODEX_HOME || path.join(os.homedir(), '.codex');
@@ -54,9 +54,7 @@ function threadOptions() {
   };
 }
 
-async function generate(system, user) {
-  if (!status().authenticated || active) return null;
-  active = true;
+async function runGeneration(system, user) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90000);
   try {
@@ -86,8 +84,16 @@ async function generate(system, user) {
     return null;
   } finally {
     clearTimeout(timer);
-    active = false;
   }
+}
+
+async function generate(system, user) {
+  if (!status().authenticated) return null;
+  // The Codex subscription worker is single-flight. Queue overlapping chats
+  // instead of silently sending them to a different provider/personality.
+  const task = queue.then(() => runGeneration(system, user));
+  queue = task.catch(() => null);
+  return task;
 }
 
 module.exports = { generate, status, model, home, safeEnv, threadOptions };
