@@ -100,7 +100,7 @@ const GROQ_MODELS = [
   'openai/gpt-oss-20b',
 ];
 
-async function groq(system, user) {
+async function groq(system, user, options = {}) {
   const key = groqKey();
   if (!key) return null;
   let axios;
@@ -119,7 +119,7 @@ async function groq(system, user) {
             { role: 'system', content: system },
             { role: 'user', content: user },
           ],
-          max_tokens: 300,
+          max_tokens: options.maxTokens || 300,
           temperature: 0.9,
         },
         {
@@ -151,7 +151,7 @@ const NVIDIA_MODELS = [
   'mistralai/mistral-nemotron',
 ];
 
-async function nvidia(system, user) {
+async function nvidia(system, user, options = {}) {
   const key = nvidiaKey();
   if (!key) return null;
   let axios;
@@ -170,7 +170,7 @@ async function nvidia(system, user) {
             { role: 'system', content: system },
             { role: 'user', content: user },
           ],
-          max_tokens: 300,
+          max_tokens: options.maxTokens || 300,
           temperature: 0.9,
         },
         {
@@ -198,7 +198,7 @@ const ZEN_MODELS = [
   'minimax-m3-free',
 ];
 
-async function openzen(system, user) {
+async function openzen(system, user, options = {}) {
   const key = openzenKey();
   if (!key) return null;
   let axios;
@@ -217,7 +217,7 @@ async function openzen(system, user) {
             { role: 'system', content: system },
             { role: 'user', content: user },
           ],
-          max_tokens: 300,
+          max_tokens: options.maxTokens || 300,
           temperature: 0.9,
         },
         {
@@ -236,7 +236,7 @@ async function openzen(system, user) {
   return null;
 }
 
-async function openrouter(system, user) {
+async function openrouter(system, user, options = {}) {
   const key = openrouterKey();
   if (!key) return null;
   let axios;
@@ -255,7 +255,7 @@ async function openrouter(system, user) {
             { role: 'system', content: system },
             { role: 'user', content: user },
           ],
-          max_tokens: 300,
+          max_tokens: options.maxTokens || 300,
           temperature: 0.9,
         },
         {
@@ -278,14 +278,17 @@ async function openrouter(system, user) {
   return null;
 }
 
-async function gemini(prompt) {
+async function gemini(prompt, options = {}) {
   const key = geminiKey();
   if (!key) return null;
   let timer;
   try {
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(key);
-    const model = genAI.getGenerativeModel({ model: 'gemini-flash-latest' });
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-flash-latest',
+      generationConfig: { maxOutputTokens: options.maxTokens || 300 },
+    });
     const result = await Promise.race([
       model.generateContent(prompt),
       new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('gemini timeout')), 60000); }),
@@ -306,7 +309,7 @@ function openaiModel() {
   return m || 'gpt-4o-mini';
 }
 
-async function openai(system, user) {
+async function openai(system, user, options = {}) {
   const key = openaiKey();
   if (!key) return null;
   try {
@@ -318,7 +321,7 @@ async function openai(system, user) {
         { role: 'system', content: system },
         { role: 'user', content: user },
       ],
-      max_tokens: 300,
+      max_tokens: options.maxTokens || 300,
       temperature: 0.9,
     });
     const text = res.choices?.[0]?.message?.content;
@@ -333,7 +336,9 @@ async function openai(system, user) {
 // ChatGPT subscription is preferred when authenticated; key-based providers
 // remain fallbacks when its quota, login, or single-worker slot is unavailable.
 const nap = (ms) => new Promise((r) => setTimeout(r, ms));
-async function complete(system, user) {
+async function complete(system, user, options = {}) {
+  const maxTokens = Math.max(100, Math.min(Number(options.maxTokens) || 300, 4000));
+  options = { ...options, maxTokens };
   if (codexStatus().authenticated) {
     try {
       const text = await require('./codex').generate(system, user);
@@ -346,27 +351,27 @@ async function complete(system, user) {
   // of any key on file (30 RPM / 1,000 req/day / 200k tokens/day on
   // gpt-oss-120b; Gemini ~250/day, OpenRouter-free ~50/day trail it).
   // OpenAI slots in only if you add a key AND Groq fails — free stays default.
-  const gq = await groq(system, user);
+  const gq = await groq(system, user, options);
   if (gq) return gq;
-  const o = await openai(system, user);
+  const o = await openai(system, user, options);
   if (o) return { text: o, engine: `openai/${openaiModel()}` };
   const ax = await apix(system, user);
   if (ax) return ax;
-  const nv = await nvidia(system, user);
+  const nv = await nvidia(system, user, options);
   if (nv) return nv;
-  const zen = await openzen(system, user);
+  const zen = await openzen(system, user, options);
   if (zen) return zen;
-  const or = await openrouter(system, user);
+  const or = await openrouter(system, user, options);
   if (or) return or;
   const prompt = `${system}\n\n---\n\n${user}`;
-  let g = await gemini(prompt);
+  let g = await gemini(prompt, options);
   if (!g) {
     await nap(3000);
-    g = await gemini(prompt);
+    g = await gemini(prompt, options);
   }
   if (!g) {
     await nap(8000);
-    g = await gemini(prompt);
+    g = await gemini(prompt, options);
   }
   if (g === AUTH_FAILURE) g = null;
   if (g) return { text: g, engine: 'gemini' };

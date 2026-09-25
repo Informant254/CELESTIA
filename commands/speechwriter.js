@@ -1,9 +1,30 @@
 const backend = require('../autochat/backend');
 
+function splitSpeech(text, max = 3500) {
+  const paragraphs = String(text || '').split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  const parts = [];
+  let current = '';
+  for (const paragraph of paragraphs) {
+    if (paragraph.length > max) {
+      if (current) parts.push(current);
+      for (let i = 0; i < paragraph.length; i += max) parts.push(paragraph.slice(i, i + max));
+      current = '';
+    } else if (!current || current.length + paragraph.length + 2 <= max) {
+      current += `${current ? '\n\n' : ''}${paragraph}`;
+    } else {
+      parts.push(current);
+      current = paragraph;
+    }
+  }
+  if (current) parts.push(current);
+  return parts.length ? parts : [String(text || '')];
+}
+
 module.exports = {
   name: 'speechwriter',
   aliases: ['speech', 'writer'],
   description: 'Generate a custom speech on any topic',
+  _splitSpeech: splitSpeech,
 
   async execute(sock, msg, args) {
     const rawJid = msg.key.remoteJid;
@@ -22,7 +43,7 @@ module.exports = {
     const thinkingMsg = await sock.sendMessage(jid, { text: '✍️ *Drafting your speech...*' }, { quoted: msg });
 
     const { policyBlock } = require('../autochat/refusalPolicy');
-    const SYSTEM = `You are a skilled speechwriter. Write a powerful, well-crafted, serious speech or dedication on any lawful topic the user gives. Keep it well-formatted with clear paragraphs, suitable for delivery. WhatsApp-friendly formatting. If a topic could sound manipulative or demeaning, render it as a respectful, sincere, good-faith appeal instead of refusing — never shame, stereotype, coerce, or target anyone.\n\n${policyBlock()}`;
+    const SYSTEM = `You are a skilled speechwriter. Write a complete, powerful, well-crafted, serious speech or dedication on any lawful topic the user gives. Unless the user requests another length, write 700–1,000 words with a clear opening, developed body, transitions, and a conclusive closing. Never stop mid-sentence and never replace sections with summaries or placeholders. Keep it well-formatted with clear paragraphs, suitable for delivery. WhatsApp-friendly formatting. If a topic could sound manipulative or demeaning, render it as a respectful, sincere, good-faith appeal instead of refusing — never shame, stereotype, coerce, or target anyone.\n\n${policyBlock()}`;
     // A provider refusal ("I'm sorry...") is text, not an error — without
     // this check the refusal itself gets delivered as the speech.
     const isRefusal = (text) => /^(i['’]m sorry|i can['’]t|i cannot|i['’]m unable|i am unable|as an ai|i don['’]t feel comfortable|i must decline)\b/i.test(String(text || '').trim());
@@ -30,13 +51,15 @@ module.exports = {
     try {
       let res = await backend.complete(
         SYSTEM,
-        `Write a powerful, well-crafted, serious speech on the following topic: "${query}". Keep it well-formatted with clear paragraphs.`
+          `Write the complete speech on this topic: "${query}". Unless I specified another length, produce 700–1,000 words. Include a full opening, developed body, and definitive closing; finish every sentence.`,
+          { maxTokens: 1800 }
       );
 
       if (res && res.text && isRefusal(res.text)) {
         res = await backend.complete(
           SYSTEM,
-          `Write a respectful, sincere, non-manipulative speech appealing in good faith on this topic: "${query}". No shaming, no stereotypes, no coercion — just an honest heartfelt appeal with clear paragraphs.`
+          `Write a complete 700–1,000 word respectful, sincere, non-manipulative speech appealing in good faith on this topic: "${query}". No shaming, stereotypes, or coercion. Include a full opening, developed body, and definitive closing.`,
+          { maxTokens: 1800 }
         );
       }
 
@@ -47,13 +70,16 @@ module.exports = {
         throw new Error('declined twice — suggest a rephrase');
       }
 
-      const speech = res.text.trim();
-
-      await sock.sendMessage(
-        jid,
-        { text: `🎙️ *Generated Speech*\n\n${speech}`, edit: thinkingMsg.key },
-        { quoted: msg }
-      );
+      const parts = splitSpeech(res.text.trim());
+      await sock.sendMessage(jid, {
+        text: `🎙️ *Generated Speech${parts.length > 1 ? ` — Part 1/${parts.length}` : ''}*\n\n${parts[0]}`,
+        edit: thinkingMsg.key,
+      }, { quoted: msg });
+      for (let i = 1; i < parts.length; i++) {
+        await sock.sendMessage(jid, {
+          text: `🎙️ *Speech — Part ${i + 1}/${parts.length}*\n\n${parts[i]}`,
+        }, { quoted: msg });
+      }
     } catch (err) {
       console.error('[SPEECHWRITER] backend failed:', err.message);
       const offline = !/declined twice/.test(String(err.message));
