@@ -7,7 +7,7 @@
  * for counter-action; without admin rights it alerts the owner instead.
  */
 const groupSettingsStore = require('./groupSettingsStore');
-const { isBotAdmin } = require('./isAdmin');
+const { isBotAdmin, participantMatches, normalize } = require('./isAdmin');
 const { isOwner } = require('./isOwner');
 
 const STRIKE_WINDOW_MS = 10 * 60 * 1000;
@@ -42,6 +42,31 @@ function isOwnerJid(jid, ownerPn) {
   return !!jid && !!ownerPn && digits(jid) === ownerPn;
 }
 
+function fieldsOf(value) {
+  if (!value) return [];
+  if (typeof value === 'string') return [value];
+  return [value.id, value.jid, value.lid, value.phoneNumber, value.pn].filter(Boolean);
+}
+
+// Expand one event identifier through group metadata. This bridges WhatsApp's
+// PN/LID split, where the same account can be the victim as @s.whatsapp.net
+// but the event author as @lid (or the reverse).
+function identitySet(value, metadata) {
+  const ids = new Set(fieldsOf(value).map(normalize).filter(Boolean));
+  for (const participant of metadata?.participants || []) {
+    if (!participantMatches(participant, ids)) continue;
+    for (const field of fieldsOf(participant)) ids.add(normalize(field));
+  }
+  return ids;
+}
+
+function sameIdentity(left, right, metadata) {
+  const leftIds = identitySet(left, metadata);
+  const rightIds = identitySet(right, metadata);
+  for (const id of leftIds) if (rightIds.has(id)) return true;
+  return false;
+}
+
 function strike(group, author) {
   const k = `${group}:${author}`;
   const now = Date.now();
@@ -74,10 +99,11 @@ async function handleEvent(sock, event) {
   if (!event || event.action !== 'remove') return false;
   const group = event.id;
   if (!group || !isOn(group)) return false;
-  const removed = (event.participants || []).filter((p) => p && (typeof p === 'string' || typeof p.id === 'string'));
-  const removedJids = removed.map((p) => (typeof p === 'string' ? p : p.id));
+  const removed = (event.participants || []).filter((p) => fieldsOf(p).length);
+  const removedJids = removed.map((p) => fieldsOf(p)[0]);
   if (!removedJids.length) return false;
   const author = event.author;
+  const authorJid = fieldsOf(author)[0] || null;
 
   let metadata;
   try {
@@ -90,27 +116,28 @@ async function handleEvent(sock, event) {
 
   // The bot itself got kicked — can't act from outside; scream for help.
   const botIds = (() => { try { return require('./isAdmin').getBotIdentifiers(sock); } catch { return new Set(); } })();
-  const { participantMatches } = require('./isAdmin');
   const botKicked = removedJids.some((r) => participantMatches({ id: r }, botIds));
   if (botKicked && !alertCooling(group)) {
-    await alertOwner(sock, `🚨 *ANTIKILL:* I was removed from *${metadata.subject || group}* by ${author || 'unknown'}.\n_Re-add me so I can restore the group._`);
+    await alertOwner(sock, `🚨 *ANTIKILL:* I was removed from *${metadata.subject || group}* by ${authorJid || 'unknown'}.\n_Re-add me so I can restore the group._`);
   }
 
   if (!botIsAdmin) {
     if (!alertCooling(group) && removedJids.length >= 2) {
-      await alertOwner(sock, `🚨 *ANTIKILL (${metadata.subject || group}):* ${removedJids.length} member(s) removed by ${author || 'unknown'} — I'm not admin, can't restore.`);
+      await alertOwner(sock, `🚨 *ANTIKILL (${metadata.subject || group}):* ${removedJids.length} member(s) removed by ${authorJid || 'unknown'} — I'm not admin, can't restore.`);
     }
     return true;
   }
 
-  const authorIsOwner = author && (isOwnerJid(author, ownerPn) || (() => {
-    try { return isOwner({ key: { participant: author, remoteJid: group } }); } catch { return false; }
+  const authorIsOwner = authorJid && ([...identitySet(author, metadata)].some((id) => digits(id) === ownerPn) || (() => {
+    try { return isOwner({ key: { participant: authorJid, remoteJid: group } }); } catch { return false; }
   })());
-  const authorIsBot = author && participantMatches({ id: author }, botIds);
+  const authorIsBot = author && participantMatches(typeof author === 'string' ? { id: author } : author, botIds);
 
   let restored = 0;
   const restoredNames = [];
-  for (const victim of removedJids) {
+  for (let i = 0; i < removedJids.length; i++) {
+    const victim = removedJids[i];
+    const victimEvent = removed[i];
     if (participantMatches({ id: victim }, botIds)) continue; // self: alerted above
     if (isOwnerJid(victim, ownerPn)) {
       // Owner kicked — emergency restore + maximum response.
@@ -121,7 +148,7 @@ async function handleEvent(sock, event) {
       } catch { /* keep going */ }
       continue;
     }
-    if (author && digits(author) === digits(victim)) continue; // voluntary leave — respect it
+    if (!authorJid || sameIdentity(author, victimEvent, metadata)) continue; // voluntary leave — respect it
     if (authorIsOwner || authorIsBot) continue; // authorized removal
     try {
       await sock.groupParticipantsUpdate(group, [victim], 'add');
@@ -132,8 +159,8 @@ async function handleEvent(sock, event) {
 
   // Strike the attacker; persistent attackers get demoted + removed.
   // Limit is per-group (`.antikill warns <n>`), default 3.
-  if (author && !authorIsOwner && !authorIsBot) {
-    const n = strike(group, author);
+  if (authorJid && !authorIsOwner && !authorIsBot) {
+    const n = strike(group, authorJid);
     let limit = DEFAULT_STRIKE_LIMIT;
     try {
       const g = require('./groupSettingsStore').get(group, 'antikill_limit', DEFAULT_STRIKE_LIMIT);
@@ -141,14 +168,14 @@ async function handleEvent(sock, event) {
     } catch { /* default */ }
     if (n >= limit) {
       try {
-        await sock.groupParticipantsUpdate(group, [author], 'demote');
+        await sock.groupParticipantsUpdate(group, [authorJid], 'demote');
       } catch { /* may fail on creator/superadmin */ }
       try {
-        await sock.groupParticipantsUpdate(group, [author], 'remove');
-        await sock.sendMessage(group, { text: `🛡️ *ANTIKILL:* @${digits(author)} removed for mass-kicking after ${n} strikes.`, mentions: [author] });
+        await sock.groupParticipantsUpdate(group, [authorJid], 'remove');
+        await sock.sendMessage(group, { text: `🛡️ *ANTIKILL:* @${digits(authorJid)} removed for mass-kicking after ${n} strikes.`, mentions: [authorJid] });
       } catch { /* best effort */ }
       if (!alertCooling(group)) {
-        await alertOwner(sock, `🛡️ *ANTIKILL (${metadata.subject || group}):* neutralized @${digits(author)} after ${n} hostile kicks. Restored ${restored}.`);
+        await alertOwner(sock, `🛡️ *ANTIKILL (${metadata.subject || group}):* neutralized @${digits(authorJid)} after ${n} hostile kicks. Restored ${restored}.`);
       }
     } else if (restored > 0) {
       try {

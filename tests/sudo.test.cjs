@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const addsudo = require('../commands/addsudo');
-const { listSudo } = require('../utils/isSudo');
+const { listSudo, isSudo } = require('../utils/isSudo');
 
 const SUDO_FILE = path.join(__dirname, '..', 'config', 'sudoList.json');
 
@@ -45,6 +45,35 @@ test('reply stores both PN and LID forms of the same person', async () => {
     await addsudo.execute(sock(sent), ownerMsg({ participantPn: '254700000001@s.whatsapp.net', participant: '100000000000002@lid', stanzaId: 'q' }), []);
     const list = listSudo();
     assert.ok(list.includes('254700000001') && list.includes('100000000000002'), 'both forms stored: ' + list.join(','));
+  });
+});
+
+test('sudo accepts any sender PN/LID candidate, not only the first', async () => {
+  await withCleanSudo(async () => {
+    const sent = [];
+    await addsudo.execute(sock(sent), ownerMsg({ participant: '100000000000002@lid' }), []);
+    const incoming = {
+      key: {
+        remoteJid: '120363999999999999@g.us',
+        participantPn: '254700000001@s.whatsapp.net',
+        participant: '100000000000002@lid',
+      },
+    };
+    assert.equal(isSudo(incoming), true, 'stored LID matches even when PN is first');
+  });
+});
+
+test('addsudo enriches a reply from group PN/LID metadata', async () => {
+  await withCleanSudo(async () => {
+    const sent = [];
+    const s = sock(sent);
+    s.groupMetadata = async () => ({ participants: [{
+      id: '100000000000007@lid',
+      phoneNumber: '254700000007@s.whatsapp.net',
+    }] });
+    await addsudo.execute(s, ownerMsg({ participant: '100000000000007@lid' }), []);
+    const list = listSudo();
+    assert.ok(list.includes('100000000000007') && list.includes('254700000007'), 'metadata forms stored');
   });
 });
 

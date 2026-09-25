@@ -51,6 +51,33 @@ test('voluntary leave is respected, owner kicks ignored', async () => {
   });
 });
 
+test('voluntary leave is recognized across PN and LID forms', async () => {
+  await withFlag(true, async () => {
+    const sock = mockSock();
+    const pn = '254711111111@s.whatsapp.net';
+    const lid = '100000000000099@lid';
+    sock.groupMetadata = async () => ({
+      id: GROUP,
+      subject: 'Fort',
+      participants: [
+        { id: BOT, admin: 'admin' },
+        { id: lid, phoneNumber: pn },
+      ],
+    });
+    await antikill.handleEvent(sock, { id: GROUP, participants: [pn], action: 'remove', author: lid });
+    assert.ok(!sock.calls.some((c) => c.action === 'add'), 'leaver not re-added across PN/LID');
+    assert.ok(!sock.calls.some((c) => c.action === 'demote' || c.action === 'remove'), 'leaver not punished');
+  });
+});
+
+test('missing author is treated as a leave, never a hostile kick', async () => {
+  await withFlag(true, async () => {
+    const sock = mockSock();
+    await antikill.handleEvent(sock, { id: GROUP, participants: [VICTIM1], action: 'remove' });
+    assert.equal(sock.calls.length, 0);
+  });
+});
+
 test('repeat attacker is demoted and removed at 3 strikes', async () => {
   await withFlag(true, async () => {
     const sock = mockSock();

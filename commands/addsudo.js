@@ -22,9 +22,29 @@ module.exports = {
     // single identity each. Mirrors delsudo's resolution order.
     const replyForms = [ctx.participantPn, ctx.participantAlt, ctx.participant]
       .map(digitsOf).filter(valid);
-    const numbers = replyForms.length
+    let numbers = replyForms.length
       ? [...new Set(replyForms)]
       : [digitsOf(ctx.mentionedJid?.[0]), digitsOf(args[0])].filter(valid).slice(0, 1);
+
+    // Enrich a reply/tag through group metadata so both the PN and LID are
+    // stored even when the quoted context only carries one of them.
+    if (jid.endsWith('@g.us') && numbers.length) {
+      try {
+        const metadata = await sock.groupMetadata(jid);
+        const { participantMatches, normalize } = require('../utils/isAdmin');
+        const ids = new Set([
+          ctx.participantPn,
+          ctx.participantAlt,
+          ctx.participant,
+          ctx.mentionedJid?.[0],
+        ].filter(Boolean).map(normalize));
+        const participant = (metadata.participants || []).find((p) => participantMatches(p, ids));
+        if (participant) {
+          numbers = [...new Set([...numbers, participant.id, participant.jid, participant.lid, participant.phoneNumber]
+            .map(digitsOf).filter(valid))];
+        }
+      } catch { /* existing forms remain usable */ }
+    }
 
     if (!numbers.length) {
       return sock.sendMessage(jid, {

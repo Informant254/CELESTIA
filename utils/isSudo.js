@@ -30,15 +30,29 @@ function save(list) {
 
 function isSudo(msg) {
   if (isOwner(msg)) return true;
-  const senderJid = msg.key.participantPn || msg.key.participantAlt || msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid;
-  const senderNumber = senderJid.split('@')[0].split(':')[0];
-  return load().includes(senderNumber);
+  const allowed = new Set(load().map(normalizeNumber).filter(Boolean));
+  const candidates = [
+    msg?.participant,
+    msg?.key?.participantPn,
+    msg?.key?.participantAlt,
+    msg?.key?.participant,
+    msg?.key?.remoteJidAlt,
+    msg?.key?.remoteJid,
+  ].map(normalizeNumber).filter(Boolean);
+  return candidates.some((number) => allowed.has(number));
+}
+
+function normalizeNumber(value) {
+  return String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '');
 }
 
 function addSudo(number) {
+  number = normalizeNumber(number);
+  if (!number) return false;
   const list = load();
   if (!list.includes(number)) list.push(number);
   save(list);
+  return true;
 }
 function removeSudo(number) {
   save(load().filter(n => n !== number));
