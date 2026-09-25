@@ -9,9 +9,11 @@ process.env.STICKER_LIBRARY_DIR = root;
 const settingsStore = require('../utils/settingsStore');
 const library = require('../autochat/stickerLibrary');
 const previous = settingsStore.get(library.ENABLED_KEY, undefined);
+const previousImports = settingsStore.get(library.IMPORT_KEY, undefined);
 
 after(() => {
   settingsStore.set(library.ENABLED_KEY, previous === undefined ? {} : previous);
+  settingsStore.set(library.IMPORT_KEY, previousImports === undefined ? {} : previousImports);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -44,4 +46,27 @@ test('stickers can be removed by displayed number', () => {
   const removed = library.remove('1');
   assert.ok(removed);
   assert.equal(library.list().length, before - 1);
+});
+
+test('pack imports track progress and close automatically at their limit', () => {
+  const chat = 'pack@s.whatsapp.net';
+  const started = library.startImport(chat, 'Funny Pack', 3);
+  assert.equal(started.pack, 'funnypack');
+  assert.equal(library.getImport(chat).count, 0);
+  assert.equal(library.advanceImport(chat).complete, false);
+  assert.equal(library.advanceImport(chat).count, 2);
+  const completed = library.advanceImport(chat);
+  assert.equal(completed.complete, true);
+  assert.equal(completed.count, 3);
+  assert.equal(library.getImport(chat), null);
+});
+
+test('pack import can finish early without deleting saved stickers', () => {
+  const chat = 'early@s.whatsapp.net';
+  library.startImport(chat, 'love', 60);
+  library.advanceImport(chat);
+  const finished = library.finishImport(chat);
+  assert.equal(finished.pack, 'love');
+  assert.equal(finished.count, 1);
+  assert.equal(library.getImport(chat), null);
 });

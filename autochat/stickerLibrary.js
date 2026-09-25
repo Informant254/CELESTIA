@@ -6,6 +6,7 @@ const settingsStore = require('../utils/settingsStore');
 const ROOT = process.env.STICKER_LIBRARY_DIR || path.join(__dirname, '../data/autochat-stickers');
 const INDEX = path.join(ROOT, 'index.json');
 const ENABLED_KEY = 'autochat_sticker_chats';
+const IMPORT_KEY = 'autochat_sticker_imports';
 const cooldowns = new Map();
 
 function normalizeMood(value) {
@@ -78,6 +79,44 @@ function setEnabled(chatId, enabled) {
   settingsStore.set(ENABLED_KEY, { ...enabledChats(), [chatId]: enabled === true });
 }
 
+function importSessions() {
+  const value = settingsStore.get(IMPORT_KEY, {});
+  return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function startImport(chatId, pack, limit = 60) {
+  const session = {
+    pack: normalizeMood(pack),
+    count: 0,
+    limit: Math.max(1, Math.min(Number(limit) || 60, 60)),
+    startedAt: Date.now(),
+  };
+  settingsStore.set(IMPORT_KEY, { ...importSessions(), [chatId]: session });
+  return session;
+}
+
+function getImport(chatId) {
+  return importSessions()[chatId] || null;
+}
+
+function advanceImport(chatId) {
+  const sessions = importSessions();
+  const session = sessions[chatId];
+  if (!session) return null;
+  session.count = Number(session.count || 0) + 1;
+  if (session.count >= session.limit) delete sessions[chatId];
+  settingsStore.set(IMPORT_KEY, { ...sessions });
+  return { ...session, complete: session.count >= session.limit };
+}
+
+function finishImport(chatId) {
+  const sessions = importSessions();
+  const session = sessions[chatId] || null;
+  delete sessions[chatId];
+  settingsStore.set(IMPORT_KEY, { ...sessions });
+  return session;
+}
+
 function detectMood(text, available = list()) {
   const input = String(text || '').toLowerCase();
   const labels = [...new Set(available.map((entry) => entry.mood))];
@@ -117,4 +156,8 @@ function shouldSend(chatId, incoming, reply, random = Math.random, now = Date.no
   return true;
 }
 
-module.exports = { add, list, remove, pick, detectMood, shouldSend, isEnabled, setEnabled, normalizeMood, ROOT, INDEX, ENABLED_KEY };
+module.exports = {
+  add, list, remove, pick, detectMood, shouldSend, isEnabled, setEnabled,
+  startImport, getImport, advanceImport, finishImport,
+  normalizeMood, ROOT, INDEX, ENABLED_KEY, IMPORT_KEY,
+};

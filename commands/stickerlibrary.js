@@ -12,6 +12,26 @@ const saveSticker = {
   description: 'Save a replied sticker for autochat: .savesticker <mood>',
   async execute(sock, msg, args) {
     if (!isOwner(msg)) return reply(sock, msg, '❌ *Only the owner can teach sticker packs.*');
+    const sub = String(args[0] || '').toLowerCase();
+    if (sub === 'pack') {
+      const name = args.slice(1).join(' ').trim();
+      if (!name) return reply(sock, msg, '❌ Usage: *.savesticker pack <name>*\nExample: *.savesticker pack funny*');
+      const session = library.startImport(msg.key.remoteJid, name, 60);
+      return reply(sock, msg, `📦 *PACK IMPORT STARTED: ${session.pack}*\n\nNow send the pack’s stickers here. I will save every sticker automatically, up to 60.\n\n*.savesticker status* — progress\n*.savesticker done* — finish early\n*.savesticker cancel* — stop importing`);
+    }
+    if (sub === 'status') {
+      const session = library.getImport(msg.key.remoteJid);
+      return reply(sock, msg, session
+        ? `📦 Importing *${session.pack}*: ${session.count}/${session.limit} stickers saved.`
+        : '📦 No pack import is active in this chat.');
+    }
+    if (sub === 'done' || sub === 'cancel') {
+      const session = library.finishImport(msg.key.remoteJid);
+      if (!session) return reply(sock, msg, '📦 No pack import is active in this chat.');
+      return reply(sock, msg, sub === 'done'
+        ? `✅ Pack *${session.pack}* finished with ${session.count} sticker(s).`
+        : `🛑 Pack import *${session.pack}* stopped after ${session.count} sticker(s). Saved stickers were kept.`);
+    }
     const ctx = msg.message?.extendedTextMessage?.contextInfo || {};
     const quoted = ctx.quotedMessage;
     if (!quoted?.stickerMessage) return reply(sock, msg, '❌ Reply to a sticker with *.savesticker <mood>*');
@@ -20,7 +40,7 @@ const saveSticker = {
         { message: quoted, key: { remoteJid: msg.key.remoteJid, id: ctx.stanzaId, participant: ctx.participant } },
         'buffer', {}, { reuploadRequest: sock.updateMediaMessage }
       );
-      const result = library.add(buffer, args[0]);
+      const result = library.add(buffer, sub);
       return reply(sock, msg, `✅ Sticker ${result.duplicate ? 'updated' : 'saved'} as *${result.entry.mood}* (ID: ${result.entry.id.slice(0, 8)}).`);
     } catch (error) {
       return reply(sock, msg, `❌ Could not save sticker: ${String(error.message || error).slice(0, 120)}`);

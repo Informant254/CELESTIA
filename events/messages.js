@@ -458,6 +458,29 @@ function registerMessageHandler(sock, commands) {
           continue;
         }
 
+        // 📦 STICKER PACK IMPORT — while the owner has a collector open in
+        // this chat, every sticker they send is saved without 60 replies.
+        try {
+          const stickerLibrary = require('../autochat/stickerLibrary');
+          const importSession = stickerLibrary.getImport(msg.key.remoteJid);
+          const content = require('@whiskeysockets/baileys').normalizeMessageContent(msg.message) || msg.message;
+          if (importSession && content?.stickerMessage && require('../utils/isOwner').isOwner(msg)) {
+            const buffer = await downloadMediaMessage(msg, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
+            const saved = stickerLibrary.add(buffer, importSession.pack);
+            const progress = stickerLibrary.advanceImport(msg.key.remoteJid);
+            if (progress.complete || progress.count % 10 === 0) {
+              await sock.sendMessage(msg.key.remoteJid, {
+                text: progress.complete
+                  ? `✅ Pack *${progress.pack}* complete: ${progress.count}/${progress.limit} received.`
+                  : `📦 *${progress.pack}:* ${progress.count}/${progress.limit} received${saved.duplicate ? ' (last was already saved)' : ''}.`,
+              }, { quoted: msg });
+            }
+            continue;
+          }
+        } catch (error) {
+          logger.error(`[sticker-import] ${String(error.message || error).slice(0, 120)}`);
+        }
+
         // Run configured group moderation before privacy/autochat can consume it.
         if (await enforceModeration(sock, msg, commands)) {
           stats.moderated++;
