@@ -14,6 +14,7 @@ const ALLOW = Object.freeze({
   imagine: { max: 500, desc: 'generate an AI image from a description' },
   video: { max: 300, desc: 'generate a short AI video clip from a scene description' },
   aisticker: { max: 300, desc: 'generate a WhatsApp sticker from a description' },
+  mysticker: { max: 24, desc: 'send one sticker from the owner’s saved pack; argument is a mood such as happy, love, sad, angry, hello, bye, or random' },
   tts: { max: 500, desc: 'read text aloud as a voice note' },
 });
 
@@ -40,6 +41,15 @@ function extract(text) {
 
 async function run(sock, msg, commands, func, arg) {
   if (!func || !ALLOW[func]) return false;
+  if (func === 'mysticker') {
+    const library = require('./stickerLibrary');
+    const jid = msg.key.remoteJid;
+    if (!library.isEnabled(jid)) return false;
+    const selected = library.pick(arg);
+    if (!selected) return false;
+    await sock.sendMessage(jid, { sticker: selected.buffer }, { quoted: msg });
+    return true;
+  }
   const cmd = commands && typeof commands.get === 'function' ? commands.get(func) : null;
   if (!cmd || typeof cmd.execute !== 'function') return false;
   const args = String(arg || '').trim().split(/\s+/).filter(Boolean);

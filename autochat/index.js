@@ -305,11 +305,13 @@ async function handleIncoming(sock, msg, text, options = {}) {
     }
     // Operate bot functions first (imagine/video/aisticker/tts), then
     // deliver the remaining chat text. Needs commands via options.
+    let sentSavedSticker = false;
     try {
       const functions = require('./functions');
       const fx = functions.extract(replyText);
       if (fx.func && options.commands) {
-        await functions.run(sock, msg, options.commands, fx.func, fx.arg);
+        const ran = await functions.run(sock, msg, options.commands, fx.func, fx.arg);
+        sentSavedSticker = ran && fx.func === 'mysticker';
         replyText = fx.clean;
       }
     } catch (e) {
@@ -358,6 +360,22 @@ async function handleIncoming(sock, msg, text, options = {}) {
       if (i < parts.length - 1) await human.sleep(900 + Math.random() * 1200);
     }
     memory.push(chatId, 'me', replyText);
+    // Saved-pack stickers are opt-in per chat and deliberately occasional.
+    // Explicit sticker requests bypass the probability, but still require ON.
+    try {
+      const stickers = require('./stickerLibrary');
+      if (!sentSavedSticker && stickers.shouldSend(chatId, t, replyText)) {
+        const mood = stickers.detectMood(`${t}\n${replyText}`);
+        const selected = stickers.pick(mood);
+        if (selected) {
+          const sentSticker = await sock.sendMessage(chatId, { sticker: selected.buffer });
+          noteSent(chatId, sentSticker?.key?.id);
+          memory.push(chatId, 'me', `[sent ${selected.entry.mood} sticker]`);
+        }
+      }
+    } catch (e) {
+      console.error('[autochat] saved sticker failed:', String(e.message || e).slice(0, 100));
+    }
     try {
       await sock.sendPresenceUpdate('paused', chatId);
     } catch { /* cosmetic */ }
