@@ -29,6 +29,16 @@ function saveToDisk(currentState) {
 
 let state = USE_DB ? {} : loadFromDisk();
 
+function repairUnsafePrefix() {
+    const prefix = state.prefix;
+    if (typeof prefix !== 'string' || !/[a-zA-Z0-9]/.test(prefix)) return false;
+    state.prefix = '.';
+    console.warn(`[settingsStore] Reset unsafe alphanumeric prefix ${JSON.stringify(prefix)} to "."`);
+    return true;
+}
+
+if (!USE_DB && repairUnsafePrefix()) saveToDisk(state);
+
 const ready = USE_DB
     ? db.query(`
         CREATE TABLE IF NOT EXISTS bot_settings (
@@ -39,6 +49,13 @@ const ready = USE_DB
       .then(async () => {
           const { rows } = await db.query('SELECT key, value FROM bot_settings');
           for (const row of rows) state[row.key] = row.value;
+          if (repairUnsafePrefix()) {
+              await db.query(
+                  `INSERT INTO bot_settings (key, value) VALUES ($1, $2)
+                   ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+                  ['prefix', JSON.stringify('.')]
+              );
+          }
           console.log('✅ settingsStore: loaded settings from PostgreSQL');
       })
       .catch((err) => {
