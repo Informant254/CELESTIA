@@ -339,6 +339,7 @@ const nap = (ms) => new Promise((r) => setTimeout(r, ms));
 async function complete(system, user, options = {}) {
   const maxTokens = Math.max(100, Math.min(Number(options.maxTokens) || 300, 4000));
   options = { ...options, maxTokens };
+  const codexOnly = options.provider === 'codex';
   if (codexStatus().authenticated) {
     try {
       const text = await require('./codex').generate(system, user);
@@ -347,6 +348,7 @@ async function complete(system, user, options = {}) {
       console.error('[autochat] codex unavailable:', String(e.message).slice(0, 100));
     }
   }
+  if (codexOnly) return null;
   // Operator default: Groq's free tier answers first — highest free limits
   // of any key on file (30 RPM / 1,000 req/day / 200k tokens/day on
   // gpt-oss-120b; Gemini ~250/day, OpenRouter-free ~50/day trail it).

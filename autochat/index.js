@@ -290,14 +290,22 @@ async function handleIncoming(sock, msg, text, options = {}) {
       contactName: contactName(msg),
       flirt: require('./flirt').isAllowed(msg),
     });
-    const res = await backend.complete(system, needsQuestion(chatId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user);
+    const res = await backend.complete(
+      system,
+      needsQuestion(chatId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user,
+      { provider: 'codex' }
+    );
     if (!res || !res.text) return false;
     console.log(`[autochat] engine: ${res.engine || 'unknown'}`);
     let replyText = sanitizeReply(res.text);
     // Loop guard: a brain stuck repeating one word gets ONE fresh sample.
     if (isDegenerate(replyText, chatId) || isRepeat(replyText, chatId)) {
       console.log('[autochat] degenerate/repeat reply, resampling once');
-      const retry = await backend.complete(system, `${user}\n(Say it completely differently from your last replies. Never repeat one word.)`);
+      const retry = await backend.complete(
+        system,
+        `${user}\n(Say it completely differently from your last replies. Never repeat one word.)`,
+        { provider: 'codex' }
+      );
       if (retry && retry.text && !isDegenerate(retry.text, chatId) && !isRepeat(retry.text, chatId)) {
         console.log(`[autochat] engine: ${retry.engine || 'unknown'} (resample)`);
         replyText = sanitizeReply(retry.text);
