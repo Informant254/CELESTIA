@@ -215,6 +215,20 @@ test('autochat persona advertises function ability', () => {
   memory.clear(chatId);
 });
 
+test('group autochat is transparent and makes no owner identity claim', () => {
+  const persona = require('../autochat/persona');
+  const built = persona.build({
+    chatId: '120363999999999999@g.us',
+    incoming: 'who is this?',
+    pushName: 'CELESTIA',
+    contactName: 'Friend',
+  });
+  assert.match(built.system, /Never pretend to be a group member or the account owner/);
+  assert.match(built.system, /CELESTIA is helping with replies/);
+  assert.doesNotMatch(built.system, /Nobody should suspect otherwise/);
+  assert.match(built.user, /GROUP MESSAGE/);
+});
+
 test('autochat runs a tagged function before delivering clean text', async () => {
   const restore = saveRestore([index.MODE_KEY, 'gemini_key', 'prefix']);
   const prevComplete = backend.complete;

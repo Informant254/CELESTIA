@@ -234,6 +234,10 @@ async function handleIncoming(sock, msg, text, options = {}) {
   // Always learn from the owner's own texts (voice bank), never answer them.
   if (fromMe) {
     learnSelfLid(msg); // her LID lives here — persist it for reply/tag matching
+    // Never feed autochat's own outgoing replies back into the owner voice
+    // bank. That feedback loop makes the style progressively synthetic.
+    const generated = (sentIds.get(chatId) || []).includes(msg.key?.id);
+    if (generated) return false;
     if (t) {
       voice.collect(t);
       memory.push(chatId, 'me', t);
