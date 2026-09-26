@@ -44,6 +44,14 @@ function isGroup(jid) {
   return String(jid || '').endsWith('@g.us');
 }
 
+function conversationId(msg) {
+  const chatId = msg?.key?.remoteJid;
+  if (!isGroup(chatId)) return chatId;
+  const sender = msg.key.participantPn || msg.key.participantAlt || msg.key.participant || msg.participant;
+  const id = String(sender || 'unknown').split('@')[0].split(':')[0];
+  return `${chatId}::${id}`;
+}
+
 function contactName(msg) {
   return msg.pushName || msg.verifiedBizName || null;
 }
@@ -228,6 +236,7 @@ function canHandle(sock, msg) {
 
 async function handleIncoming(sock, msg, text, options = {}) {
   const chatId = msg.key.remoteJid;
+  const threadId = conversationId(msg);
   const t = String(text || '').trim();
   const fromMe = !!msg.key.fromMe;
 
@@ -240,7 +249,9 @@ async function handleIncoming(sock, msg, text, options = {}) {
     if (generated) return false;
     if (t) {
       voice.collect(t);
-      memory.push(chatId, 'me', t);
+      // An owner's general group message does not belong to every member's
+      // private thread. In DMs, retain it as normal conversation history.
+      if (!isGroup(chatId)) memory.push(threadId, 'me', t);
     }
     return false;
   }
@@ -271,16 +282,16 @@ async function handleIncoming(sock, msg, text, options = {}) {
   if (!require('./dedup').claim('auto', chatId, msg.key?.id)) return true;
 
   // Incoming from a contact: buffer it, learn their street language, answer.
-  memory.push(chatId, 'them', t);
+  memory.push(threadId, 'them', t);
   try {
-    require('./dialect').harvest(chatId, t);
+    require('./dialect').harvest(threadId, t);
   } catch { /* dialect never breaks chat */ }
   // ...unless a react says it better. No text, no machinery, just human.
   if (!options.voiceReply && shouldReact(t)) {
     try {
       const emoji = pickReact(t);
       await sock.sendMessage(chatId, { react: { text: emoji, key: msg.key } });
-      memory.push(chatId, 'me', `[reacted ${emoji}]`);
+      memory.push(threadId, 'me', `[reacted ${emoji}]`);
       return true;
     } catch { /* fall through to a text reply */ }
   }
@@ -289,6 +300,8 @@ async function handleIncoming(sock, msg, text, options = {}) {
     await sock.sendPresenceUpdate(options.voiceReply ? 'recording' : 'composing', chatId).catch(() => {});
     const { system, user } = persona.build({
       chatId,
+      threadId,
+      groupChat: isGroup(chatId),
       incoming: t,
       pushName: sock.user?.name || null,
       contactName: contactName(msg),
@@ -296,21 +309,21 @@ async function handleIncoming(sock, msg, text, options = {}) {
     });
     const res = await backend.complete(
       system,
-      needsQuestion(chatId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user,
+      needsQuestion(threadId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user,
       { preferProvider: 'codex' }
     );
     if (!res || !res.text) return false;
     console.log(`[autochat] engine: ${res.engine || 'unknown'}`);
     let replyText = sanitizeReply(res.text);
     // Loop guard: a brain stuck repeating one word gets ONE fresh sample.
-    if (isDegenerate(replyText, chatId) || isRepeat(replyText, chatId)) {
+    if (isDegenerate(replyText, threadId) || isRepeat(replyText, threadId)) {
       console.log('[autochat] degenerate/repeat reply, resampling once');
       const retry = await backend.complete(
         system,
         `${user}\n(Say it completely differently from your last replies. Never repeat one word.)`,
         { preferProvider: 'codex' }
       );
-      if (retry && retry.text && !isDegenerate(retry.text, chatId) && !isRepeat(retry.text, chatId)) {
+      if (retry && retry.text && !isDegenerate(retry.text, threadId) && !isRepeat(retry.text, threadId)) {
         console.log(`[autochat] engine: ${retry.engine || 'unknown'} (resample)`);
         replyText = sanitizeReply(retry.text);
       }
@@ -330,7 +343,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
       console.error('[autochat] function failed:', String(e.message).slice(0, 100));
     }
     if (!replyText) {
-      memory.push(chatId, 'me', '[ran a function]');
+      memory.push(threadId, 'me', '[ran a function]');
       try {
         await sock.sendPresenceUpdate('paused', chatId).catch(() => {});
       } catch { /* cosmetic */ }
@@ -343,7 +356,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
         const audio = await require('../utils/speech').synthesizeVoice(replyText, options.language || 'en-US');
         const sentMsg = await sendThreaded(sock, chatId, msg, { audio, mimetype: 'audio/ogg; codecs=opus', ptt: true }, true);
         noteSent(chatId, sentMsg?.key?.id);
-        memory.push(chatId, 'me', replyText);
+        memory.push(threadId, 'me', replyText);
         await sock.sendPresenceUpdate('paused', chatId).catch(() => {});
         return true;
       } catch (e) {
@@ -371,7 +384,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
       }
       if (i < parts.length - 1) await human.sleep(900 + Math.random() * 1200);
     }
-    memory.push(chatId, 'me', replyText);
+    memory.push(threadId, 'me', replyText);
     // Saved-pack stickers are opt-in per chat and deliberately occasional.
     // Explicit sticker requests bypass the probability, but still require ON.
     try {
@@ -382,7 +395,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
         if (selected) {
           const sentSticker = await sock.sendMessage(chatId, { sticker: selected.buffer });
           noteSent(chatId, sentSticker?.key?.id);
-          memory.push(chatId, 'me', `[sent ${selected.entry.mood} sticker]`);
+          memory.push(threadId, 'me', `[sent ${selected.entry.mood} sticker]`);
         }
       }
     } catch (e) {
@@ -398,4 +411,4 @@ async function handleIncoming(sock, msg, text, options = {}) {
   }
 }
 
-module.exports = { handleIncoming, canHandle, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList, groupGate, noteSent };
+module.exports = { handleIncoming, canHandle, mode, MODE_KEY, isGroupAllowed, setGroupAllowed, groupList, groupGate, noteSent, conversationId };

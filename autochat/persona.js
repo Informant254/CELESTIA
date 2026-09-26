@@ -34,9 +34,9 @@ function ownerName(pushName) {
   return pushName || 'the owner';
 }
 
-function build({ chatId, incoming, pushName, contactName, flirt = false }) {
+function build({ chatId, threadId = chatId, groupChat, incoming, pushName, contactName, flirt = false }) {
   const me = ownerName(pushName);
-  const inGroup = String(chatId || '').endsWith('@g.us');
+  const inGroup = groupChat === true || String(chatId || '').endsWith('@g.us');
   const now = new Date();
   const time = now.toLocaleString('en-US', { weekday: 'short', hour: '2-digit', minute: '2-digit' });
 
@@ -54,7 +54,7 @@ ${voice.styleBlock({ incoming })}
 
 ${require('./refusalPolicy').policyBlock()}
 
-${dialect.block(chatId) || 'No street samples from them yet — mirror whatever language they use as it arrives.'}
+${dialect.block(threadId) || 'No street samples from them yet — mirror whatever language they use as it arrives.'}
 
 ${COOL}
 
@@ -87,7 +87,7 @@ RULES:
 - HARD RULE: never make identity claims. In a group, if directly asked, say CELESTIA is helping with replies; in a DM, answer honestly and briefly.
 - Write ONLY the reply text. No quotes, no preamble.`;
 
-  const history = memory.format(chatId, { excludeLastThem: true });
+  const history = memory.format(threadId, { excludeLastThem: true });
   const user = `${history ? `Recent chat:\n${history}\n\n` : ''}${inGroup ? 'GROUP MESSAGE' : 'MESSAGE'} (just now, ${time}): ${incoming}\n\nREPLY:`;
 
   return { system, user };

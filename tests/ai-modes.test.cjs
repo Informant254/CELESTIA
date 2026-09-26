@@ -229,6 +229,37 @@ test('group autochat is transparent and makes no owner identity claim', () => {
   assert.match(built.user, /GROUP MESSAGE/);
 });
 
+test('group members get separate conversation threads', () => {
+  const { conversationId } = require('../autochat/index');
+  const g = '120363999999999999@g.us';
+  const a = conversationId({ key: { remoteJid: g, participant: '100000000000001@lid' } });
+  const b = conversationId({ key: { remoteJid: g, participant: '100000000000002@lid' } });
+  assert.notEqual(a, b, 'different senders, different threads');
+  assert.ok(a.startsWith(g) && b.startsWith(g), 'threads scoped to the group');
+  assert.equal(conversationId({ key: { remoteJid: '2547@s.whatsapp.net' } }), '2547@s.whatsapp.net', 'DMs keep one thread');
+});
+
+test('persona history is per-thread, not per-group', () => {
+  const memory = require('../autochat/memory');
+  const persona = require('../autochat/persona');
+  const g = '120363999999999999@g.us';
+  const t1 = `${g}::100000000000001`;
+  const t2 = `${g}::100000000000002`;
+  memory.clear(t1); memory.clear(t2);
+  try {
+    memory.push(t1, 'them', 'my dog is called Bruno');
+    memory.push(t1, 'me', 'Bruno sounds like a good boy');
+    memory.push(t2, 'them', 'my cat is called Whiskers');
+    memory.push(t2, 'me', 'Whiskers sounds lovely');
+    const b1 = persona.build({ chatId: g, threadId: t1, groupChat: true, incoming: 'what is my pet called?' });
+    const b2 = persona.build({ chatId: g, threadId: t2, groupChat: true, incoming: 'what is my pet called?' });
+    assert.ok(b1.user.includes('Bruno') && !b1.user.includes('Whiskers'), 'thread 1 sees only its story');
+    assert.ok(b2.user.includes('Whiskers') && !b2.user.includes('Bruno'), 'thread 2 sees only its story');
+  } finally {
+    memory.clear(t1); memory.clear(t2);
+  }
+});
+
 test('autochat runs a tagged function before delivering clean text', async () => {
   const restore = saveRestore([index.MODE_KEY, 'gemini_key', 'prefix']);
   const prevComplete = backend.complete;
