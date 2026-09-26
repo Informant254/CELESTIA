@@ -18,14 +18,37 @@ test('house flavor follows the same short playful logic as taught data', () => {
   assert.ok(house.some((l) => /😂|😭|🔥|😌|😏/.test(l)), 'same emoji energy');
 });
 
-test('style block blends stored lessons with house flavor', () => {
+test('style block blends stored lessons with house flavor while bank is thin', () => {
   const previous = settingsStore.get('autochat_voice', []);
   try {
     settingsStore.set('autochat_voice', ['my own taught line about the match']);
     const block = voice.styleBlock({ incoming: 'hello' });
     assert.match(block, /my own taught line about the match/);
     assert.match(block, /House flavor in the same energy/);
-    assert.match(block, /OWNER STYLE FINGERPRINT \(1 taught lines \+ house flavor\)/);
+    assert.match(block, /OWNER STYLE FINGERPRINT \(1 taught lines\)/);
+  } finally {
+    settingsStore.set('autochat_voice', previous);
+  }
+});
+
+test('style block drops house flavor once the owner bank is rich', () => {
+  const previous = settingsStore.get('autochat_voice', []);
+  try {
+    settingsStore.set('autochat_voice', Array.from({ length: 15 }, (_, i) => `my real line number ${i} hapo`));
+    const block = voice.styleBlock({ incoming: 'hello' });
+    assert.ok(!/House flavor in the same energy/.test(block), 'owner voice stands alone');
+    assert.match(block, /OWNER STYLE FINGERPRINT \(15 taught lines\)/);
+  } finally {
+    settingsStore.set('autochat_voice', previous);
+  }
+});
+
+test('long technical paragraphs are rejected as voice samples', () => {
+  const previous = settingsStore.get('autochat_voice', []);
+  try {
+    settingsStore.set('autochat_voice', []);
+    const added = voice.learn('sawa poa\n' + 'x'.repeat(200) + '\nshort line\npara one\n\npara two');
+    assert.equal(added, 4, 'the 200-char line is rejected, short lines banked');
   } finally {
     settingsStore.set('autochat_voice', previous);
   }

@@ -26,6 +26,9 @@ function validSample(text) {
   const t = String(text || '').trim().slice(0, 280);
   if (!t || t.length < 2 || SECRET_RE.test(t)) return null;
   if (/^[./!#]/.test(t) || /^https?:\/\//.test(t)) return null;
+  // Owner texts are short bursts — long technical paragraphs teach the
+  // wrong register (essays, error logs, command drafts).
+  if (t.length > 140 || t.includes('\n\n')) return null;
   return t;
 }
 
@@ -150,21 +153,24 @@ function pickSamples(v, n = 12, context = '') {
 }
 
 // Style block for the prompt: stats + representative examples.
-// Stored lessons stay authoritative; house flavor blends the same energy.
+// Once the owner has taught enough lines, their voice stands alone —
+// house flavor only fills the gap while the bank is still thin.
 function styleBlock({ incoming = '' } = {}) {
   const stored = all();
   const house = houseLines();
   if (!stored.length && !house.length) return 'No voice samples yet — write naturally and I will pick up the style.';
-  const fromStored = stored.length ? pickSamples(stored, 10, incoming) : [];
-  const fromHouse = pickSamples(house, stored.length ? Math.max(2, 14 - fromStored.length) : Math.min(14, house.length), incoming);
-  const p = profile();
-  return [
-    `OWNER STYLE FINGERPRINT (${stored.length} taught lines + house flavor): median ${p.medianLen} chars; emoji ${Math.round(p.emojiRate * 100)}%; questions ${Math.round(p.questionRate * 100)}%; lowercase ${Math.round(p.lowercaseRate * 100)}%; laughter ${Math.round(p.laughterRate * 100)}%.`,
+  const fromStored = stored.length ? pickSamples(stored, 14, incoming) : [];
+  const lines = [
+    `OWNER STYLE FINGERPRINT (${stored.length} taught lines): median ${profile().medianLen} chars; emoji ${Math.round(profile().emojiRate * 100)}%; questions ${Math.round(profile().questionRate * 100)}%; lowercase ${Math.round(profile().lowercaseRate * 100)}%; laughter ${Math.round(profile().laughterRate * 100)}%.`,
     'These relevant real examples are authoritative. Match their cadence, vocabulary, punctuation and restraint; never add slang absent from them:',
     ...fromStored.map((l) => `- "${l}"`),
-    'House flavor in the same energy (blend in naturally, same short playful Sheng/English tone):',
-    ...fromHouse.map((l) => `- "${l}"`),
-  ].join('\n');
+  ];
+  if (stored.length < 12) {
+    const fromHouse = pickSamples(house, Math.max(2, 14 - fromStored.length), incoming);
+    lines.push('House flavor in the same energy (blend in naturally, same short playful Sheng/English tone):');
+    lines.push(...fromHouse.map((l) => `- "${l}"`));
+  }
+  return lines.join('\n');
 }
 
 module.exports = { collect, learn, forget, count, profile, styleBlock, pickSamples, houseLines, pool };
