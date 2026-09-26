@@ -293,7 +293,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
     const res = await backend.complete(
       system,
       needsQuestion(chatId, t) ? `${user}\n(Ask one brief follow-up only if it feels natural here.)` : user,
-      { provider: 'codex' }
+      { preferProvider: 'codex' }
     );
     if (!res || !res.text) return false;
     console.log(`[autochat] engine: ${res.engine || 'unknown'}`);
@@ -304,7 +304,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
       const retry = await backend.complete(
         system,
         `${user}\n(Say it completely differently from your last replies. Never repeat one word.)`,
-        { provider: 'codex' }
+        { preferProvider: 'codex' }
       );
       if (retry && retry.text && !isDegenerate(retry.text, chatId) && !isRepeat(retry.text, chatId)) {
         console.log(`[autochat] engine: ${retry.engine || 'unknown'} (resample)`);
