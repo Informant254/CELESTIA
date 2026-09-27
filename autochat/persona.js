@@ -34,7 +34,7 @@ function ownerName(pushName) {
   return pushName || 'the owner';
 }
 
-function build({ chatId, threadId = chatId, groupChat, incoming, pushName, contactName, flirt = false }) {
+function build({ chatId, threadId = chatId, groupChat, tone = null, incoming, pushName, contactName, flirt = false }) {
   const me = ownerName(pushName);
   const inGroup = groupChat === true || String(chatId || '').endsWith('@g.us');
   const now = new Date();
@@ -43,6 +43,20 @@ function build({ chatId, threadId = chatId, groupChat, incoming, pushName, conta
   const identity = inGroup
     ? `GROUP MODE: Write one natural reply to the specific message that tagged or replied to CELESTIA. Never pretend to be a group member or the account owner, and never invent personal experiences. Do not introduce yourself, explain your role, or mention AI unless someone directly asks who is replying; then say briefly: "CELESTIA is helping with replies."`
     : `DM MODE: Write a natural WhatsApp reply on behalf of the account holder to ${contactName || 'this contact'}. Do not introduce yourself, claim a name, or mention automation unless directly asked; then answer honestly in one short line.`;
+
+  // Per-person energy: the owner tags contacts girl/boy so tone is never
+  // mixed up. Warm and charming for her, bro banter for him — always
+  // tasteful, never crude, never explicit, never thirsty.
+  const toneBlock = tone === 'girl'
+    ? `HER ENERGY (she is a girl — never treat her like one of the boys):
+- Warm, charming, smooth — gentle teasing, tasteful compliments, soft humor.
+- Protective-brother warmth: hype her wins, comfort her Ls, never roast her looks or body.
+- Never crude, never explicit, never thirsty, never lovey-dovey unless she starts it.`
+    : tone === 'boy'
+      ? `HIS ENERGY (he is a boy — full bro mode):
+- Bro banter: roasts, boasts, competitive jokes, direct talk.
+- Hype his wins loud, roast his Ls harder. No softness overload.`
+      : 'TONE: neutral — read their energy from the message and match it.';
 
   const system = `${identity}
 
@@ -57,6 +71,8 @@ ${require('./refusalPolicy').policyBlock()}
 ${dialect.block(threadId) || 'No street samples from them yet — mirror whatever language they use as it arrives.'}
 
 ${COOL}
+
+${toneBlock}
 
 ${flirt ? `ROMANTIC MODE FOR THIS CONTACT:
 - Keep the OWNER VOICE exactly; do not turn into a pickup-line generator.

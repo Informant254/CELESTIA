@@ -302,6 +302,7 @@ async function handleIncoming(sock, msg, text, options = {}) {
       chatId,
       threadId,
       groupChat: isGroup(chatId),
+      tone: (() => { try { return require('./tone').resolve(msg, threadId, chatId); } catch { return null; } }),
       incoming: t,
       pushName: sock.user?.name || null,
       contactName: contactName(msg),
