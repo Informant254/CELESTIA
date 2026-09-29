@@ -1,4 +1,4 @@
-const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
+const { ytSearch, downloadYoutubeAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'play2',
@@ -28,13 +28,14 @@ module.exports = {
 
       await sock.sendMessage(jid, { text: `😍 Found: *${videoTitle}*\n⏳ Downloading...`, edit: searching.key });
 
-      const { url: downloadUrl, title } = await ytAudio(videoUrl, videoTitle);
-      const finalTitle = title || videoTitle;
-      const fileName = cleanName(finalTitle, '.mp3');
-
-      await sock.sendMessage(jid, { audio: { url: downloadUrl }, mimetype: 'audio/mpeg', fileName }, { quoted: msg });
-      await sock.sendMessage(jid, { document: { url: downloadUrl }, mimetype: 'audio/mpeg', caption: '*DOWNLOADED BY CELESTIA*', fileName }, { quoted: msg });
-      await sock.sendMessage(jid, { text: `✅ Successfully downloaded! *${finalTitle}*`, edit: searching.key });
+      const owner = `${jid}:${msg.key.participant || jid}`;
+      await downloadYoutubeAudio(videoUrl, videoTitle, undefined, owner, async ({ buffer, title }) => {
+        const finalTitle = title || videoTitle;
+        const fileName = cleanName(finalTitle, '.mp3');
+        await sock.sendMessage(jid, { audio: buffer, mimetype: 'audio/mpeg', fileName }, { quoted: msg });
+        await sock.sendMessage(jid, { document: buffer, mimetype: 'audio/mpeg', caption: '*DOWNLOADED BY CELESTIA*', fileName }, { quoted: msg });
+        await sock.sendMessage(jid, { text: `✅ Successfully downloaded! *${finalTitle}*`, edit: searching.key });
+      });
     } catch (err) {
       console.error('[PLAY2 ERROR]', err.message);
       await sock.sendMessage(jid, { text: '❌ An error occurred: ' + err.message }, { quoted: msg });

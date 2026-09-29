@@ -19,10 +19,10 @@ const { classify } = require('./errors');
 const { senderTag } = require('./errors');
 const logger = require('./logger');
 
-const URL_RE = /^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\/\S+/i;
+const URL_RE = /^https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\/\S+/i;
 const QTOK = { best: 1, '1080': 2, '1080p': 2, '720': 3, '720p': 3, '480': 4, '480p': 4, '360': 5, '360p': 5, audio: 6, mp3: 6 };
 
-// Optional quality hint: ".video 720p <name>" or ".video <name> 720p".
+// Optional quality hint: ".yt 720p <name>" or ".yt <name> 720p".
 function parseQuality(raw, kind) {
   let q = kind === 'audio' ? 6 : 1;
   let text = String(raw || '').trim();
@@ -49,7 +49,7 @@ function fmtResults(query, results) {
   return L.join('\n');
 }
 
-// ─── entry: .video/.play/.song/.audio/.music <name|url> ─────────────────────
+// ─── entry: .yt/.play/.song/.audio/.music <name|url> ────────────────────────
 async function handleSearchCommand(sock, msg, kind, rawQuery) {
   const chatId = msg.key.remoteJid;
   const senderId = msg.key.participant || msg.key.remoteJid;
@@ -58,7 +58,7 @@ async function handleSearchCommand(sock, msg, kind, rawQuery) {
   logger.celestia({ tag, query: query.slice(0, 80), kind });
 
   if (!query) {
-    const ex = kind === 'video' ? '.video Shape of You' : '.play Eminem Mockingbird';
+    const ex = kind === 'video' ? '.yt 480p Shape of You' : '.play Eminem Mockingbird';
     return sock.sendMessage(chatId, { text: `🔎 Usage: \`${ex}\`` }, { quoted: msg });
   }
 

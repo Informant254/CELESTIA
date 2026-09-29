@@ -181,15 +181,16 @@ module.exports = {
 
       await sock.sendMessage(jid, { text: `🎧 Downloading *${query}*...` }, { quoted: msg });
 
-      const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
+      const { ytSearch, downloadYoutubeAudio, cleanName } = require('../utils/downloader');
       const found = await ytSearch(query);
-      const { url: audioUrl, title: finalTitle } = await ytAudio(found.url, `${title} - ${artist}`);
-
-      await sock.sendMessage(
-        jid,
-        { audio: { url: audioUrl }, mimetype: 'audio/mpeg', fileName: cleanName(finalTitle, '.mp3'), ptt: false },
-        { quoted: msg }
-      );
+      const owner = `${jid}:${msg.key.participant || jid}`;
+      await downloadYoutubeAudio(found.url, `${title} - ${artist}`, undefined, owner, async ({ buffer: audio, title: finalTitle }) => {
+        await sock.sendMessage(
+          jid,
+          { audio, mimetype: 'audio/mpeg', fileName: cleanName(finalTitle, '.mp3'), ptt: false },
+          { quoted: msg }
+        );
+      });
     } catch (error) {
       console.error('[SHAZAM ERROR] Song identification or download failed.');
       await sock.sendMessage(jid, { text: '⚠️ Shazam failed to identify or download that track.' }, { quoted: msg });

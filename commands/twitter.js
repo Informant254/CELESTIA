@@ -1,4 +1,4 @@
-const { bk9Social, cleanName } = require('../utils/downloader');
+const { downloadSocial, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'twitter',
@@ -16,14 +16,14 @@ module.exports = {
       await sock.sendMessage(jid, { react: { text: '🐦', key: msg.key } });
       const searching = await sock.sendMessage(jid, { text: '⏳ Downloading...' }, { quoted: msg });
 
-      const { url: videoUrl } = await bk9Social('twitter', url);
-
-      await sock.sendMessage(
-        jid,
-        { video: { url: videoUrl }, mimetype: 'video/mp4', fileName: cleanName('twitter', '.mp4'), caption: '🐦 *Downloaded by CELESTIA*' },
-        { quoted: msg }
-      );
-      await sock.sendMessage(jid, { text: '✅ Done!', edit: searching.key });
+      const owner = `${jid}:${msg.key.participant || jid}`;
+      await downloadSocial('twitter', url, undefined, owner, async ({ buffer, type }) => {
+        const media = type === 'image'
+          ? { image: buffer, fileName: cleanName('twitter', '.jpg'), caption: '🐦 *Downloaded by CELESTIA*' }
+          : { video: buffer, mimetype: 'video/mp4', fileName: cleanName('twitter', '.mp4'), caption: '🐦 *Downloaded by CELESTIA*' };
+        await sock.sendMessage(jid, media, { quoted: msg });
+        await sock.sendMessage(jid, { text: '✅ Done!', edit: searching.key });
+      });
     } catch (e) {
       console.error('[TWITTER ERROR]', e.message);
       await sock.sendMessage(jid, { text: '❌ Download failed: ' + e.message }, { quoted: msg });

@@ -2,8 +2,8 @@
  * dlproxy/server.js — CELESTIA download proxy. Your own Apix.
  *
  *   GET /health
- *   GET /api/download/youtube/mp3?url=<youtube>&key=<client-key>  → audio/mpeg bytes
- *   GET /api/download/youtube/mp4?url=<youtube>&key=<client-key>  → video/mp4 bytes
+ *   GET /api/download/youtube/mp3?url=<youtube> + x-api-key  → audio/mpeg bytes
+ *   GET /api/download/youtube/mp4?url=<youtube> + x-api-key  → video/mp4 bytes
  *   POST /admin/keys  { adminKey, action: issue|revoke|list, key?, label?, rpm?, rpd? }
  *
  * Env: PORT (default 3001), DLPROXY_ADMIN_KEY (required for /admin),
@@ -38,7 +38,7 @@ function createServer(opts = {}) {
   app.get('/health', (req, res) => res.json({ ok: true, service: 'celestia-dlproxy', inFlight }));
 
   function auth(req) {
-    const key = req.query.key || req.headers['x-api-key'] || '';
+    const key = req.headers['x-api-key'] || '';
     const verdict = store.checkAndHit(keys, String(key));
     if (verdict.ok) {
       try { store.save(keys); } catch { /* accounting never breaks serving */ }
@@ -59,16 +59,19 @@ function createServer(opts = {}) {
     }
     if (inFlight >= MAX_PARALLEL) return fail(res, 429, 'Proxy busy — retry in a few seconds.');
     inFlight += 1;
+    let dir = null;
     try {
-      const { file, dir } = await fetchMedia(req.params.kind, videoUrl);
+      const result = await fetchMedia(req.params.kind, videoUrl);
+      dir = result.dir;
       res.setHeader('Content-Type', req.params.kind === 'mp3' ? 'audio/mpeg' : 'video/mp4');
-      res.sendFile(file, (err) => {
-        cleanup(dir);
-        if (err && !res.headersSent) fail(res, 500, 'send failed');
+      await new Promise((resolve, reject) => {
+        res.sendFile(result.file, (err) => err ? reject(err) : resolve());
       });
     } catch (e) {
-      fail(res, 502, String(e.message || 'fetch failed').slice(0, 200));
+      if (!res.headersSent) fail(res, 502, String(e.message || 'fetch failed').slice(0, 200));
+      else if (!res.writableEnded) res.destroy(e);
     } finally {
+      if (dir) cleanup(dir);
       inFlight -= 1;
     }
   });

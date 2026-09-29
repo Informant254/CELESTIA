@@ -10,16 +10,17 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
+const cfg = require('../download/config');
 
 let fetcher = defaultFetch;
 
 function setFetcher(fn) { fetcher = fn; }
 
-async function fetchMedia(kind, videoUrl, { timeoutMs = 150000 } = {}) {
-  return fetcher(kind, videoUrl, { timeoutMs });
+async function fetchMedia(kind, videoUrl, { timeoutMs = 150000, maxBytes = kind === 'mp3' ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES } = {}) {
+  return fetcher(kind, videoUrl, { timeoutMs, maxBytes });
 }
 
-function defaultFetch(kind, videoUrl, { timeoutMs }) {
+function defaultFetch(kind, videoUrl, { timeoutMs, maxBytes }) {
   return new Promise((resolve, reject) => {
     let engines;
     try {
@@ -32,10 +33,12 @@ function defaultFetch(kind, videoUrl, { timeoutMs }) {
     const args = kind === 'mp3'
       ? ['-o', outTpl, '-f', 'bestaudio[ext=m4a]/bestaudio/best',
         '--extract-audio', '--audio-format', 'mp3', '--no-playlist',
-        '--no-warnings', '--socket-timeout', '20', videoUrl]
+        '--no-warnings', '--js-runtimes', 'node', '--retries', '3',
+        '--socket-timeout', '20', '--max-filesize', String(maxBytes), videoUrl]
       : ['-o', outTpl, '-f', 'bv*[height<=720]+ba/b[height<=720]/b',
         '--merge-output-format', 'mp4', '--no-playlist',
-        '--no-warnings', '--socket-timeout', '20', videoUrl];
+        '--no-warnings', '--js-runtimes', 'node', '--retries', '3',
+        '--socket-timeout', '20', '--max-filesize', String(maxBytes), videoUrl];
 
     let settled = false;
     const done = (err, file) => {
@@ -82,7 +85,9 @@ function defaultFetch(kind, videoUrl, { timeoutMs }) {
           const hit = files.find((f) => want.test(f)) || files[0];
           if (!hit) return done(new Error('yt-dlp produced no file'));
           const file = path.join(dir, hit);
-          if (!fs.statSync(file).size) return done(new Error('empty media file'));
+          const size = fs.statSync(file).size;
+          if (!size) return done(new Error('empty media file'));
+          if (size > maxBytes) return done(new Error('media exceeds the configured size limit'));
           done(null, file);
         } catch (e) {
           done(e);

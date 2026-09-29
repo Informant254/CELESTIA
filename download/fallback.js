@@ -17,6 +17,11 @@ const TERMINAL = new Set(['FILE_TOO_LARGE', 'DEPENDENCY_MISSING']);
 let youtubeBlockFailures = 0;
 let youtubeBlockedUntil = 0;
 
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  throw signal.reason instanceof Error ? signal.reason : new Error('Overall request timeout exceeded (TIMEOUT).');
+}
+
 function youtubeCircuitOpen(now = Date.now()) {
   if (youtubeBlockedUntil && now >= youtubeBlockedUntil) {
     youtubeBlockedUntil = 0;
@@ -56,10 +61,11 @@ async function validateFile(file, isAudio) {
   return size;
 }
 
-async function downloadWithFallback({ url, title, quality, isAudio, workDir, onProgress, maxBytes, tag }) {
+async function downloadWithFallback({ url, title, quality, isAudio, workDir, onProgress, maxBytes, tag, signal }) {
   const strategies = isAudio ? audioStrategies() : videoStrategies(quality);
   const byteLimit = maxBytes || (isAudio ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES);
   let lastErr = null;
+  throwIfAborted(signal);
 
   // APIX-ONLY mode (per-bot policy): skip everything but Apix. Set via
   // .dlproxy apixonly on — the operator's call, never the default.
@@ -70,13 +76,15 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   if (apixOnly) {
     const api = require('../utils/downloader');
     const r = isAudio
-      ? await api.apixAudio(url, title)
-      : await api.apixVideo(url, title);
-    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
+      ? await api.apixAudio(url, title, signal)
+      : await api.apixVideo(url, title, signal);
+    throwIfAborted(signal);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
     if (!buf.length) throw new Error('Apix download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
     fs.writeFileSync(file, buf);
     await validateFile(file, isAudio);
+    throwIfAborted(signal);
     logger.download({ tag, strategy: 'apix', status: 'success' });
     return { file, size: buf.length, engine: 'apix', strategy: 'apix' };
   }
@@ -84,16 +92,19 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   // Your own proxy FIRST (independence lane): configured via
   // .dlproxy url|key — skips silently when unset.
   try {
+    throwIfAborted(signal);
     const self = require('../utils/dlproxy');
     const r = isAudio
-      ? await self.dlproxyAudio(url)
-      : await self.dlproxyVideo(url);
+      ? await self.dlproxyAudio(url, signal)
+      : await self.dlproxyVideo(url, signal);
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
     fs.writeFileSync(file, r.buf);
     await validateFile(file, isAudio);
+    throwIfAborted(signal);
     logger.download({ tag, strategy: 'dlproxy', status: 'success' });
     return { file, size: r.buf.length, engine: 'dlproxy', strategy: 'dlproxy' };
   } catch (e) {
+    throwIfAborted(signal);
     lastErr = e;
     logger.download({ tag, strategy: 'dlproxy', status: 'failed', reason: classify(e), detail: String(e.message || '').slice(0, 120) });
     logger.fallback({ tag, from: 'dlproxy' });
@@ -104,18 +115,22 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   // .autochat setkey apix <key>) — throws fast without one and everything
   // below stays as failover.
   try {
+    throwIfAborted(signal);
     const api = require('../utils/downloader');
     const r = isAudio
-      ? await api.apixAudio(url, title)
-      : await api.apixVideo(url, title);
-    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
+      ? await api.apixAudio(url, title, signal)
+      : await api.apixVideo(url, title, signal);
+    throwIfAborted(signal);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
     if (!buf.length) throw new Error('Apix download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
     fs.writeFileSync(file, buf);
     await validateFile(file, isAudio);
+    throwIfAborted(signal);
     logger.download({ tag, strategy: 'apix', status: 'success' });
     return { file, size: buf.length, engine: 'apix', strategy: 'apix' };
   } catch (e) {
+    throwIfAborted(signal);
     lastErr = e;
     logger.download({ tag, strategy: 'apix', status: 'failed', reason: classify(e) });
     logger.fallback({ tag, from: 'apix' });
@@ -123,15 +138,18 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
 
   for (const s of youtubeCircuitOpen() ? [] : strategies) {
     try {
+      throwIfAborted(signal);
       const r = await ytdlp.attempt({
         url, selector: s.selector, extra: s.extra, audio: isAudio,
-        workDir, onProgress, maxBytes: byteLimit,
+        workDir, onProgress, maxBytes: byteLimit, signal,
       });
       await validateFile(r.file, isAudio);
+      throwIfAborted(signal);
       recordYouTubeResult(null);
       logger.download({ tag, strategy: s.name, status: 'success' });
       return { ...r, engine: 'yt-dlp', strategy: s.name };
     } catch (e) {
+      throwIfAborted(signal);
       lastErr = e;
       const cat = classify(e);
       recordYouTubeResult(cat);
@@ -143,21 +161,25 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
   }
 
   // Tertiary: direct HTTP of an API-resolved URL (single attempt).
+  throwIfAborted(signal);
   if (lastErr && TERMINAL.has(classify(lastErr))) throw lastErr;
   try {
     logger.fallback({ tag, strategy: 'api-direct' });
     const api = require('../utils/downloader');
     const r = isAudio
-      ? await api.ytAudio(url, title)
-      : await api.ytVideo(url, title);
-    const buf = await api.downloadBuffer(r.url, byteLimit, 120000);
+      ? await api.ytAudio(url, title, signal)
+      : await api.ytVideo(url, title, signal);
+    throwIfAborted(signal);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
     if (!buf.length) throw new Error('Fallback download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
     fs.writeFileSync(file, buf);
     await validateFile(file, isAudio);
+    throwIfAborted(signal);
     logger.download({ tag, strategy: 'api-direct', status: 'success' });
     return { file, size: buf.length, engine: 'api-direct', strategy: 'api-direct' };
   } catch (e2) {
+    throwIfAborted(signal);
     logger.download({ tag, strategy: 'api-direct', status: 'failed', reason: classify(e2), detail: String(e2.message || '').slice(0, 120) });
     throw e2;
   }

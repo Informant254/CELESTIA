@@ -7,17 +7,30 @@
  * Skips silently when unconfigured so the chain falls through to Apix/yt-dlp.
  */
 const axios = require('axios');
+const cfg = require('../download/config');
 
 const TIMEOUT = 180000;
+
+function normalizeBaseUrl(value) {
+  if (!value) return null;
+  let parsed;
+  try { parsed = new URL(String(value)); } catch { return null; }
+  if (parsed.username || parsed.password) return null;
+  const loopback = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && loopback)) return null;
+  parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+  parsed.search = '';
+  parsed.hash = '';
+  return parsed.toString().replace(/\/+$/, '');
+}
 
 function baseUrl() {
   try {
     const store = require('./settingsStore');
     const u = store.get('dlproxy_url', null);
-    if (u) return String(u).replace(/\/+$/, '');
+    if (u) return normalizeBaseUrl(u);
   } catch { /* ignore */ }
-  const env = process.env.DLPROXY_URL;
-  return env ? String(env).replace(/\/+$/, '') : null;
+  return normalizeBaseUrl(process.env.DLPROXY_URL);
 }
 
 function apiKey() {
@@ -33,14 +46,19 @@ function configured() {
   return !!(baseUrl() && apiKey());
 }
 
-async function fetchKind(kind, videoUrl) {
+async function fetchKind(kind, videoUrl, signal) {
   const base = baseUrl();
   const key = apiKey();
   if (!base || !key) throw new Error('no dlproxy configured');
   const r = await axios.get(`${base}/api/download/youtube/${kind}`, {
-    params: { url: videoUrl, key },
+    params: { url: videoUrl },
+    headers: { 'x-api-key': key },
     responseType: 'arraybuffer',
     timeout: TIMEOUT,
+    signal,
+    maxRedirects: 0,
+    maxContentLength: kind === 'mp3' ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES,
+    maxBodyLength: kind === 'mp3' ? cfg.MAX_AUDIO_BYTES : cfg.MAX_VIDEO_BYTES,
     validateStatus: () => true,
   });
   const ctype = String(r.headers?.['content-type'] || '');
@@ -57,14 +75,14 @@ async function fetchKind(kind, videoUrl) {
   return { buf, ctype };
 }
 
-async function dlproxyAudio(videoUrl) {
-  const { buf } = await fetchKind('mp3', videoUrl);
+async function dlproxyAudio(videoUrl, signal) {
+  const { buf } = await fetchKind('mp3', videoUrl, signal);
   return { buf, title: 'dlproxy audio' };
 }
 
-async function dlproxyVideo(videoUrl) {
-  const { buf } = await fetchKind('mp4', videoUrl);
+async function dlproxyVideo(videoUrl, signal) {
+  const { buf } = await fetchKind('mp4', videoUrl, signal);
   return { buf, title: 'dlproxy video' };
 }
 
-module.exports = { configured, baseUrl, apiKey, dlproxyAudio, dlproxyVideo };
+module.exports = { configured, baseUrl, apiKey, normalizeBaseUrl, dlproxyAudio, dlproxyVideo };

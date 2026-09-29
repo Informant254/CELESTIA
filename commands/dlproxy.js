@@ -11,9 +11,9 @@ module.exports = {
     }
     const sub = (args[0] || '').toLowerCase();
     if (sub === 'url' && args[1]) {
-      const url = String(args[1]).replace(/\/+$/, '');
-      if (!/^https?:\/\/.+\..+/.test(url)) {
-        return sock.sendMessage(jid, { text: '❌ *That does not look like a URL.*\n\nUsage: *.dlproxy url https://your-tunnel-url*' }, { quoted: msg });
+      const url = require('../utils/dlproxy').normalizeBaseUrl(args[1]);
+      if (!url) {
+        return sock.sendMessage(jid, { text: '❌ *Use an HTTPS proxy URL without embedded credentials.*\n\nUsage: *.dlproxy url https://your-tunnel-url*' }, { quoted: msg });
       }
       settingsStore.set('dlproxy_url', url);
       return sock.sendMessage(jid, { text: `✅ *Download proxy set:*\n${url}\n\n_Next downloads try your proxy first._` }, { quoted: msg });
@@ -32,7 +32,7 @@ module.exports = {
       settingsStore.set('download_apix_only', on);
       return sock.sendMessage(jid, {
         text: on
-          ? '🔒 *APIX-ONLY mode ON.*\n_Downloads use Apix exclusively — no yt-dlp, no free APIs. If Apix fails, the download fails._'
+          ? '🔒 *APIX-ONLY mode ON.*\n_Downloads use Apix exclusively — no proxy, yt-dlp, or free APIs. If Apix fails, the download fails._'
           : '🔓 *APIX-ONLY mode OFF.*\n_Full fallback chain restored._',
       }, { quoted: msg });
     }

@@ -1,4 +1,4 @@
-const { ytSearch, ytAudio, cleanName } = require('../utils/downloader');
+const { ytSearch, downloadYoutubeAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: "spotify",
@@ -40,24 +40,19 @@ module.exports = {
         edit: statusMsg.key
       });
 
-      const { url: audioUrl, title } = await ytAudio(videoUrl, videoTitle);
-      const finalTitle = title || videoTitle;
-      const fileName = cleanName(finalTitle, '.mp3');
-
-      await sock.sendMessage(
-        chatId,
-        {
-          audio: { url: audioUrl },
-          mimetype: "audio/mpeg",
-          fileName,
-          ptt: false
-        },
-        { quoted: msg }
-      );
-
-      await sock.sendMessage(chatId, {
-        text: `✅ Successfully downloaded\n\n🎵 *${finalTitle}*`,
-        edit: statusMsg.key
+      const owner = `${chatId}:${msg.key.participant || chatId}`;
+      await downloadYoutubeAudio(videoUrl, videoTitle, undefined, owner, async ({ buffer, title }) => {
+        const finalTitle = title || videoTitle;
+        const fileName = cleanName(finalTitle, '.mp3');
+        await sock.sendMessage(
+          chatId,
+          { audio: buffer, mimetype: "audio/mpeg", fileName, ptt: false },
+          { quoted: msg }
+        );
+        await sock.sendMessage(chatId, {
+          text: `✅ Successfully downloaded\n\n🎵 *${finalTitle}*`,
+          edit: statusMsg.key
+        });
       });
 
     } catch (err) {
