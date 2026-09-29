@@ -1,10 +1,10 @@
 /**
- * utils/downloader.js — CELESTIA shared download sources (verified live).
+ * utils/downloader.js — CELESTIA shared download sources.
  *
  *  SEARCH : siputzx  -> yt-search (npm fallback)
- *  AUDIO  : bk9      -> davidcyril
- *  VIDEO  : bk9      -> davidcyril (480p mp4)
- *  SOCIAL : bk9 alternate extractors (tiktok / instagram / fb / twitter)
+ *  AUDIO  : Keith (keyless) -> bk9 (keyless) -> davidcyril (optional key)
+ *  VIDEO  : Keith (keyless) -> bk9 (keyless) -> davidcyril (optional key)
+ *  SOCIAL : public resolver -> yt-dlp -> bk9 alternate extractors
  *
  * Every function resolves to { url, title } or throws a human-readable Error.
  */
@@ -29,6 +29,11 @@ try {
 // Fallback download APIs get a shorter fuse — a dead provider must fail
 // fast so the next one gets its chance inside the job timeout.
 const API_TIMEOUT = 30000;
+
+// Keyless downloader backend used by ISAAC/BMW. Operators can override the
+// base URL without changing code, but no API key is required by this client.
+const KEITH_BASE = process.env.KEITH_BASE || 'https://apiskeith2-production-3679.up.railway.app';
+
 // Optional davidcyriltech API key (their endpoints now 402 without one).
 // Set DAVIDCYRIL_APIKEY and both davidcyril fallbacks authenticate.
 function dcUrl(endpoint, videoUrl) {
@@ -219,6 +224,38 @@ async function ytSearch(query) {
   }
 }
 
+async function keithMedia(kind, videoUrl, fallbackTitle, signal) {
+  const endpoint = kind === 'audio' ? 'audio' : 'video';
+  const r = await axios.get(
+    `${KEITH_BASE}/download/${endpoint}?url=${encodeURIComponent(videoUrl)}`,
+    { timeout: API_TIMEOUT, signal }
+  );
+  const mediaUrl = typeof r.data?.result === 'string' ? r.data.result : null;
+  if (!mediaUrl) {
+    throw new Error(r.data?.error || r.data?.message || 'Keith returned no media link');
+  }
+  return {
+    url: await validateDownloadUrl(mediaUrl, signal),
+    title: r.data?.title || fallbackTitle,
+  };
+}
+
+async function keithAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
+  try {
+    return await keithMedia('audio', videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    throw new Error('Keith audio failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
+async function keithVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
+  try {
+    return await keithMedia('video', videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    throw new Error('Keith video failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
 // Apix key: chat-set key wins, env is the deploy fallback. The same key
 // unlocks Apix AI and Apix downloads.
 function apixKey() {
@@ -244,7 +281,7 @@ async function apixMedia(kind, videoUrl, fallbackTitle, signal) {
   const url = r.data?.downloadUrl || r.data?.proxyUrl;
   if (r.data?.success && url) {
     const fileUrl = url.includes('key=') ? url : url + `&key=${encodeURIComponent(key)}`;
-    return { url: await validateDownloadUrl(fileUrl), title: r.data?.title || fallbackTitle };
+    return { url: await validateDownloadUrl(fileUrl, signal), title: r.data?.title || fallbackTitle };
   }
   throw new Error(r.data?.error || 'no media link');
 }
@@ -267,7 +304,16 @@ async function apixVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
 
 async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
   const errs = [];
-  // 1) bk9 first — verified alive, links stream cross-network.
+
+  // 1) Keith first — no API key required by the client.
+  try {
+    return await keithAudio(videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    if (signal?.aborted) throw signal.reason || e;
+    errs.push('keith: ' + (e.response?.status || e.message));
+  }
+
+  // 2) bk9 — keyless and links generally stream cross-network.
   try {
     const r = await axios.get(
       `https://api.bk9.dev/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
@@ -275,22 +321,25 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
     );
     const b = r.data?.BK9;
     if (r.data?.status && b?.downloadUrl) {
-      return { url: await validateDownloadUrl(b.downloadUrl), title: b.title || fallbackTitle };
+      return { url: await validateDownloadUrl(b.downloadUrl, signal), title: b.title || fallbackTitle };
     }
     throw new Error('no audio link');
   } catch (e) {
+    if (signal?.aborted) throw signal.reason || e;
     errs.push('bk9: ' + (e.response?.status || e.message));
   }
-  // 2) davidcyril is optional and is never contacted without an owner key.
+
+  // 3) davidcyril is optional and is never contacted without an owner key.
   if (process.env.DAVIDCYRIL_APIKEY) {
     try {
       const r = await axios.get(dcUrl('ytmp3', videoUrl), { timeout: API_TIMEOUT, signal });
       const res = r.data?.result;
       if (r.data?.success && res?.download_url) {
-        return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle };
+        return { url: await validateDownloadUrl(res.download_url, signal), title: res.title || fallbackTitle };
       }
       throw new Error('no audio link');
     } catch (e) {
+      if (signal?.aborted) throw signal.reason || e;
       errs.push('davidcyril: ' + (e.response?.status || e.message));
     }
   }
@@ -299,6 +348,16 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
 
 async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
   const errs = [];
+
+  // 1) Keith first — no API key required by the client.
+  try {
+    return await keithVideo(videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    if (signal?.aborted) throw signal.reason || e;
+    errs.push('keith: ' + (e.response?.status || e.message));
+  }
+
+  // 2) BK9 remains a keyless fallback.
   try {
     const r = await axios.get(
       `https://api.bk9.dev/download/youtube?url=${encodeURIComponent(videoUrl)}&quality=480p&type=video`,
@@ -308,24 +367,28 @@ async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
     const url = pickCleanUrl(result);
     if (r.data?.status && url) {
       return {
-        url: await validateDownloadUrl(url),
+        url: await validateDownloadUrl(url, signal),
         title: result?.filename?.replace(/\.mp4$/i, '') || fallbackTitle,
         quality: result?.quality || '480p',
       };
     }
     throw new Error('no video link');
   } catch (e) {
+    if (signal?.aborted) throw signal.reason || e;
     errs.push('bk9: ' + (e.response?.status || e.message));
   }
+
+  // 3) davidcyril is optional and is never contacted without an owner key.
   if (process.env.DAVIDCYRIL_APIKEY) {
     try {
       const r = await axios.get(dcUrl('ytmp4', videoUrl), { timeout: API_TIMEOUT, signal });
       const res = r.data?.result;
       if (r.data?.success && res?.download_url) {
-        return { url: await validateDownloadUrl(res.download_url), title: res.title || fallbackTitle, quality: res.quality || '' };
+        return { url: await validateDownloadUrl(res.download_url, signal), title: res.title || fallbackTitle, quality: res.quality || '' };
       }
       throw new Error(res?.message || 'no video link');
     } catch (e) {
+      if (signal?.aborted) throw signal.reason || e;
       errs.push('davidcyril: ' + (e.response?.status || e.message));
     }
   }
@@ -586,7 +649,7 @@ function cleanName(s, ext) {
 }
 
 module.exports = {
-  ytSearch, ytAudio, ytVideo, apixAudio, apixVideo,
+  ytSearch, ytAudio, ytVideo, keithAudio, keithVideo, apixAudio, apixVideo,
   bk9Social, publicSocial, localSocial, downloadSocial, downloadResolved, downloadBuffer, detectMediaType,
   downloadYoutubeAudio, downloadYoutubeVideo,
   firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName, isPublicIp, validateDownloadUrl, validateSocialPageUrl, validateYoutubePageUrl,

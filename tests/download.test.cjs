@@ -18,7 +18,7 @@ test('yt-dlp carries a node JS runtime for YouTube challenges', () => {
   assert.ok(Array.isArray(args));
 });
 
-test('audio fallback tries bk9 before davidcyril', async () => {
+test('audio fallback tries the keyless Keith provider first', async () => {
   const axiosPath = require.resolve('axios');
   const orig = require.cache[axiosPath]?.exports;
   const calls = [];
@@ -27,7 +27,7 @@ test('audio fallback tries bk9 before davidcyril', async () => {
     exports: {
       get: async (url) => {
         calls.push(url);
-        return { data: { status: true, BK9: { downloadUrl: 'https://example.com/f.mp3', title: 'T' } } };
+        return { data: { result: 'https://example.com/f.mp3', title: 'T' } };
       },
     },
   };
@@ -36,14 +36,14 @@ test('audio fallback tries bk9 before davidcyril', async () => {
     const r = await dl.ytAudio('https://www.youtube.com/watch?v=x');
     assert.equal(r.url, 'https://example.com/f.mp3');
     assert.equal(calls.length, 1, 'first provider wins, no wasted calls');
-    assert.match(calls[0], /api\.bk9\.dev/, 'bk9 attempted first');
+    assert.match(calls[0], /apiskeith2-production/, 'Keith attempted first');
   } finally {
     if (orig === undefined) delete require.cache[axiosPath];
     else require.cache[axiosPath].exports = orig;
   }
 });
 
-test('audio fallback reaches davidcyril when bk9 fails', async () => {
+test('audio fallback reaches davidcyril when both keyless providers fail', async () => {
   const axiosPath = require.resolve('axios');
   const orig = require.cache[axiosPath]?.exports;
   const calls = [];
@@ -54,7 +54,7 @@ test('audio fallback reaches davidcyril when bk9 fails', async () => {
     exports: {
       get: async (url) => {
         calls.push(url);
-        if (url.includes('bk9')) throw Object.assign(new Error('boom'), { response: { status: 500 } });
+        if (url.includes('apiskeith2') || url.includes('bk9')) throw Object.assign(new Error('boom'), { response: { status: 500 } });
         return { data: { success: true, result: { download_url: 'https://example.com/g.mp3', title: 'G' } } };
       },
     },
@@ -63,8 +63,8 @@ test('audio fallback reaches davidcyril when bk9 fails', async () => {
     const dl = freshDownloader();
     const r = await dl.ytAudio('https://www.youtube.com/watch?v=x');
     assert.equal(r.url, 'https://example.com/g.mp3');
-    assert.equal(calls.length, 2);
-    assert.match(calls[1], /davidcyriltech/, 'davidcyril second');
+    assert.equal(calls.length, 3);
+    assert.match(calls[2], /davidcyriltech/, 'davidcyril follows both keyless providers');
   } finally {
     if (prevKey === undefined) delete process.env.DAVIDCYRIL_APIKEY;
     else process.env.DAVIDCYRIL_APIKEY = prevKey;
@@ -86,8 +86,9 @@ test('keyless audio fallback never contacts a key-gated provider', async () => {
   try {
     const dl = freshDownloader();
     await assert.rejects(() => dl.ytAudio('https://www.youtube.com/watch?v=x'), /Audio download failed/);
-    assert.equal(calls.length, 1, 'only the free BK9 provider was contacted');
-    assert.match(calls[0], /api\.bk9\.dev/);
+    assert.equal(calls.length, 2, 'only the free Keith and BK9 providers were contacted');
+    assert.match(calls[0], /apiskeith2-production/);
+    assert.match(calls[1], /api\.bk9\.dev/);
   } finally {
     if (prevKey === undefined) delete process.env.DAVIDCYRIL_APIKEY;
     else process.env.DAVIDCYRIL_APIKEY = prevKey;
@@ -390,7 +391,7 @@ test('apix audio fails fast with a clear message when no key is set', async () =
   }
 });
 
-test('video fallback tries the active BK9 YouTube endpoint before davidcyril', async () => {
+test('video fallback reaches BK9 when Keith returns no media', async () => {
   const axiosPath = require.resolve('axios');
   const orig = require.cache[axiosPath]?.exports;
   const calls = [];
@@ -413,8 +414,9 @@ test('video fallback tries the active BK9 YouTube endpoint before davidcyril', a
     const result = await dl.ytVideo('https://www.youtube.com/watch?v=x');
     assert.equal(result.title, 'Video');
     assert.equal(result.quality, '480p');
-    assert.equal(calls.length, 1);
-    assert.match(calls[0], /api\.bk9\.dev\/download\/youtube/);
+    assert.equal(calls.length, 2);
+    assert.match(calls[0], /apiskeith2-production.*\/download\/video/);
+    assert.match(calls[1], /api\.bk9\.dev\/download\/youtube/);
   } finally {
     if (orig === undefined) delete require.cache[axiosPath];
     else require.cache[axiosPath].exports = orig;

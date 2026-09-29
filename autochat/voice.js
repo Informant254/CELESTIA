@@ -1,7 +1,11 @@
 /**
  * autochat/voice.js — learns how the owner texts.
- * Auto-collects the owner's outgoing messages (capped, persisted throttled)
+ * Auto-collects the owner's outgoing messages (capped, persisted)
  * plus manual `.autochat learn <line>` examples. Builds the style block.
+ *
+ * NOVAHEX baseline: distilled from a user-supplied WhatsApp export. Only
+ * harmless owner-side style examples live here; no contact messages, secrets,
+ * links, media, or intimate/private conversation content are embedded.
  */
 const settingsStore = require('../utils/settingsStore');
 
@@ -36,8 +40,7 @@ function sampleKey(text) {
   return String(text).toLowerCase().replace(/[\p{P}\p{S}\s]+/gu, ' ').trim();
 }
 
-// Harvest one outgoing owner message. Silent, cheap, capped, saved at once
-// (owner message volume is human-scale; no throttle needed).
+// Harvest one outgoing owner message. Silent, cheap, capped, saved at once.
 function collect(text) {
   const t = validSample(text);
   if (!t) return false;
@@ -71,38 +74,63 @@ function forget() {
   } catch { /* ignore */ }
 }
 
-// House flavor: curated lines in the SAME logic as taught data — short,
-// capitalized, playful Sheng/English, warm, never explicit or mean.
-// Supplements (never replaces) the owner's stored voice bank.
+// Stable baseline distilled from the owner's WhatsApp export. Keeping this
+// separate from the mutable bank prevents restarts / bot-generated messages
+// from slowly washing out the owner's real cadence.
 const HOUSE_VOICE = [
-  'Hehe wewe ni noma 😂',
-  'Sasa, ukona story?',
-  'Haha umenibamba buana',
-  'Eh, leo umeamua kuniwinda? 😏',
-  'Poa poa, niko hapa 😌',
-  'Wewe na hizo story zako 😭',
-  'Aki you always know vitu',
-  'Wueh, umekuja na energy 🔥',
-  'Hmm, nibambe na gossip?',
-  'Sawa basi, tucheze 😌',
-  'Haha sawa, umeshinda leo',
-  'Aki unanichekesha bure',
-  'Kwani ulimiss kuwa na mimi? 😏',
-  'Niko rada, niambie yote',
-  'Hehe, uko na jokes leo 😂',
-  'Sasa boss, mambo vipi?',
-  'Aki leo umenifurahisha 🔥',
-  'Haya, twende slow slow?',
-  'Wewe huwa unajua kunibamba',
-  'Haha pole, sikukuscan vizuri',
-  'Ebu niambie, ulienda wapi?',
-  'Noma sana, uko juu 😂',
-  'Aki sasa umenifanya nikumiss?',
-  'Poa, lakini usinicheze 😌',
-  'Haha, uko na vibes zako',
-  'Sasa mkurugenzi wa story, niambie 😂',
-  'Niko free, what is the plan?',
-  'Hehe, umejua kunishika 😏',
+  'Rada, uko aje 😏',
+  'Mambo aje 😂',
+  'Morning 😂',
+  'Sawa basi 😂',
+  'Eeh basi 😂',
+  'Eeh ndio 😂',
+  'Fiti tu 😌',
+  'Tulia 😅',
+  'Kiasi nirudi 😅',
+  'Kwani ni same time 😅',
+  'Bythaa online class ni saa ngapi 😏',
+  'Kuna notes ya hizi stuff 😏🥱',
+  'Nitumie swali 🥱😏',
+  'Wacha nilale niamke baadaye 😏🥱',
+  'Angalia email yako 😂',
+  'Uko na lapy 😏',
+  'Tuingie slack',
+  'Wacha nitume hizo pdf slack',
+  'Uskii ndiyo nadai kupiga revision 😂',
+  'Hkn 😂😂',
+  'Gni hizo 🥱😏',
+  'Ni ngumu 😅😏',
+  'Yenye unataka 🥱😏',
+  'Siku copy 😅😏',
+  'Pleeeese 🥹🥹',
+  'Nishikie space 🤩😂',
+  'Nitatuma kesho 😂😏',
+  'Sio bot 😂😏',
+  'Exactly 😂 no more confusion now 😏',
+  'I guess ni partnership 😂😅',
+  'Leo tumalizane na linear algebra 😂',
+  'Eeh online basi 😂',
+  'Wacha nitegee cat ndiyo nikuwe serious 🥱😏',
+  'Kuna wenye wamearn?? 😂',
+  'Vile hiyo sticker ni elite 🥱',
+  'So sahi mnafanya nn 😂',
+  'Ulikuwa unafanya 😏',
+  'Unalala saa ngapi 😏',
+  'Notes zimetumwa???',
+  'Usichoke 🥱',
+];
+
+// Aggregate traits from the export, expressed as behavior rather than private
+// chat facts. This is more useful to the model than hundreds of copied lines.
+const NOVAHEX_RULES = [
+  'Write like fast phone chat, not polished prose. Short bursts beat full paragraphs.',
+  'Natural code-switching: Sheng/Swahili + English in the same line when it fits.',
+  'Common rhythms include: bythaa, wacha, sawa basi, eeh, kwani, uko, ndiyo/ndio, sahi, gni, nn.',
+  'Preferred reactions are 😂 and 😏, then 🥱 😅 🤩. Use emojis naturally, not on every sentence.',
+  'Playful/direct beats overly sweet or overly formal. Tease lightly; do not sound like customer support.',
+  'Questions are occasional, not automatic. Often react or make a short statement instead.',
+  'Do not force generic Nairobi filler like “aki”, “hehe”, “wueh” or “gossip” unless the live chat actually uses it.',
+  'Keep imperfect shorthand only where it feels natural. Never manufacture random typos just to look human.',
 ];
 
 function houseLines() {
@@ -133,9 +161,8 @@ function profile(lines) {
   };
 }
 
-// Representative sampling: spread evenly across the whole bank so old
-// taught lines survive alongside recent auto-collected ones (newest-only
-// windows forget bulk lessons the moment fresh chats arrive).
+// Representative sampling: favor context-relevant examples, then add a little
+// variation so the model does not turn one phrase into a verbal disease.
 function pickSamples(v, n = 12, context = '') {
   const list = Array.isArray(v) ? v.filter(Boolean) : [];
   if (list.length <= n) return list.slice();
@@ -148,29 +175,56 @@ function pickSamples(v, n = 12, context = '') {
     return { line, index, score: overlap * 5 + sameQuestion + lengthFit + Math.random() * 0.35 };
   });
   const relevant = scored.sort((a, b) => b.score - a.score).slice(0, Math.ceil(n * 0.7));
-  const remaining = scored.filter((item) => !relevant.includes(item)).sort(() => Math.random() - 0.5).slice(0, n - relevant.length);
+  const remaining = scored
+    .filter((item) => !relevant.includes(item))
+    .sort(() => Math.random() - 0.5)
+    .slice(0, n - relevant.length);
   return [...new Set([...relevant, ...remaining].map((item) => item.line))].slice(0, n);
 }
 
-// Style block for the prompt: stats + representative examples.
-// Once the owner has taught enough lines, their voice stands alone —
-// house flavor only fills the gap while the bank is still thin.
+// Style block for the prompt: mutable lessons + stable NOVAHEX baseline.
+// Fresh owner messages still outrank the baseline, but the baseline never
+// disappears completely just because the runtime bank has grown large.
 function styleBlock({ incoming = '' } = {}) {
   const stored = all();
   const house = houseLines();
   if (!stored.length && !house.length) return 'No voice samples yet — write naturally and I will pick up the style.';
-  const fromStored = stored.length ? pickSamples(stored, 14, incoming) : [];
+
+  const mergedProfile = profile(stored.length ? [...stored, ...house] : house);
+  const fromStored = stored.length ? pickSamples(stored, 10, incoming) : [];
+  const baselineCount = stored.length < 12 ? Math.max(2, 14 - fromStored.length) : 4;
+  const fromHouse = pickSamples(house, baselineCount, incoming);
+
   const lines = [
-    `OWNER STYLE FINGERPRINT (${stored.length} taught lines): median ${profile().medianLen} chars; emoji ${Math.round(profile().emojiRate * 100)}%; questions ${Math.round(profile().questionRate * 100)}%; lowercase ${Math.round(profile().lowercaseRate * 100)}%; laughter ${Math.round(profile().laughterRate * 100)}%.`,
-    'These relevant real examples are authoritative. Match their cadence, vocabulary, punctuation and restraint; never add slang absent from them:',
-    ...fromStored.map((l) => `- "${l}"`),
+    `OWNER STYLE FINGERPRINT (${stored.length} taught lines): median ${mergedProfile.medianLen} chars; emoji ${Math.round(mergedProfile.emojiRate * 100)}%; questions ${Math.round(mergedProfile.questionRate * 100)}%; lowercase ${Math.round(mergedProfile.lowercaseRate * 100)}%; laughter ${Math.round(mergedProfile.laughterRate * 100)}%.`,
+    'NOVAHEX STYLE RULES (distilled from the owner-provided chat export):',
+    ...NOVAHEX_RULES.map((rule) => `- ${rule}`),
   ];
-  if (stored.length < 12) {
-    const fromHouse = pickSamples(house, Math.max(2, 14 - fromStored.length), incoming);
-    lines.push('House flavor in the same energy (blend in naturally, same short playful Sheng/English tone):');
-    lines.push(...fromHouse.map((l) => `- "${l}"`));
+
+  if (fromStored.length) {
+    lines.push('These taught owner examples are authoritative. Match their cadence, vocabulary, punctuation and restraint:');
+    lines.push(...fromStored.map((l) => `- "${l}"`));
   }
+
+  if (stored.length < 12) {
+    // Keep the historical label because command output/tests already use it.
+    lines.push('House flavor in the same energy (NOVAHEX baseline; blend naturally):');
+  } else {
+    lines.push('NOVAHEX baseline examples (use as a stable accent, not a script):');
+  }
+  lines.push(...fromHouse.map((l) => `- "${l}"`));
+
   return lines.join('\n');
 }
 
-module.exports = { collect, learn, forget, count, profile, styleBlock, pickSamples, houseLines, pool };
+module.exports = {
+  collect,
+  learn,
+  forget,
+  count,
+  profile,
+  styleBlock,
+  pickSamples,
+  houseLines,
+  pool,
+};
