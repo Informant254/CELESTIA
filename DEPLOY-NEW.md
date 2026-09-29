@@ -143,7 +143,7 @@ Apix key **blind** — deployers never see it:
 - Session strings are secrets — anyone holding one controls that WhatsApp link
 
 ## Surviving restarts (why she stops "crushing")
-- **Settings guardian** (`utils/settingsGuardian.js`): rolling backup every 10s + on SIGTERM into `.bkp/`, restores anything missing on boot. Panel kills lose nothing.
+- **Settings guardian** (`utils/settingsGuardian.js`): rolling backup of settings and media every 10s + on SIGTERM into `.bkp/`, then restores anything missing on boot. Baileys auth must use persistent storage or `SESSION_ID`; copying its high-churn key store blocks the bot.
 - **SESSION_ID + DATABASE_URL = stateless deploys.** Session restores from env, settings live in Postgres. A wiped filesystem is a minor inconvenience, not a re-pair.
 - **Memory cap:** she runs with `--max-old-space-size=512` (Procfile + Dockerfile) so small containers OOM far less. Raise it on big VPS boxes if you run heavy media queues.
 - **Fly.io:** `fly.toml` is ready (`jnb` region, never-sleep machines, `/health` checks, volume for `vault/` media). See the steps at the top of that file.
