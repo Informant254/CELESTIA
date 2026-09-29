@@ -1,9 +1,9 @@
 /**
- * utils/downloader.js — CELESTIA shared download sources (verified live).
+ * utils/downloader.js — CELESTIA shared download sources.
  *
  *  SEARCH : siputzx  -> yt-search (npm fallback)
- *  AUDIO  : bk9      -> davidcyril
- *  VIDEO  : davidcyril (480p mp4)
+ *  AUDIO  : Keith (keyless) -> bk9 (keyless) -> davidcyril (optional key)
+ *  VIDEO  : Keith (keyless) -> davidcyril (optional key)
  *  SOCIAL : bk9 (tiktok / instagram / fb / twitter)
  *
  * Every function resolves to { url, title } or throws a human-readable Error.
@@ -23,6 +23,11 @@ const TIMEOUT = 60000;
 // Fallback download APIs get a shorter fuse — a dead provider must fail
 // fast so the next one gets its chance inside the job timeout.
 const API_TIMEOUT = 30000;
+
+// Keyless downloader backend used by ISAAC/BMW. Operators can override the
+// base URL without changing code, but no API key is required by this client.
+const KEITH_BASE = process.env.KEITH_BASE || 'https://apiskeith2-production-3679.up.railway.app';
+
 // Optional davidcyriltech API key (their endpoints now 402 without one).
 // Set DAVIDCYRIL_APIKEY and both davidcyril fallbacks authenticate.
 function dcUrl(endpoint, videoUrl) {
@@ -124,6 +129,38 @@ async function ytSearch(query) {
   }
 }
 
+async function keithMedia(kind, videoUrl, fallbackTitle) {
+  const endpoint = kind === 'audio' ? 'audio' : 'mp4';
+  const r = await axios.get(
+    `${KEITH_BASE}/download/${endpoint}?url=${encodeURIComponent(videoUrl)}`,
+    { timeout: API_TIMEOUT }
+  );
+  const mediaUrl = typeof r.data?.result === 'string' ? r.data.result : null;
+  if (!mediaUrl) {
+    throw new Error(r.data?.error || r.data?.message || 'Keith returned no media link');
+  }
+  return {
+    url: await validateDownloadUrl(mediaUrl),
+    title: r.data?.title || fallbackTitle,
+  };
+}
+
+async function keithAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
+  try {
+    return await keithMedia('audio', videoUrl, fallbackTitle);
+  } catch (e) {
+    throw new Error('Keith audio failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
+async function keithVideo(videoUrl, fallbackTitle = 'YouTube Video') {
+  try {
+    return await keithMedia('video', videoUrl, fallbackTitle);
+  } catch (e) {
+    throw new Error('Keith video failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
 // Apix key: chat-set key wins, env is the deploy fallback. The same key
 // unlocks Apix AI and Apix downloads.
 function apixKey() {
@@ -172,7 +209,15 @@ async function apixVideo(videoUrl, fallbackTitle = 'YouTube Video') {
 
 async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
   const errs = [];
-  // 1) bk9 first — verified alive, links stream cross-network.
+
+  // 1) Keith first — no API key required by the client.
+  try {
+    return await keithAudio(videoUrl, fallbackTitle);
+  } catch (e) {
+    errs.push('keith: ' + (e.response?.status || e.message));
+  }
+
+  // 2) bk9 — keyless and links generally stream cross-network.
   try {
     const r = await axios.get(
       `https://api.bk9.dev/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
@@ -186,8 +231,9 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
   } catch (e) {
     errs.push('bk9: ' + (e.response?.status || e.message));
   }
-  // 2) davidcyril (needs DAVIDCYRIL_APIKEY since they gated it — without a
-  // key this fails fast and costs nothing).
+
+  // 3) davidcyril is optional. If no key is configured it fails quickly and
+  // the caller can continue its outer fallback chain.
   try {
     const r = await axios.get(dcUrl('ytmp3', videoUrl), { timeout: API_TIMEOUT });
     const res = r.data?.result;
@@ -202,6 +248,16 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio') {
 }
 
 async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video') {
+  const errs = [];
+
+  // 1) Keith first — no API key required by the client.
+  try {
+    return await keithVideo(videoUrl, fallbackTitle);
+  } catch (e) {
+    errs.push('keith: ' + (e.response?.status || e.message));
+  }
+
+  // 2) davidcyril remains an optional keyed fallback.
   try {
     const r = await axios.get(dcUrl('ytmp4', videoUrl), { timeout: API_TIMEOUT });
     const res = r.data?.result;
@@ -210,8 +266,10 @@ async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video') {
     }
     throw new Error(res?.message || 'no video link');
   } catch (e) {
-    throw new Error('Video download failed (' + (e.response?.status || e.message) + '). Try again later.');
+    errs.push('davidcyril: ' + (e.response?.status || e.message));
   }
+
+  throw new Error('Video download failed (' + errs.join(' · ') + '). Try again later.');
 }
 
 // Recursively find the first http(s) string in an unknown API payload.
@@ -281,4 +339,20 @@ function cleanName(s, ext) {
   return String(s || 'media').replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 80) + ext;
 }
 
-module.exports = { ytSearch, ytAudio, ytVideo, apixAudio, apixVideo, bk9Social, firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName, isPublicIp, validateDownloadUrl, downloadBuffer };
+module.exports = {
+  ytSearch,
+  ytAudio,
+  ytVideo,
+  keithAudio,
+  keithVideo,
+  apixAudio,
+  apixVideo,
+  bk9Social,
+  firstMediaUrl,
+  pickCleanUrl,
+  collectMediaUrls,
+  cleanName,
+  isPublicIp,
+  validateDownloadUrl,
+  downloadBuffer,
+};
