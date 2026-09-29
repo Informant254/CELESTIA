@@ -134,7 +134,7 @@ function renderHome({ user, prefix, mode, total, catalog }) {
   const lines = [
     masthead('OBSERVATORY', 'home', s),
     '',
-    `Welcome back, *${clean(user, 'Traveler').slice(0, 40)}*`,
+    `Welcome back, *${clean(user, 'Traveler').slice(0, 40)}* — online.`,
     `_${s.name} interface · ${shortUptime(process.uptime())} uptime_`,
     '',
     '╭─ ◇ *FLIGHT STATUS*',
@@ -146,6 +146,7 @@ function renderHome({ user, prefix, mode, total, catalog }) {
     '',
     `        ${s.glyph}  *COMMAND CONSTELLATION*  ${s.glyph}`,
     '       _Choose where you want to go._',
+    `       _${HOUSES.length} houses · ${total} signals — step inside._`,
   ];
 
   for (const house of HOUSES) {
@@ -153,7 +154,7 @@ function renderHome({ user, prefix, mode, total, catalog }) {
     if (!stats.count) continue;
     lines.push('', `╭─ ${house.number}  ${house.icon} *${house.title}*`);
     lines.push(`│ _${house.subtitle}_`);
-    lines.push(`│ ${stats.categories.length} realms · ${stats.count} signals`);
+    lines.push(`│ ${stats.categories.length} realms · ${stats.count} live signals`);
     lines.push(`│ Enter › ${prefix}menu ${house.key}`);
     lines.push(`╰${RULE}`);
   }
@@ -173,7 +174,8 @@ function renderHouse(house, catalog, prefix) {
     masthead(house.title, `HOME  /  ${house.key}`),
     '',
     `${house.icon} *${house.subtitle}*`,
-    `_${stats.count} live signals in ${stats.categories.length} realms_`,
+    `_${stats.categories.length} realms · ${stats.count} live signals_`,
+    '_Pick a realm to open its signals._',
   ];
   stats.categories.forEach((category, index) => {
     lines.push('', `╭─ ${String(index + 1).padStart(2, '0')}  ${category.icon} *${category.title}*`);
@@ -200,9 +202,10 @@ function renderRealm(category, house, prefix, page = 1) {
   for (const command of items) {
     const name = clean(command.name).toLowerCase();
     lines.push(`${skin().glyph} *${prefix}${name}*`);
-    lines.push(`   ${description(command)}`);
+    lines.push(`   └ ${description(command)}`);
     lines.push('');
   }
+  lines.push('_Open a profile for usage, aliases and launch._', '');
   const nav = [`← ${prefix}menu ${house.key}`];
   if (current > 1) nav.push(`‹ ${prefix}menu ${house.key} ${category.key} ${current - 1}`);
   if (current < pages) nav.push(`› ${prefix}menu ${house.key} ${category.key} ${current + 1}`);
@@ -219,6 +222,7 @@ function renderDetail(category, house, command, prefix) {
     '',
     `╭─ ${category.icon} *${prefix}${name}*`,
     `│ ${description(command)}`,
+    `│ Realm › ${category.title}`,
   ];
   if (aliases.length) {
     lines.push('│', '│ *Aliases*');
@@ -237,11 +241,11 @@ function renderAtlas(catalog, prefix, page = 1) {
   const pages = Math.max(1, Math.ceil(available.length / perPage));
   const current = Math.max(1, Math.min(Number(page) || 1, pages));
   const slice = available.slice((current - 1) * perPage, current * perPage);
-  const lines = [masthead('COMPLETE ATLAS', `HOME  /  ALL  /  ${current}`), '', `*${available.length} realms* · page ${current}/${pages}`];
+  const lines = [masthead('COMPLETE ATLAS', `HOME  /  ALL  /  ${current}`), '', `*${available.length} realms* · page ${current}/${pages}`, '_Every realm, one atlas — pick a path to step inside._'];
   for (const category of slice) {
     const house = houseFor(category.key);
     lines.push('', `${category.icon} *${category.title}*`);
-    lines.push(`   ${category.commands.length} signals · ${prefix}menu ${house.key} ${category.key}`);
+    lines.push(`   └ ${category.commands.length} signals · ${prefix}menu ${house.key} ${category.key}`);
   }
   const nav = [`← ${prefix}menu`];
   if (current > 1) nav.push(`‹ ${prefix}menu all ${current - 1}`);
@@ -269,7 +273,7 @@ function renderSearch(catalog, prefix, query) {
     lines.push(`*${matches.length} match${matches.length === 1 ? '' : 'es'}* for “${q}”`, '');
     for (const { command, category, house } of matches.slice(0, 15)) {
       lines.push(`${skin().glyph} *${prefix}${clean(command.name).toLowerCase()}* · ${category.title}`);
-      lines.push(`   ${prefix}menu ${house.key} ${category.key} ${clean(command.name).toLowerCase()}`);
+      lines.push(`   └ ${prefix}menu ${house.key} ${category.key} ${clean(command.name).toLowerCase()}`);
     }
     if (matches.length > 15) lines.push('', `_Showing the first 15 results._`);
   }

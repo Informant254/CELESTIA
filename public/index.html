@@ -3,74 +3,247 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="CELESTIA secure pairing station — link your WhatsApp in seconds.">
 <title>CELESTIA — Pairing Station</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #030510;
+    --ink: #e8f4ff;
+    --muted: #8ea6c8;
+    --faint: #5d7194;
+    --cyan: #00e5ff;
+    --violet: #7a52ff;
+    --pink: #ff2e93;
+    --green: #7dffa8;
+    --line: rgba(0, 229, 255, 0.22);
+  }
   body {
-    font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
-    background: radial-gradient(ellipse at 50% 30%, #111a38 0%, #0a0f24 45%, #030510 100%);
-    color: #cfeaff; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    background:
+      radial-gradient(900px 480px at 50% -8%, rgba(122, 82, 255, 0.22), transparent 65%),
+      radial-gradient(760px 420px at 12% 110%, rgba(0, 229, 255, 0.10), transparent 60%),
+      radial-gradient(760px 420px at 88% 110%, rgba(255, 46, 147, 0.08), transparent 60%),
+      radial-gradient(ellipse at 50% 30%, #111a38 0%, #0a0f24 45%, var(--bg) 100%);
+    color: var(--ink);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(1px 1px at 12% 22%, rgba(255,255,255,0.7), transparent),
+      radial-gradient(1px 1px at 32% 68%, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1.5px 1.5px at 68% 18%, rgba(255,255,255,0.6), transparent),
+      radial-gradient(1px 1px at 82% 58%, rgba(255,255,255,0.5), transparent),
+      radial-gradient(1px 1px at 48% 38%, rgba(0,229,255,0.8), transparent),
+      radial-gradient(1px 1px at 58% 82%, rgba(255,255,255,0.4), transparent);
   }
   .card {
-    max-width: 460px; width: 92%; background: rgba(10, 15, 30, 0.85);
-    border: 1px solid rgba(0, 229, 255, 0.25); border-radius: 24px;
-    padding: 40px 32px; text-align: center; box-shadow: 0 0 60px rgba(122, 82, 255, 0.15);
+    position: relative;
+    max-width: 480px;
+    width: 100%;
+    background: rgba(10, 15, 30, 0.78);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    padding: 44px 36px 32px;
+    text-align: center;
+    box-shadow: 0 0 80px rgba(122, 82, 255, 0.18), 0 24px 60px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   }
-  .wolf { font-size: 52px; margin-bottom: 8px; }
+  .card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 10%;
+    right: 10%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), var(--violet), transparent);
+    opacity: 0.8;
+  }
+  .badge {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--cyan);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 6px 14px;
+    margin-bottom: 18px;
+    background: rgba(0, 229, 255, 0.06);
+  }
+  .wolf { font-size: 48px; margin-bottom: 6px; filter: drop-shadow(0 0 18px rgba(0, 229, 255, 0.35)); }
   h1 {
-    font-size: 34px; letter-spacing: 10px; font-weight: 800; margin-bottom: 4px;
-    background: linear-gradient(90deg, #00e5ff, #7a52ff, #ff2e93);
-    -webkit-background-clip: text; background-clip: text; color: transparent;
+    font-size: 34px;
+    letter-spacing: 10px;
+    font-weight: 800;
+    margin-bottom: 6px;
+    text-indent: 10px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet), var(--pink), var(--cyan));
+    background-size: 220% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: sheen 7s linear infinite;
   }
-  .sub { color: #8ea6c8; font-size: 13px; letter-spacing: 4px; margin-bottom: 30px; text-transform: uppercase; }
-  .poem { color: #5d7194; font-style: italic; font-size: 13px; margin-bottom: 32px; }
+  @keyframes sheen { to { background-position: 220% center; } }
+  .sub { color: var(--muted); font-size: 12px; letter-spacing: 5px; margin-bottom: 12px; text-transform: uppercase; }
+  .poem { color: var(--faint); font-style: italic; font-size: 13px; margin-bottom: 30px; }
+  .field-label {
+    display: block;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
   input[type=tel] {
-    width: 100%; padding: 16px; font-size: 20px; text-align: center; letter-spacing: 2px;
-    background: rgba(0,0,0,0.4); color: #fff; border: 1px solid #22365e;
-    border-radius: 14px; outline: none; margin-bottom: 14px;
+    width: 100%;
+    padding: 16px;
+    font-size: 20px;
+    text-align: center;
+    letter-spacing: 2px;
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    border: 1px solid #22365e;
+    border-radius: 14px;
+    outline: none;
+    margin-bottom: 8px;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
-  input[type=tel]:focus { border-color: #00e5ff; box-shadow: 0 0 20px rgba(0,229,255,0.25); }
+  input[type=tel]::placeholder { color: #3d4f73; }
+  input[type=tel]:focus { border-color: var(--cyan); box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.18), 0 0 24px rgba(0, 229, 255, 0.2); }
+  .micro { font-size: 11px; color: var(--faint); margin-bottom: 16px; }
   button {
-    width: 100%; padding: 16px; font-size: 16px; font-weight: 700; letter-spacing: 3px;
-    background: linear-gradient(90deg, #00e5ff, #7a52ff); color: #030510;
-    border: none; border-radius: 14px; cursor: pointer; text-transform: uppercase;
-    transition: transform .15s, box-shadow .15s;
+    width: 100%;
+    padding: 16px;
+    font-size: 15px;
+    font-weight: 800;
+    letter-spacing: 3px;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    color: #030510;
+    border: none;
+    border-radius: 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    transition: transform 0.15s, box-shadow 0.15s, filter 0.15s;
   }
-  button:hover { transform: translateY(-2px); box-shadow: 0 8px 30px rgba(0,229,255,0.35); }
-  button:disabled { opacity: 0.5; cursor: wait; }
+  button:hover { transform: translateY(-2px); box-shadow: 0 10px 32px rgba(0, 229, 255, 0.35); filter: brightness(1.05); }
+  button:active { transform: translateY(0); }
+  button:disabled { opacity: 0.55; cursor: wait; transform: none; box-shadow: none; }
+  button:focus-visible, input[type=tel]:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+  .stage-label { font-size: 11px; font-weight: 700; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
   .code {
-    font-size: 44px; font-weight: 800; letter-spacing: 12px; color: #00e5ff;
-    margin: 24px 0; padding: 18px; border: 2px dashed rgba(0,229,255,0.4);
-    border-radius: 14px; background: rgba(0,229,255,0.05);
-    text-shadow: 0 0 25px rgba(0,229,255,0.5); cursor: pointer;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: 10px;
+    text-indent: 10px;
+    color: var(--cyan);
+    margin: 6px 0 4px;
+    padding: 20px 12px;
+    border: 2px dashed rgba(0, 229, 255, 0.45);
+    border-radius: 16px;
+    background: rgba(0, 229, 255, 0.05);
+    text-shadow: 0 0 25px rgba(0, 229, 255, 0.5);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
   }
-  .steps { text-align: left; font-size: 13px; color: #8ea6c8; line-height: 1.9; margin: 20px 0; }
-  .steps b { color: #cfeaff; }
+  .code:hover { background: rgba(0, 229, 255, 0.1); border-color: var(--cyan); }
+  .tap-hint { font-size: 11px; color: var(--faint); margin-bottom: 20px; }
+  .steps { text-align: left; font-size: 13px; color: var(--muted); line-height: 2; margin: 20px 0; background: rgba(0,0,0,0.25); border: 1px solid rgba(34, 54, 94, 0.6); border-radius: 14px; padding: 16px 18px; }
+  .steps b {
+    display: inline-block;
+    min-width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+    font-size: 12px;
+    color: #030510;
+    background: linear-gradient(90deg, var(--cyan), var(--violet));
+    border-radius: 7px;
+    margin-right: 8px;
+  }
+  .steps code, .session-note code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.06);
+    padding: 1px 6px;
+    border-radius: 6px;
+  }
   .session {
-    font-size: 10px; word-break: break-all; text-align: left; color: #7dffa8;
-    background: rgba(0,40,20,0.4); border: 1px solid #2a5; padding: 14px;
-    border-radius: 10px; margin: 16px 0; font-family: monospace; cursor: pointer;
+    font-size: 10px;
+    word-break: break-all;
+    text-align: left;
+    color: var(--green);
+    background: rgba(0, 40, 20, 0.45);
+    border: 1px solid rgba(42, 171, 85, 0.5);
+    padding: 14px;
+    border-radius: 10px;
+    margin: 14px 0 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    cursor: pointer;
+    max-height: 120px;
+    overflow-y: auto;
   }
-  .err { color: #ff2e93; font-size: 13px; margin: 10px 0; }
-  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid #00e5ff;
-    border-top: transparent; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -4px; }
+  .session:hover { border-color: var(--green); }
+  .warn {
+    font-size: 11px;
+    color: #ffb84d;
+    background: rgba(255, 184, 77, 0.07);
+    border: 1px solid rgba(255, 184, 77, 0.3);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin: 10px 0 4px;
+    line-height: 1.6;
+  }
+  .err { color: var(--pink); font-size: 13px; margin: 12px 0 0; min-height: 18px; }
+  .spinner { display: inline-block; width: 18px; height: 18px; border: 2px solid rgba(3, 5, 16, 0.35); border-top-color: #030510; border-radius: 50%; animation: spin 0.8s linear infinite; vertical-align: -4px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .hint { font-size: 11px; color: #4a5a78; margin-top: 24px; line-height: 1.7; }
-  a { color: #00e5ff; }
+  .hint { font-size: 11px; color: #4a5a78; margin-top: 26px; line-height: 1.8; }
+  .hint b { color: var(--muted); }
+  .foot { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(34, 54, 94, 0.6); font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: #4a5a78; }
+  .done-mark { font-size: 44px; margin-bottom: 10px; filter: drop-shadow(0 0 16px rgba(125, 255, 168, 0.4)); }
+  .done-title { font-size: 18px; font-weight: 800; letter-spacing: 2px; color: var(--green); margin-bottom: 6px; }
+  a { color: var(--cyan); }
+  @media (max-width: 480px) {
+    .card { padding: 36px 22px 26px; border-radius: 22px; }
+    h1 { font-size: 27px; letter-spacing: 7px; }
+    .code { font-size: 32px; letter-spacing: 7px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    h1 { animation: none; }
+    .spinner { animation-duration: 1.6s; }
+    button { transition: none; }
+  }
 </style>
 </head>
 <body>
 <div class="card">
+  <div class="badge">WhatsApp Bot · Secure Pairing</div>
   <div class="wolf">🐺</div>
   <h1>CELESTIA</h1>
   <div class="sub">Pairing Station</div>
   <div class="poem">✦ Howl of the Wolf → Light of the Stars ✦</div>
 
   <div id="stage-input">
-    <input type="tel" id="phone" placeholder="254 712 345 678" autocomplete="tel">
-    <div style="font-size:11px;color:#5d7194;margin-bottom:14px">full international format, digits only</div>
-    <button onclick="requestCode()">GET PAIRING CODE</button>
-    <div class="err" id="err"></div>
+    <label class="field-label" for="phone">WhatsApp number</label>
+    <input type="tel" id="phone" placeholder="254 712 345 678" autocomplete="tel" inputmode="tel">
+    <div class="micro">Full international format, digits only — e.g. country code + number.</div>
+    <button onclick="requestCode()">Get pairing code</button>
+    <div class="err" id="err" role="alert"></div>
     <div class="hint">
       Inspired by <b>WolfTech</b> · Built as <b>CELESTIA</b><br>
       290+ commands · 27 realms · a wolf that remembers
@@ -78,31 +251,32 @@
   </div>
 
   <div id="stage-code" style="display:none">
-    <div style="font-size:12px;color:#8ea6c8;margin-bottom:6px">YOUR PAIRING CODE</div>
-    <div class="code" id="code" onclick="copyCode()">— — — —</div>
-    <div style="font-size:11px;color:#5d7194;margin-bottom:18px">tap the code to copy</div>
+    <div class="stage-label">Your pairing code</div>
+    <div class="code" id="code" onclick="copyCode()" role="status" aria-live="polite">— — — —</div>
+    <div class="tap-hint">Tap the code to copy · expires fast — enter it now</div>
     <div class="steps">
-      <b>1.</b> Open WhatsApp on your phone<br>
-      <b>2.</b> Settings → <b>Linked Devices</b> → Link a Device<br>
-      <b>3.</b> Tap <b>"Link with phone number instead"</b><br>
-      <b>4.</b> Enter the code above
+      <b>1</b>Open WhatsApp on your phone<br>
+      <b>2</b>Settings → <b>Linked Devices</b> → Link a Device<br>
+      <b>3</b>Tap <b>"Link with phone number instead"</b><br>
+      <b>4</b>Enter the code above
     </div>
-    <button onclick="checkStatus()"><span class="spinner"></span>&nbsp; I'VE ENTERED IT — CHECK</button>
-    <div class="err" id="err2"></div>
+    <button onclick="checkStatus()"><span class="spinner"></span>&nbsp; I've entered it — check</button>
+    <div class="err" id="err2" role="alert"></div>
   </div>
 
   <div id="stage-done" style="display:none">
-    <div style="font-size:40px;margin-bottom:12px">✅</div>
-    <div style="font-size:18px;font-weight:700;color:#7dffa8;margin-bottom:6px">LINKED SUCCESSFULLY</div>
-    <div style="font-size:12px;color:#8ea6c8;margin-bottom:16px">Your session string (tap to copy):</div>
+    <div class="done-mark">✅</div>
+    <div class="done-title">LINKED SUCCESSFULLY</div>
+    <div class="micro">Your session string — tap to copy:</div>
     <div class="session" id="session" onclick="copySession()">…</div>
-    <div class="steps">
-      <b>Deploying yourself?</b><br>
-      Paste this string into your <code>SESSION_ID</code> environment variable —
-      she'll wake up as YOUR bot, with YOUR number as owner.<br><br>
-      <b>Or just start chatting:</b> send <code>.menu</code> to her on WhatsApp.
+    <div class="warn">🔐 Treat this string like a password. Anyone holding it controls this WhatsApp link. Never share or post it.</div>
+    <div class="steps session-note">
+      <b>★</b>Paste it into your <code>SESSION_ID</code> environment variable — she'll wake up as YOUR bot.<br><br>
+      <b>★</b>Or just start chatting: send <code>.menu</code> to her on WhatsApp.
     </div>
   </div>
+
+  <div class="foot">Celestia · Forged in the Wolf's Den</div>
 </div>
 
 <script>
