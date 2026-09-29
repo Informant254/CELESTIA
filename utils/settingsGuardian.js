@@ -6,8 +6,10 @@
  * The guardian keeps a rolling backup of everything she needs to
  * wake up intact, and restores whatever is missing on boot:
  *
- *   backed up : auth_info_baileys/ (session), data/ (settings DB),
- *               config/botSettings.json (runtime settings), vault/ (media)
+ *   backed up : data/ (settings DB), config/botSettings.json (runtime
+ *               settings), vault/ (media)
+ *   excluded  : auth_info_baileys/ (high-churn Signal key store; sessions
+ *               must use persistent storage or the portable session backup)
  *   skipped   : node_modules, .git, logs, pairing_sessions, .bkp itself
  *   cadence   : every 10s (unref'd — never holds the process open)
  *               + during the application's clean shutdown
@@ -21,7 +23,7 @@ const ROOT = path.join(__dirname, '..');
 const BACKUP_DIR = path.join(ROOT, '.bkp');
 const MAX_FILE = 8 * 1024 * 1024; // skip single files bigger than 8MB
 
-const BACKUP_TARGETS = ['auth_info_baileys', 'data', 'config/botSettings.json', 'vault'];
+const BACKUP_TARGETS = ['data', 'config/botSettings.json', 'vault'];
 
 const SKIP_DIRS = new Set([
   'node_modules', '.git', '.bkp', 'logs', 'pairing_sessions',
