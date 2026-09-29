@@ -7,6 +7,7 @@ const path = require('node:path');
 const settingsStore = require('../utils/settingsStore');
 const { createServer } = require('../dlproxy/server');
 const fetchMod = require('../dlproxy/fetch');
+const keyStore = require('../dlproxy/keys');
 
 const KEYS_FILE = path.join(__dirname, '..', 'dlproxy', 'keys.json');
 
@@ -54,16 +55,18 @@ test('proxy: rejects missing/bad keys, serves bytes to valid keys', async () => 
       const issued = await r.json();
       assert.ok(issued.key, 'key issued');
       r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x&key=${issued.key}`);
+      assert.equal(r.status, 401, 'query-string keys are rejected to avoid access-log leaks');
+      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x`, { headers: { 'x-api-key': issued.key } });
       assert.equal(r.status, 200);
       assert.match(r.headers.get('content-type'), /audio\/mpeg/);
       assert.equal(await r.text(), 'FAKEBYTES');
       // non-youtube rejected
-      r = await fetch(`${base}/api/download/youtube/mp3?url=https://example.com/x&key=${issued.key}`);
+      r = await fetch(`${base}/api/download/youtube/mp3?url=https://example.com/x`, { headers: { 'x-api-key': issued.key } });
       assert.equal(r.status, 400);
       // revoke kills it
       r = await fetch(`${base}/admin/keys`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminKey: 'adm', action: 'revoke', key: issued.key }) });
       assert.equal((await r.json()).success, true);
-      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x&key=${issued.key}`);
+      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x`, { headers: { 'x-api-key': issued.key } });
       assert.equal(r.status, 401);
       // bad admin rejected
       r = await fetch(`${base}/admin/keys`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminKey: 'wrong', action: 'list' }) });
@@ -83,10 +86,10 @@ test('proxy: per-minute quota enforced', async () => {
     try {
       let r = await fetch(`${base}/admin/keys`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ adminKey: 'adm', action: 'issue', label: 'q', rpm: 1, rpd: 50 }) });
       const { key } = await r.json();
-      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x&key=${key}`);
+      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x`, { headers: { 'x-api-key': key } });
       assert.equal(r.status, 200);
       await r.arrayBuffer();
-      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x&key=${key}`);
+      r = await fetch(`${base}/api/download/youtube/mp3?url=https://www.youtube.com/watch?v=x`, { headers: { 'x-api-key': key } });
       assert.equal(r.status, 429);
     } finally {
       await close();
@@ -103,7 +106,7 @@ test('client: skips silently when unconfigured, hits own proxy when set', async 
   const seen = [];
   require.cache[axiosPath] = {
     id: axiosPath, filename: axiosPath, loaded: true,
-    exports: { get: async (url, opts) => { const q = new URLSearchParams(opts?.params || {}).toString(); seen.push(url + (q ? '?' + q : '')); return { status: 200, headers: { 'content-type': 'audio/mpeg' }, data: Buffer.from('PROXYBYTES') }; } },
+    exports: { get: async (url, opts) => { seen.push({ url, opts }); return { status: 200, headers: { 'content-type': 'audio/mpeg' }, data: Buffer.from('PROXYBYTES') }; } },
   };
   delete require.cache[require.resolve('../utils/dlproxy')];
   try {
@@ -117,8 +120,11 @@ test('client: skips silently when unconfigured, hits own proxy when set', async 
     assert.equal(client2.configured(), true);
     const r = await client2.dlproxyAudio('https://www.youtube.com/watch?v=x');
     assert.equal(r.buf.toString(), 'PROXYBYTES');
-    assert.match(seen[0], /dl\.example\.com\/api\/download\/youtube\/mp3/);
-    assert.match(seen[0], /key=k123/);
+    assert.match(seen[0].url, /dl\.example\.com\/api\/download\/youtube\/mp3/);
+    assert.equal(seen[0].opts.params.key, undefined, 'client key is not placed in the query string');
+    assert.equal(seen[0].opts.headers['x-api-key'], 'k123');
+    assert.equal(seen[0].opts.maxRedirects, 0, 'client key cannot follow a cross-origin redirect');
+    assert.ok(seen[0].opts.maxContentLength > 0, 'proxy response is size-bounded');
   } finally {
     if (origAxios === undefined) delete require.cache[axiosPath];
     else require.cache[axiosPath].exports = origAxios;
@@ -128,6 +134,21 @@ test('client: skips silently when unconfigured, hits own proxy when set', async 
     if (prevKey === undefined) settingsStore.set('dlproxy_key', null);
     else settingsStore.set('dlproxy_key', prevKey);
   }
+});
+
+test('proxy key lookup rejects inherited object properties', () => {
+  assert.equal(keyStore.checkAndHit({}, 'toString').ok, false);
+  assert.equal(keyStore.checkAndHit({}, 'constructor').ok, false);
+  const inherited = Object.create({ leaked: { rpm: 99, rpd: 99 } });
+  assert.equal(keyStore.checkAndHit(inherited, 'leaked').ok, false);
+});
+
+test('proxy client requires HTTPS except for loopback development', () => {
+  const client = require('../utils/dlproxy');
+  assert.equal(client.normalizeBaseUrl('http://downloads.example.com'), null);
+  assert.equal(client.normalizeBaseUrl('https://user:pass@downloads.example.com'), null);
+  assert.equal(client.normalizeBaseUrl('http://127.0.0.1:3001/'), 'http://127.0.0.1:3001');
+  assert.equal(client.normalizeBaseUrl('https://downloads.example.com/path/'), 'https://downloads.example.com/path');
 });
 
 test('fallback: own proxy wins before apix when both answer', async () => {

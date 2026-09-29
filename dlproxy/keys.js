@@ -14,9 +14,11 @@ const KEYS_FILE = path.join(__dirname, 'keys.json');
 function load() {
   try {
     const raw = JSON.parse(fs.readFileSync(KEYS_FILE, 'utf8'));
-    if (raw && typeof raw === 'object') return raw;
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      return Object.assign(Object.create(null), raw);
+    }
   } catch { /* start empty */ }
-  return {};
+  return Object.create(null);
 }
 
 function save(keys) {
@@ -33,8 +35,9 @@ function minStamp(d = new Date()) {
 
 // Returns { ok } or { ok:false, reason } — and records the hit on success.
 function checkAndHit(keys, key) {
+  if (!keys || !Object.hasOwn(keys, key)) return { ok: false, reason: 'Invalid API key.' };
   const entry = keys[key];
-  if (!entry) return { ok: false, reason: 'Invalid API key.' };
+  if (!entry || typeof entry !== 'object') return { ok: false, reason: 'Invalid API key.' };
   const day = dayStamp();
   const min = minStamp();
   if (entry.usedDayAt !== day) { entry.usedDayAt = day; entry.usedDay = 0; }

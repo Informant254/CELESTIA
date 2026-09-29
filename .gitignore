@@ -55,3 +55,6 @@ autochat/models/
 
 # Download proxy: client keys are secrets — NEVER COMMIT
 dlproxy/keys.json
+
+# Separate local service; its settings contain deployment secrets.
+searxng-railway/

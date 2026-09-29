@@ -1,4 +1,4 @@
-const { ytAudio, cleanName } = require('../utils/downloader');
+const { downloadYoutubeAudio, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'download',
@@ -8,7 +8,7 @@ module.exports = {
     const jid = msg.key.remoteJid;
     const url = args[0];
 
-    if (!url || !/^https?:\/\/(www\.)?(youtube\.com|youtu\.be)\//.test(url)) {
+    if (!url || !/^https?:\/\/(?:www\.|m\.|music\.)?(?:youtube\.com|youtu\.be)\//i.test(url)) {
       return await sock.sendMessage(
         jid,
         { text: 'Usage: .download <YouTube URL>\nExample: .download https://youtube.com/watch?v=...' },
@@ -19,13 +19,14 @@ module.exports = {
     await sock.sendMessage(jid, { text: '⏳ Downloading audio, this may take a moment...' }, { quoted: msg });
 
     try {
-      const { url: audioUrl, title } = await ytAudio(url);
-
-      await sock.sendMessage(
-        jid,
-        { audio: { url: audioUrl }, mimetype: 'audio/mpeg', ptt: false, fileName: cleanName(title, '.mp3') },
-        { quoted: msg }
-      );
+      const owner = `${jid}:${msg.key.participant || jid}`;
+      await downloadYoutubeAudio(url, undefined, undefined, owner, async ({ buffer, title }) => {
+        await sock.sendMessage(
+          jid,
+          { audio: buffer, mimetype: 'audio/mpeg', ptt: false, fileName: cleanName(title, '.mp3') },
+          { quoted: msg }
+        );
+      });
     } catch (error) {
       console.error('[DOWNLOAD ERROR]', error.message);
       await sock.sendMessage(

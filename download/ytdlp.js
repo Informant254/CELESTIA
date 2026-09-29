@@ -63,7 +63,7 @@ function abortDir(workDir) {
   return n;
 }
 
-function baseArgs(workDir, ffmpeg, maxBytes) {
+function baseArgs(workDir, ffmpeg, maxBytes, { youtube = true } = {}) {
   const a = [
     '--no-warnings',
     // YouTube now serves JS challenges on datacenter IPs — without a JS
@@ -87,28 +87,44 @@ function baseArgs(workDir, ffmpeg, maxBytes) {
     '-o', path.join(workDir, 'out.%(ext)s'),
   ];
   if (maxBytes) a.push('--max-filesize', String(maxBytes));
-  const cookies = cookieFile();
-  if (cookies) a.push('--cookies', cookies);
-  const proxy = youtubeProxy();
-  if (proxy) a.push('--proxy', proxy);
-  const source = sourceAddress();
-  if (source) a.push('--source-address', source);
+  if (youtube) {
+    const cookies = cookieFile();
+    if (cookies) a.push('--cookies', cookies);
+    const proxy = youtubeProxy();
+    if (proxy) a.push('--proxy', proxy);
+    const source = sourceAddress();
+    if (source) a.push('--source-address', source);
+  }
   return a;
 }
 
-function runSpawn(bin, args, workDir, onProgress, overallMs = cfg.YTDLP_OVERALL_TIMEOUT_MS) {
+function runSpawn(bin, args, workDir, onProgress, overallMs = cfg.YTDLP_OVERALL_TIMEOUT_MS, signal) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason || new Error('Download cancelled.'));
     const child = spawn(bin, args, { cwd: workDir, windowsHide: true });
     track(workDir, child);
     let stderrTail = '';
     let lastFrac = -1;
     let done = false;
-    const finish = (fn, val) => { if (!done) { done = true; clearTimeout(killer); fn(val); } };
+    const finish = (fn, val) => {
+      if (!done) {
+        done = true;
+        clearTimeout(killer);
+        if (signal) signal.removeEventListener('abort', onAbort);
+        fn(val);
+      }
+    };
+    const onAbort = () => {
+      try { child.kill(); } catch { /* already dead */ }
+      finish(reject, signal.reason || new Error('Download cancelled.'));
+    };
     const killer = setTimeout(() => {
       try { child.kill(); } catch { /* already dead */ }
       finish(reject, new Error('yt-dlp ran past the overall time budget — network too slow or stalled.'));
     }, overallMs);
     if (killer.unref) killer.unref();
+    if (signal) signal.addEventListener('abort', onAbort, { once: true });
+    if (signal?.aborted) onAbort();
     child.stdout.on('data', (d) => {
       for (const line of String(d).split('\n')) {
         const m = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
@@ -145,12 +161,12 @@ function findOutput(workDir) {
 }
 
 // One attempt. Throws on any failure. Never retries.
-async function attempt({ url, selector, extra = [], audio = false, workDir, onProgress, maxBytes }) {
+async function attempt({ url, selector, extra = [], audio = false, workDir, onProgress, maxBytes, youtube = true, signal }) {
   const bin = await ensureYtDlp();
   const ffmpeg = ffmpegPath(); // throws DEPENDENCY_MISSING with admin diagnostic
   const aria = await aria2cPath().catch(() => null);
 
-  const args = baseArgs(workDir, ffmpeg, maxBytes);
+  const args = baseArgs(workDir, ffmpeg, maxBytes, { youtube });
   if (aria) args.push('--external-downloader', 'aria2c', '--external-downloader-args', 'aria2c:-x 4 -s 4 -k 2M');
   args.push(...extra);
   if (audio) {
@@ -160,7 +176,7 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   }
   args.push(url);
 
-  await runSpawn(bin, args, workDir, onProgress);
+  await runSpawn(bin, args, workDir, onProgress, cfg.YTDLP_OVERALL_TIMEOUT_MS, signal);
   const file = findOutput(workDir);
   if (!file) {
     const e = new Error(maxBytes ? 'Aborted: file exceeds the configured size cap.' : 'yt-dlp finished but produced no file.');

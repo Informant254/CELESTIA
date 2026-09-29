@@ -1,5 +1,4 @@
-const axios = require('axios');
-const { bk9Social, cleanName } = require('../utils/downloader');
+const { downloadSocial, cleanName } = require('../utils/downloader');
 
 module.exports = {
   name: 'ig',
@@ -17,26 +16,23 @@ module.exports = {
       await sock.sendMessage(jid, { react: { text: '📸', key: msg.key } });
       const searching = await sock.sendMessage(jid, { text: '⏳ Downloading Instagram...' }, { quoted: msg });
 
-      const { url: mediaUrl } = await bk9Social('instagram', url);
-
-      const head = await axios.head(mediaUrl, { timeout: 15000 }).catch(() => null);
-      const ctype = head?.headers?.['content-type'] || '';
-      const isVideo = /video|octet-stream/.test(ctype) || /\.(mp4|mov)(\?|$)/i.test(mediaUrl);
-
-      if (isVideo) {
-        await sock.sendMessage(
-          jid,
-          { video: { url: mediaUrl }, mimetype: 'video/mp4', fileName: cleanName('instagram', '.mp4'), caption: '📸 *Downloaded by CELESTIA*' },
-          { quoted: msg }
-        );
-      } else {
-        await sock.sendMessage(
-          jid,
-          { image: { url: mediaUrl }, caption: '📸 *Downloaded by CELESTIA*' },
-          { quoted: msg }
-        );
-      }
-      await sock.sendMessage(jid, { text: '✅ Done!', edit: searching.key });
+      const owner = `${jid}:${msg.key.participant || jid}`;
+      await downloadSocial('instagram', url, undefined, owner, async ({ buffer, type }) => {
+        if (type === 'video') {
+          await sock.sendMessage(
+            jid,
+            { video: buffer, mimetype: 'video/mp4', fileName: cleanName('instagram', '.mp4'), caption: '📸 *Downloaded by CELESTIA*' },
+            { quoted: msg }
+          );
+        } else {
+          await sock.sendMessage(
+            jid,
+            { image: buffer, caption: '📸 *Downloaded by CELESTIA*' },
+            { quoted: msg }
+          );
+        }
+        await sock.sendMessage(jid, { text: '✅ Done!', edit: searching.key });
+      });
     } catch (e) {
       console.error('[IG ERROR]', e.message);
       await sock.sendMessage(jid, { text: '❌ Instagram download failed: ' + e.message }, { quoted: msg });

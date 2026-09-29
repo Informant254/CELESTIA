@@ -17,14 +17,14 @@ const nlMsg = (over = {}) => ({
   ...(over.rest || {}),
 });
 
-function withState(fn) {
+async function withState(fn) {
   const prev = {
     on: settingsStore.get(chreact.ON_KEY, undefined),
     ch: settingsStore.get(chreact.CHANNELS_KEY, undefined),
     em: settingsStore.get(chreact.EMOJIS_KEY, undefined),
   };
   try {
-    return fn();
+    return await fn();
   } finally {
     for (const [k, v] of [['chreact_on', prev.on], ['chreact_channels', prev.ch], ['chreact_emojis', prev.em]]) {
       if (v === undefined) settingsStore.set(k, k === 'chreact_on' ? false : k === 'chreact_channels' ? [] : undefined);
