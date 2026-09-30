@@ -247,13 +247,11 @@ test('apix is always tried first and wins without touching yt-dlp', async () => 
     downloadBuffer: async () => Buffer.from('FAKEMP3'),
   } };
   const fs = require('node:fs');
-  const exists = fs.existsSync;
-  const stat = fs.statSync;
+  const stat = fs.promises.stat;
   const written = [];
-  const writeFile = fs.writeFileSync;
-  fs.existsSync = (p) => String(p).endsWith('out.mp3') || exists(p);
-  fs.statSync = (p) => String(p).endsWith('out.mp3') ? { size: 7 } : stat(p);
-  fs.writeFileSync = (p, d) => { written.push(String(p)); };
+  const writeFile = fs.promises.writeFile;
+  fs.promises.stat = async (p) => String(p).endsWith('out.mp3') ? { size: 7 } : stat(p);
+  fs.promises.writeFile = async (p) => { written.push(String(p)); };
   delete require.cache[fallbackPath];
   try {
     const fallback = require('../download/fallback');
@@ -265,9 +263,8 @@ test('apix is always tried first and wins without touching yt-dlp', async () => 
     assert.equal(ytdlpCalls, 0, 'yt-dlp never attempted');
     assert.ok(written.some((p) => p.endsWith('out.mp3')), 'bytes written');
   } finally {
-    fs.existsSync = exists;
-    fs.statSync = stat;
-    fs.writeFileSync = writeFile;
+    fs.promises.stat = stat;
+    fs.promises.writeFile = writeFile;
     for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
   }
 });
@@ -329,12 +326,10 @@ test('audio fallback goes to direct APIs when apix and yt-dlp fail', async () =>
     downloadBuffer: async () => Buffer.from('DIRECTMP3'),
   } };
   const fs = require('node:fs');
-  const exists = fs.existsSync;
-  const stat = fs.statSync;
-  const writeFile = fs.writeFileSync;
-  fs.existsSync = (p) => String(p).endsWith('out.mp3') || exists(p);
-  fs.statSync = (p) => String(p).endsWith('out.mp3') ? { size: 9 } : stat(p);
-  fs.writeFileSync = () => {};
+  const stat = fs.promises.stat;
+  const writeFile = fs.promises.writeFile;
+  fs.promises.stat = async (p) => String(p).endsWith('out.mp3') ? { size: 9 } : stat(p);
+  fs.promises.writeFile = async () => {};
   delete require.cache[fallbackPath];
   try {
     const fallback = require('../download/fallback');
@@ -345,9 +340,8 @@ test('audio fallback goes to direct APIs when apix and yt-dlp fail', async () =>
     assert.ok(calls.length > 0, 'yt-dlp tried first');
     assert.ok(!calls.some((u) => String(u).startsWith('scsearch')), 'no soundcloud anywhere');
   } finally {
-    fs.existsSync = exists;
-    fs.statSync = stat;
-    fs.writeFileSync = writeFile;
+    fs.promises.stat = stat;
+    fs.promises.writeFile = writeFile;
     for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
   }
 });

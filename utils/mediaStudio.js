@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
 const settingsStore = require('./settingsStore');
-const { ffmpegPath, ffprobePath, runOnce } = require('../download/engines');
+const { ensureFfmpegPath, ensureFfprobePath, runOnce } = require('../download/engines');
 
 const WA_LIMIT = 16 * 1024 * 1024;
 
@@ -64,12 +64,12 @@ async function generateImage(prompt) {
 }
 
 async function mediaDuration(file) {
-  const out = await runOnce(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], 30000);
+  const out = await runOnce(await ensureFfprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], 30000);
   return Number(out) || 0;
 }
 
 async function createWaveform({ input, cover, output, seconds = 30 }) {
-  await runOnce(ffmpegPath(), ['-y', '-loop', '1', '-framerate', '24', '-i', cover, '-i', input, '-filter_complex', '[1:a]aformat=channel_layouts=mono,showwaves=s=620x220:mode=line:colors=0x67E8F9@0.95:r=24,format=rgba[wave];[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280[bg];[bg][wave]overlay=(W-w)/2:H-330:format=auto[v]', '-map', '[v]', '-map', '1:a', '-t', String(seconds), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-movflags', '+faststart', '-shortest', output], 300000);
+  await runOnce(await ensureFfmpegPath(), ['-y', '-loop', '1', '-framerate', '24', '-i', cover, '-i', input, '-filter_complex', '[1:a]aformat=channel_layouts=mono,showwaves=s=620x220:mode=line:colors=0x67E8F9@0.95:r=24,format=rgba[wave];[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280[bg];[bg][wave]overlay=(W-w)/2:H-330:format=auto[v]', '-map', '[v]', '-map', '1:a', '-t', String(seconds), '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '64k', '-movflags', '+faststart', '-shortest', output], 300000);
   if (fs.statSync(output).size > WA_LIMIT) throw new Error('Waveform output exceeds WhatsApp 16MB limit');
   return output;
 }

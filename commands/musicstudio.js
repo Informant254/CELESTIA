@@ -1,8 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { ffmpegPath, runOnce } = require('../download/engines');
-const { ffprobePath } = require('../download/engines');
+const { ensureFfmpegPath, ensureFfprobePath, runOnce } = require('../download/engines');
 const { jobDir, wipeDir } = require('../download/cleanup');
 
 const PRESETS = Object.freeze({
@@ -21,7 +20,7 @@ const PRESETS = Object.freeze({
 });
 
 async function duration(file) {
-  const raw = await runOnce(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], 30000);
+  const raw = await runOnce(await ensureFfprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', file], 30000);
   return Number(String(raw).trim()) || 0;
 }
 
@@ -53,19 +52,19 @@ module.exports = {
         'buffer', {}, { reuploadRequest: sock.updateMediaMessage }
       );
       if (media.length > 32 * 1024 * 1024) throw new Error('Studio input exceeds 32MB');
-      fs.writeFileSync(input, media);
+      await fs.promises.writeFile(input, media);
       const seconds = await duration(input);
       const limit = preset === 'reverse' ? 180 : 600;
       if (!seconds || seconds > limit) throw new Error(`${preset} supports audio up to ${limit / 60} minutes`);
-      await runOnce(ffmpegPath(), ['-y', '-i', input, '-vn', '-af', PRESETS[preset], '-c:a', 'libmp3lame', '-b:a', '160k', output], 300000);
-      const result = fs.readFileSync(output);
+      await runOnce(await ensureFfmpegPath(), ['-y', '-i', input, '-vn', '-af', PRESETS[preset], '-c:a', 'libmp3lame', '-b:a', '160k', output], 300000);
+      const result = await fs.promises.readFile(output);
       if (!result.length || result.length > 32 * 1024 * 1024) throw new Error('Studio output is too large for WhatsApp');
       await sock.sendMessage(jid, { audio: result, mimetype: 'audio/mpeg', ptt: false, fileName: `celestia-${preset}.mp3` }, { quoted: msg });
     } catch (error) {
       console.error('[MUSIC STUDIO]', String(error.message).slice(0, 160));
       await sock.sendMessage(jid, { text: `❌ Music Studio failed: ${error.message}` }, { quoted: msg });
     } finally {
-      wipeDir(dir);
+      await wipeDir(dir);
     }
   },
   _internals: { PRESETS },

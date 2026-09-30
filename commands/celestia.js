@@ -11,12 +11,7 @@
  *   .celestia soul on|off         → toggle her watching (owner)
  */
 const soul = require('../utils/celestiaSoul');
-const config = require('../config/config');
 const { isOwner } = require('../utils/isOwner');
-
-function ownerNumber() {
-  return config.ownerNumber;
-}
 
 function timeAgo(ts) {
   const mins = Math.floor((Date.now() - ts) / 60000);

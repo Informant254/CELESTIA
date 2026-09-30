@@ -51,7 +51,7 @@ module.exports = {
     const number = args[0]?.replace(/[^0-9]/g, '');
 
     if (!number) {
-      return sock.sendMessage(jid, { text: `❌ Usage: .ison ${require('../config/config').ownerNumber}` }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '❌ Usage: .ison 2547XXXXXXXX' }, { quoted: msg });
     }
 
     const targetJid = `${number}@s.whatsapp.net`;

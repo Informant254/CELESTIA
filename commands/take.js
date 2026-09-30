@@ -39,15 +39,13 @@ module.exports = {
     const buffer = await downloadMediaMessage({ message: quoted, key: quotedKey }, 'buffer', {});
 
     const inputPath = path.join(os.tmpdir(), `take_in_${Date.now()}`);
-    fs.writeFileSync(inputPath, buffer);
+    await fs.promises.writeFile(inputPath, buffer);
 
     try {
       let buf;
 
       if (isVideo) {
-        const { execSync } = require('child_process');
-        let ffmpegPath;
-        try { ffmpegPath = require('ffmpeg-static'); } catch { ffmpegPath = 'ffmpeg'; }
+        const { ensureFfmpegPath, runOnce } = require('../download/engines');
 
         const id = Date.now();
         const tmpDir = os.tmpdir();
@@ -55,24 +53,22 @@ module.exports = {
         const makeSticker = async (fps, q) => {
           const processedPath = path.join(tmpDir, `take_${id}_${fps}fps.mp4`);
           try {
-            execSync(
-              `"${ffmpegPath}" -y -i "${inputPath}" -t 6 ` +
-              `-vf "scale=512:512:force_original_aspect_ratio=decrease,fps=${fps},` +
-              `pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0" ` +
-              `-an -c:v libx264 -crf 28 -preset ultrafast "${processedPath}"`,
-              { timeout: 30000, stdio: 'pipe' }
-            );
+            await runOnce(await ensureFfmpegPath(), [
+              '-y', '-i', inputPath, '-t', '6',
+              '-vf', `scale=512:512:force_original_aspect_ratio=decrease,fps=${fps},pad=512:512:(ow-iw)/2:(oh-ih)/2:color=black@0`,
+              '-an', '-c:v', 'libx264', '-crf', '28', '-preset', 'ultrafast', processedPath,
+            ], 30000);
           } catch (e) {
-            fs.copyFileSync(inputPath, processedPath);
+            await fs.promises.copyFile(inputPath, processedPath);
           }
-          const sticker = new Sticker(fs.readFileSync(processedPath), {
+          const sticker = new Sticker(await fs.promises.readFile(processedPath), {
             pack: pushname,
             author: 'CELESTIA',
             type: StickerTypes.DEFAULT,
             quality: q,
           });
           const out = await sticker.toBuffer();
-          try { fs.unlinkSync(processedPath); } catch {}
+          await fs.promises.unlink(processedPath).catch(() => {});
           return out;
         };
 
@@ -140,7 +136,7 @@ module.exports = {
     } catch (e) {
       await sock.sendMessage(jid, { text: '❌ Error: ' + e.message }, { quoted: msg });
     } finally {
-      try { fs.unlinkSync(inputPath); } catch {}
+      await fs.promises.unlink(inputPath).catch(() => {});
     }
   },
 };

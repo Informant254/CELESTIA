@@ -63,7 +63,7 @@ function defaultFetch(kind, videoUrl, { timeoutMs, maxBytes }) {
       } catch (e) {
         return done(new Error('yt-dlp unavailable: ' + e.message));
       }
-      const ff = (() => { try { return engines.ffmpegPath(); } catch { return null; } })();
+      const ff = await engines.ensureFfmpegPath().catch(() => null);
       const fullArgs = ff ? ['--ffmpeg-location', ff, ...args] : args;
       const child = spawn(bin, fullArgs, { stdio: ['ignore', 'ignore', 'pipe'] });
       let stderr = '';

@@ -9,7 +9,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const cfg = require('./config');
-const { ensureYtDlp, ffmpegPath, aria2cPath } = require('./engines');
+const { ensureYtDlp, ensureFfmpegPath, aria2cPath } = require('./engines');
 
 const PARTIAL_RE = /\.(part|temp|tmp|ytdl)$/i;
 
@@ -148,22 +148,26 @@ function runSpawn(bin, args, workDir, onProgress, overallMs = cfg.YTDLP_OVERALL_
   });
 }
 
-function findOutput(workDir) {
+async function findOutput(workDir) {
   let files = [];
   try {
-    files = fs.readdirSync(workDir).filter((f) => f.startsWith('out.') && !PARTIAL_RE.test(f));
+    files = (await fs.promises.readdir(workDir)).filter((f) => f.startsWith('out.') && !PARTIAL_RE.test(f));
   } catch {
     return null;
   }
   if (!files.length) return null;
-  files.sort((a, b) => fs.statSync(path.join(workDir, b)).size - fs.statSync(path.join(workDir, a)).size);
-  return path.join(workDir, files[0]);
+  const ranked = await Promise.all(files.map(async (file) => ({
+    file,
+    size: (await fs.promises.stat(path.join(workDir, file))).size,
+  })));
+  ranked.sort((a, b) => b.size - a.size);
+  return path.join(workDir, ranked[0].file);
 }
 
 // One attempt. Throws on any failure. Never retries.
 async function attempt({ url, selector, extra = [], audio = false, workDir, onProgress, maxBytes, youtube = true, signal }) {
   const bin = await ensureYtDlp();
-  const ffmpeg = ffmpegPath(); // throws DEPENDENCY_MISSING with admin diagnostic
+  const ffmpeg = await ensureFfmpegPath();
   const aria = await aria2cPath().catch(() => null);
 
   const args = baseArgs(workDir, ffmpeg, maxBytes, { youtube });
@@ -177,13 +181,13 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   args.push(url);
 
   await runSpawn(bin, args, workDir, onProgress, cfg.YTDLP_OVERALL_TIMEOUT_MS, signal);
-  const file = findOutput(workDir);
+  const file = await findOutput(workDir);
   if (!file) {
     const e = new Error(maxBytes ? 'Aborted: file exceeds the configured size cap.' : 'yt-dlp finished but produced no file.');
     if (maxBytes) e.userDetail = 'File is too large — try Audio or a shorter video.';
     throw e;
   }
-  const size = fs.statSync(file).size;
+  const size = (await fs.promises.stat(file)).size;
   if (!size) throw new Error('Downloaded file was empty.');
   return { file, size };
 }

@@ -84,11 +84,11 @@ async function installYtDlp() {
 
   if (currentValid) {
     try {
-      if (sha256(fs.readFileSync(bin)) === expected) return bin;
+      if (sha256(await fs.promises.readFile(bin)) === expected) return bin;
     } catch { /* replace below */ }
   }
 
-  fs.mkdirSync(BIN_DIR, { recursive: true });
+  await fs.promises.mkdir(BIN_DIR, { recursive: true });
   const tmp = bin + '.part';
   const buf = await get(YTDLP_URL);
   if (!buf || buf.length < 1024 * 1024) {
@@ -98,11 +98,11 @@ async function installYtDlp() {
   if (digest !== expected) {
     throw new Error('Latest yt-dlp binary failed official SHA-256 verification.');
   }
-  fs.writeFileSync(tmp, buf);
+  await fs.promises.writeFile(tmp, buf);
   if (process.platform !== 'win32') {
-    try { fs.chmodSync(tmp, 0o755); } catch { /* best effort */ }
+    try { await fs.promises.chmod(tmp, 0o755); } catch { /* best effort */ }
   }
-  fs.renameSync(tmp, bin);
+  await fs.promises.rename(tmp, bin);
   await runOnce(bin, ['--version'], 20000); // throws with clear error if broken
   return bin;
 }
@@ -117,50 +117,59 @@ function ensureYtDlp() {
   return ensurePromise;
 }
 
-function ffmpegPath() {
-  // Admin override: set FFMPEG_PATH to a system binary.
-  if (process.env.FFMPEG_PATH && fs.existsSync(process.env.FFMPEG_PATH)) return process.env.FFMPEG_PATH;
-  let p;
-  try {
-    p = require('ffmpeg-static');
-  } catch {
-    p = null;
-  }
-  if (p && fs.existsSync(p)) {
+let ffmpegCache = null;
+let ffmpegPromise = null;
+let ffprobeCache = null;
+let ffprobePromise = null;
+
+async function resolveMediaBinary({ override, bundled, system, label }) {
+  const candidates = [];
+  if (override && fs.existsSync(override)) candidates.push(override);
+  if (bundled && fs.existsSync(bundled)) candidates.push(bundled);
+  candidates.push(system);
+  for (const candidate of [...new Set(candidates)]) {
     try {
-      require('child_process').execFileSync(p, ['-version'], { stdio: 'ignore', timeout: 10000 });
-      return p;
-    } catch { /* fall through to system ffmpeg */ }
+      await runOnce(candidate, ['-version'], 10000);
+      return candidate;
+    } catch { /* try the next installed option */ }
   }
-  try {
-    require('child_process').execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 10000 });
-    return 'ffmpeg';
-  } catch {
-    throw new Error('FFMPEG_MISSING: install system ffmpeg or reinstall ffmpeg-static with install scripts enabled.');
-  }
+  throw new Error(`${label}_MISSING: install system ${system} or reinstall its static package with install scripts enabled.`);
 }
 
-function ffprobePath() {
-  // Admin override: set FFPROBE_PATH to a system binary.
-  if (process.env.FFPROBE_PATH && fs.existsSync(process.env.FFPROBE_PATH)) return process.env.FFPROBE_PATH;
-  let p;
-  try {
-    p = require('ffprobe-static').path;
-  } catch {
-    p = null;
+function ensureFfmpegPath() {
+  if (ffmpegCache) return Promise.resolve(ffmpegCache);
+  if (!ffmpegPromise) {
+    let bundled = null;
+    try { bundled = require('ffmpeg-static'); } catch {}
+    ffmpegPromise = resolveMediaBinary({
+      override: process.env.FFMPEG_PATH,
+      bundled,
+      system: 'ffmpeg',
+      label: 'FFMPEG',
+    }).then((bin) => {
+      ffmpegCache = bin;
+      return bin;
+    }).finally(() => { ffmpegPromise = null; });
   }
-  if (p && fs.existsSync(p)) {
-    try {
-      require('child_process').execFileSync(p, ['-version'], { stdio: 'ignore', timeout: 10000 });
-      return p;
-    } catch { /* fall through to system ffprobe */ }
+  return ffmpegPromise;
+}
+
+function ensureFfprobePath() {
+  if (ffprobeCache) return Promise.resolve(ffprobeCache);
+  if (!ffprobePromise) {
+    let bundled = null;
+    try { bundled = require('ffprobe-static').path; } catch {}
+    ffprobePromise = resolveMediaBinary({
+      override: process.env.FFPROBE_PATH,
+      bundled,
+      system: 'ffprobe',
+      label: 'FFPROBE',
+    }).then((bin) => {
+      ffprobeCache = bin;
+      return bin;
+    }).finally(() => { ffprobePromise = null; });
   }
-  try {
-    require('child_process').execFileSync('ffprobe', ['-version'], { stdio: 'ignore', timeout: 10000 });
-    return 'ffprobe';
-  } catch {
-    throw new Error('FFPROBE_MISSING: install system ffprobe or reinstall ffprobe-static with install scripts enabled.');
-  }
+  return ffprobePromise;
 }
 
 let aria2cCache = null;
@@ -186,8 +195,8 @@ async function status() {
     const bin = ytdlpPath();
     out.ytdlp = fs.existsSync(bin) ? await runOnce(bin, ['--version'], 15000) : null;
   } catch { out.ytdlp = null; }
-  try { out.ffmpeg = (await runOnce(ffmpegPath(), ['-version'], 15000)).split('\n')[0]; } catch { out.ffmpeg = null; }
-  try { out.ffprobe = (await runOnce(ffprobePath(), ['-version'], 15000)).split('\n')[0]; } catch { out.ffprobe = null; }
+  try { out.ffmpeg = (await runOnce(await ensureFfmpegPath(), ['-version'], 15000)).split('\n')[0]; } catch { out.ffmpeg = null; }
+  try { out.ffprobe = (await runOnce(await ensureFfprobePath(), ['-version'], 15000)).split('\n')[0]; } catch { out.ffprobe = null; }
   out.aria2c = await aria2cPath();
   try {
     tmpDir();
@@ -196,4 +205,8 @@ async function status() {
   return out;
 }
 
-module.exports = { ensureYtDlp, ytdlpPath, ffmpegPath, ffprobePath, aria2cPath, tmpDir, status, runOnce, expectedChecksum, sha256 };
+module.exports = {
+  ensureYtDlp, ytdlpPath,
+  ensureFfmpegPath, ensureFfprobePath,
+  aria2cPath, tmpDir, status, runOnce, expectedChecksum, sha256,
+};

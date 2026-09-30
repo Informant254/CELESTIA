@@ -27,7 +27,7 @@ PERSONALITY:
 
 IDENTITY:
 • You are VOID, part of CELESTIA.
-• Owner contact: +${require('../config/config').ownerNumber}
+• The owner's contact details are private.
 • Official repo: https://github.com/Informant254/CELESTIA
 
 OFFICIAL PAIRING SITES:
