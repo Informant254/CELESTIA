@@ -1,9 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { ffmpegPath } = require('../download/engines');
+const { ensureFfmpegPath, runOnce } = require('../download/engines');
 
 module.exports = {
   name: 'cut',
@@ -45,11 +44,11 @@ module.exports = {
         'buffer',
         {}
       );
-      fs.writeFileSync(inputPath, media);
+      await fs.promises.writeFile(inputPath, media);
 
-      execFileSync(ffmpegPath(), ['-y', '-i', inputPath, '-ss', start, '-t', duration, '-c', 'copy', outputPath]);
+      await runOnce(await ensureFfmpegPath(), ['-y', '-i', inputPath, '-ss', start, '-t', duration, '-c', 'copy', outputPath], 60000);
 
-      const outBuffer = fs.readFileSync(outputPath);
+      const outBuffer = await fs.promises.readFile(outputPath);
       await sock.sendMessage(jid, {
         [type]: outBuffer,
         mimetype: type === 'video' ? 'video/mp4' : 'audio/mpeg',
@@ -58,7 +57,7 @@ module.exports = {
     } catch (e) {
       await sock.sendMessage(jid, { text: '❌ Cut failed: ' + e.message }, { quoted: msg });
     } finally {
-      [inputPath, outputPath].forEach(p => { try { fs.unlinkSync(p); } catch {} });
+      await Promise.allSettled([inputPath, outputPath].map((p) => fs.promises.unlink(p)));
     }
   }
 };

@@ -70,7 +70,7 @@ function loadMessagesHarness({ privacy = 'private', settings = {}, group = {}, b
     groupParticipantsUpdate: async (jid, users, action) => { removed.push({ users, action }); return {}; },
     updateBlockStatus: async (jid, action) => { blocked.push({ jid, action }); return {}; },
     sendPresenceUpdate: () => stalledExtras ? new Promise(() => {}) : Promise.resolve(),
-    readMessages: async () => {},
+    readMessages: () => stalledExtras ? new Promise(() => {}) : Promise.resolve(),
   };
   context.module.exports.registerMessageHandler(sock, commands);
   let n = 0;
@@ -91,15 +91,32 @@ const link = (t = 'see https://google.com') => ({ conversation: t });
 const tagMsg = () => ({ extendedTextMessage: { text: 'hi all', contextInfo: { mentionedJid: ['a', 'b', 'c', 'd', 'e', 'f'] } } });
 const statusMention = () => ({ groupStatusMentionMessage: { a: 1 } });
 
-test('hung media monitor, typing and reaction cannot stop command dispatch', { timeout: 2000 }, async () => {
+test('hung optional effects cannot delay the command response', { timeout: 2000 }, async () => {
   let calls = 0;
   const h = loadMessagesHarness({ privacy: 'public', stalledExtras: true,
-    settings: { autotyping: true, autorecording: true },
-    commands: new Map([['ping', { name: 'ping', execute: async () => { calls++; } }]]),
+    settings: { autoread: true, autotyping: true, autorecording: true },
+    commands: new Map([['ping', { name: 'ping', execute: async (sock, msg) => {
+      calls++;
+      await sock.sendMessage(msg.key.remoteJid, { text: 'pong' });
+    } }]]),
   });
   await h.send({ conversation: '.ping' });
   await h.send({ conversation: '.ping' });
   assert.equal(calls, 2);
+  assert.equal(h.sent[0].text, 'pong');
+  assert.ok(h.sent[1].react, 'cosmetic reaction follows the real response');
+});
+
+test('no-prefix triggers still win when they overlap a custom prefix', async () => {
+  let calls = 0;
+  const command = { name: 'laugh', noprefix: ['😂'], execute: async () => { calls++; } };
+  const h = loadMessagesHarness({
+    privacy: 'public',
+    settings: { prefix: '😂' },
+    commands: new Map([['laugh', command]]),
+  });
+  await h.send({ conversation: '😂' });
+  assert.equal(calls, 1);
 });
 
 test('all anti modes exempt admins without deleting, warning, kicking or blocking', async () => {

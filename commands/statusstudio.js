@@ -23,7 +23,7 @@ module.exports = {
         let background = null;
         try { background = await studio.generateImage('premium abstract celestial background, deep navy violet and cyan glow, subtle stars, vertical portrait, empty center, no text, no logo, no watermark'); } catch {}
         await studio.createCard({ text: quote.slice(0, 320), author: author.slice(0, 60), background, output });
-        const image = fs.readFileSync(output);
+        const image = await fs.promises.readFile(output);
         if (post) {
           const count = await studio.postStatus(sock, { image, caption: '' });
           return sock.sendMessage(jid, { text: `✅ Quote card posted to status (${count} recipients).` }, { quoted: msg });
@@ -38,10 +38,10 @@ module.exports = {
         const cover = path.join(dir, 'cover.jpg');
         const output = path.join(dir, 'waveform.mp4');
         const media = await downloadMediaMessage({ message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
-        fs.writeFileSync(input, media);
+        await fs.promises.writeFile(input, media);
         await studio.createCard({ text: args.slice(1).join(' ') || 'NOW PLAYING', author: 'CELESTIA AUDIO', output: cover });
         await studio.createWaveform({ input, cover, output });
-        const video = fs.readFileSync(output);
+        const video = await fs.promises.readFile(output);
         if (post) {
           const count = await studio.postStatus(sock, { video, caption: '' });
           return sock.sendMessage(jid, { text: `✅ Waveform posted to status (${count} recipients).` }, { quoted: msg });
@@ -51,6 +51,6 @@ module.exports = {
       return sock.sendMessage(jid, { text: '✦ *CELESTIA STATUS STUDIO*\n\n`.statusstudio quote <words> | <author>`\n`.statusstudio waveform <title>` (reply to audio)\n\nAdd `post` before the mode to publish directly.' }, { quoted: msg });
     } catch (error) {
       return sock.sendMessage(jid, { text: `❌ Status Studio: ${error.message}` }, { quoted: msg });
-    } finally { wipeDir(dir); }
+    } finally { await wipeDir(dir); }
   },
 };

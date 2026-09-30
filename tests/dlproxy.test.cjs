@@ -164,12 +164,10 @@ test('fallback: own proxy wins before apix when both answer', async () => {
   require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: { apixAudio: async () => { apixCalls++; throw new Error('should not run'); } } };
   require.cache[selfPath] = { id: selfPath, filename: selfPath, loaded: true, exports: { dlproxyAudio: async () => ({ buf: Buffer.from('SELF'), title: 't' }), dlproxyVideo: async () => { throw new Error('no'); } } };
   const fss = require('node:fs');
-  const exists = fss.existsSync;
-  const stat = fss.statSync;
-  const writeFile = fss.writeFileSync;
-  fss.existsSync = (p) => String(p).endsWith('out.mp3') || exists(p);
-  fss.statSync = (p) => String(p).endsWith('out.mp3') ? { size: 4 } : stat(p);
-  fss.writeFileSync = () => {};
+  const stat = fss.promises.stat;
+  const writeFile = fss.promises.writeFile;
+  fss.promises.stat = async (p) => String(p).endsWith('out.mp3') ? { size: 4 } : stat(p);
+  fss.promises.writeFile = async () => {};
   delete require.cache[fallbackPath];
   try {
     const fallback = require('../download/fallback');
@@ -177,9 +175,8 @@ test('fallback: own proxy wins before apix when both answer', async () => {
     assert.equal(result.strategy, 'dlproxy');
     assert.equal(apixCalls, 0, 'apix never attempted');
   } finally {
-    fss.existsSync = exists;
-    fss.statSync = stat;
-    fss.writeFileSync = writeFile;
+    fss.promises.stat = stat;
+    fss.promises.writeFile = writeFile;
     for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
   }
 });

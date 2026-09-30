@@ -139,6 +139,34 @@ async function runJob(sock, msg, snap) {
   let timeoutHandle = null;
   let acquired = false;
   let statusMsg = null;
+  let job = null;
+  const abortController = new AbortController();
+  const abortable = (promise) => {
+    const { signal } = abortController;
+    if (signal.aborted) return Promise.reject(signal.reason);
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      Promise.resolve(promise).then(
+        (value) => {
+          signal.removeEventListener('abort', onAbort);
+          resolve(value);
+        },
+        (error) => {
+          signal.removeEventListener('abort', onAbort);
+          reject(error);
+        }
+      );
+    });
+  };
+  const settleWithin = (promise, ms) => new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+    Promise.resolve(promise).then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(); }
+    );
+  });
 
   try {
     const st = queue.stats();
@@ -152,17 +180,18 @@ async function runJob(sock, msg, snap) {
     dir = jobDir(snap.kind);
     const onTimeout = new Promise((_, reject) => {
       timeoutHandle = setTimeout(() => {
+        abortController.abort(new Error('Overall request timeout exceeded (TIMEOUT).'));
         ytdlp.abortDir(dir);
         reject(new Error('Overall request timeout exceeded (TIMEOUT).'));
       }, cfg.DOWNLOAD_TIMEOUT_MS);
       if (timeoutHandle.unref) timeoutHandle.unref();
     });
 
-    const job = (async () => {
+    job = (async () => {
       const setStatus = async (t) => {
         try {
-          if (statusMsg) await sock.sendMessage(chatId, { text: t, edit: statusMsg.key });
-          else statusMsg = await sock.sendMessage(chatId, { text: t }, { quoted: msg });
+          if (statusMsg) await abortable(sock.sendMessage(chatId, { text: t, edit: statusMsg.key }));
+          else statusMsg = await abortable(sock.sendMessage(chatId, { text: t }, { quoted: msg }));
         } catch { /* cosmetic */ }
       };
       let lastEdit = 0;
@@ -184,11 +213,12 @@ async function runJob(sock, msg, snap) {
         try {
           final = await fallback.downloadWithFallback({
             url: current.url, title: current.title, quality: snap.quality,
-            isAudio, workDir: dir, onProgress, maxBytes, tag,
+            isAudio, workDir: dir, onProgress, maxBytes, tag, signal: abortController.signal,
           });
           used = current;
           break;
         } catch (e) {
+          if (abortController.signal.aborted) throw abortController.signal.reason;
           const cat = classify(e);
           if (cat === 'FILE_TOO_LARGE' || cat === 'DEPENDENCY_MISSING') throw e;
           if (r >= cfg.MAX_RESULT_FALLBACKS) throw e;
@@ -202,11 +232,12 @@ async function runJob(sock, msg, snap) {
       await setStatus('⚙️ Processing...');
       let sendFile = final.file;
       if (isAudio && !/\.mp3$/i.test(final.file)) {
-        sendFile = await ffmpeg.toMp3(final.file, path.join(dir, 'out.mp3'));
+        sendFile = await ffmpeg.toMp3(final.file, path.join(dir, 'out.mp3'), abortController.signal);
       } else if (!isAudio) {
-        sendFile = await ffmpeg.normalizeForWhatsApp(final.file, dir);
+        sendFile = await ffmpeg.normalizeForWhatsApp(final.file, dir, abortController.signal);
       }
-      const size = fs.statSync(sendFile).size;
+      abortController.signal.throwIfAborted();
+      const size = (await fs.promises.stat(sendFile)).size;
       if (size > maxBytes) {
         const err = new Error(`File is ${(size / 1048576).toFixed(0)}MB — over the ${(maxBytes / 1048576).toFixed(0)}MB limit.`);
         err.userDetail = `That file is too large (${(size / 1048576).toFixed(0)}MB) — try Audio or a shorter video.`;
@@ -214,24 +245,29 @@ async function runJob(sock, msg, snap) {
       }
 
       await setStatus('📤 Uploading...');
-      const buf = fs.readFileSync(sendFile);
+      const buf = await fs.promises.readFile(sendFile);
+      abortController.signal.throwIfAborted();
       const clean = String(used.title).replace(/[\\/:*?"<>|]/g, '').trim().slice(0, 80);
       // send with one retry on the SAME buffer — never redownload for upload failures
       const sendOnce = () => isAudio
-        ? sock.sendMessage(chatId, { audio: buf, mimetype: 'audio/mpeg', fileName: clean + '.mp3', ptt: false }, { quoted: msg })
-        : sock.sendMessage(chatId, { video: buf, mimetype: 'video/mp4', fileName: clean + '.mp4', caption: `🎬 *${used.title}*` }, { quoted: msg });
+        ? abortable(sock.sendMessage(chatId, { audio: buf, mimetype: 'audio/mpeg', fileName: clean + '.mp3', ptt: false }, { quoted: msg }))
+        : abortable(sock.sendMessage(chatId, { video: buf, mimetype: 'video/mp4', fileName: clean + '.mp4', caption: `🎬 *${used.title}*` }, { quoted: msg }));
       try {
         await sendOnce();
+        abortController.signal.throwIfAborted();
         logger.upload({ tag, status: 'success' });
       } catch (e1) {
+        if (abortController.signal.aborted) throw abortController.signal.reason;
         logger.upload({ tag, status: 'retry', reason: String(e1.message).slice(0, 80) });
         await new Promise((rr) => setTimeout(rr, 3000));
+        abortController.signal.throwIfAborted();
         await sendOnce();
+        abortController.signal.throwIfAborted();
         logger.upload({ tag, status: 'success-retry' });
       }
       if (isAudio) {
         try {
-          await sock.sendMessage(chatId, { document: buf, mimetype: 'audio/mpeg', fileName: clean + '.mp3' }, { quoted: msg });
+          await abortable(sock.sendMessage(chatId, { document: buf, mimetype: 'audio/mpeg', fileName: clean + '.mp3' }, { quoted: msg }));
         } catch { /* document is a bonus — audio already delivered */ }
       }
 
@@ -244,12 +280,13 @@ async function runJob(sock, msg, snap) {
     const { userMessage } = require('./errors');
     logger.celestia({ tag, status: 'failed', reason: classify(e) });
     try {
-      await sock.sendMessage(chatId, { text: userMessage(e) }, { quoted: msg });
+      await settleWithin(sock.sendMessage(chatId, { text: userMessage(e) }, { quoted: msg }), 5000);
     } catch { /* last resort failed */ }
   } finally {
     if (timeoutHandle) clearTimeout(timeoutHandle);
+    if (job) await job.catch(() => {});
     if (dir) {
-      wipeDir(dir); // guaranteed cleanup, success or failure
+      await wipeDir(dir); // guaranteed cleanup, success or failure
       logger.cleanup({ tag, status: 'success' });
     }
     if (acquired) queue.release();

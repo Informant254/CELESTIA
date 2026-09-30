@@ -13,24 +13,24 @@ function jobDir(prefix = 'job') {
   return p;
 }
 
-function wipeDir(dir) {
+async function wipeDir(dir) {
   try {
-    if (dir && fs.existsSync(dir)) fs.rmSync(dir, { recursive: true, force: true });
+    if (dir) await fs.promises.rm(dir, { recursive: true, force: true });
   } catch (e) {
     console.error('[DL] cleanup failed for', dir, e.message);
   }
 }
 
 // Remove stale job dirs older than maxAgeMs (called at startup + opportunistically).
-function sweepStale(maxAgeMs = 30 * 60 * 1000) {
+async function sweepStale(maxAgeMs = 30 * 60 * 1000) {
   try {
     const dir = tmpDir();
     const now = Date.now();
-    for (const entry of fs.readdirSync(dir)) {
+    for (const entry of await fs.promises.readdir(dir)) {
       const p = path.join(dir, entry);
       try {
-        const st = fs.statSync(p);
-        if (now - st.mtimeMs > maxAgeMs) wipeDir(p);
+        const st = await fs.promises.stat(p);
+        if (now - st.mtimeMs > maxAgeMs) await wipeDir(p);
       } catch { /* ignore */ }
     }
   } catch { /* tmp may not exist yet */ }

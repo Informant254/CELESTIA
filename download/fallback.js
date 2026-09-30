@@ -43,8 +43,14 @@ function recordYouTubeResult(category, now = Date.now()) {
 
 // file exists · size>0 · not partial · inspectable · expected stream present
 async function validateFile(file, isAudio) {
-  if (!file || !fs.existsSync(file)) throw new Error('Validated: file missing after download.');
-  const size = fs.statSync(file).size;
+  let stat;
+  try {
+    stat = file ? await fs.promises.stat(file) : null;
+  } catch {
+    stat = null;
+  }
+  if (!stat) throw new Error('Validated: file missing after download.');
+  const size = stat.size;
   if (!size) throw new Error('Validated: downloaded file was empty.');
   if (/\.(part|temp|tmp|ytdl)$/i.test(file)) throw new Error('Validated: incomplete temporary file.');
   let ss = [];
@@ -82,7 +88,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
     if (!buf.length) throw new Error('Apix download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
-    fs.writeFileSync(file, buf);
+    await fs.promises.writeFile(file, buf);
     await validateFile(file, isAudio);
     throwIfAborted(signal);
     logger.download({ tag, strategy: 'apix', status: 'success' });
@@ -98,7 +104,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
       ? await self.dlproxyAudio(url, signal)
       : await self.dlproxyVideo(url, signal);
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
-    fs.writeFileSync(file, r.buf);
+    await fs.promises.writeFile(file, r.buf);
     await validateFile(file, isAudio);
     throwIfAborted(signal);
     logger.download({ tag, strategy: 'dlproxy', status: 'success' });
@@ -124,7 +130,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
     if (!buf.length) throw new Error('Apix download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
-    fs.writeFileSync(file, buf);
+    await fs.promises.writeFile(file, buf);
     await validateFile(file, isAudio);
     throwIfAborted(signal);
     logger.download({ tag, strategy: 'apix', status: 'success' });
@@ -173,7 +179,7 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
     if (!buf.length) throw new Error('Fallback download was empty.');
     const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
-    fs.writeFileSync(file, buf);
+    await fs.promises.writeFile(file, buf);
     await validateFile(file, isAudio);
     throwIfAborted(signal);
     logger.download({ tag, strategy: 'api-direct', status: 'success' });

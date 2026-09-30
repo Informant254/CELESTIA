@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { ffmpegPath, runOnce } = require('../download/engines');
+const { ensureFfmpegPath, runOnce } = require('../download/engines');
 const { jobDir, wipeDir } = require('../download/cleanup');
 const studio = require('../utils/mediaStudio');
 
@@ -21,17 +21,17 @@ module.exports = {
     try {
       const media = await downloadMediaMessage({ message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant } }, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
       if (media.length > 32 * 1024 * 1024) throw new Error('Input must be under 32MB');
-      fs.writeFileSync(input, media);
+      await fs.promises.writeFile(input, media);
       await sock.sendMessage(jid, { text: '🎚️ Polishing the audio...' }, { quoted: msg });
-      if (mode !== 'waveform') await runOnce(ffmpegPath(), ['-y', '-i', input, '-vn', '-af', 'highpass=f=35,afftdn=nf=-28,loudnorm=I=-16:TP=-1.5:LRA=7,alimiter=limit=0.94', '-c:a', 'libmp3lame', '-b:a', '128k', mastered], 300000);
-      if (mode === 'master') return sock.sendMessage(jid, { audio: fs.readFileSync(mastered), mimetype: 'audio/mpeg', fileName: 'celestia-master.mp3', ptt: false }, { quoted: msg });
+      if (mode !== 'waveform') await runOnce(await ensureFfmpegPath(), ['-y', '-i', input, '-vn', '-af', 'highpass=f=35,afftdn=nf=-28,loudnorm=I=-16:TP=-1.5:LRA=7,alimiter=limit=0.94', '-c:a', 'libmp3lame', '-b:a', '128k', mastered], 300000);
+      if (mode === 'master') return sock.sendMessage(jid, { audio: await fs.promises.readFile(mastered), mimetype: 'audio/mpeg', fileName: 'celestia-master.mp3', ptt: false }, { quoted: msg });
       const cover = path.join(dir, 'cover.jpg');
       const output = path.join(dir, 'celestia-waveform.mp4');
       await studio.createCard({ text: args.slice(1).join(' ') || 'CELESTIA AUDIO', author: mode === 'masterwave' ? 'MASTERED' : 'NOW PLAYING', output: cover });
       await studio.createWaveform({ input: mode === 'masterwave' ? mastered : input, cover, output });
-      return sock.sendMessage(jid, { video: fs.readFileSync(output), caption: '✦ CELESTIA Audio Pro' }, { quoted: msg });
+      return sock.sendMessage(jid, { video: await fs.promises.readFile(output), caption: '✦ CELESTIA Audio Pro' }, { quoted: msg });
     } catch (error) {
       return sock.sendMessage(jid, { text: `❌ Audio Pro: ${error.message}` }, { quoted: msg });
-    } finally { wipeDir(dir); }
+    } finally { await wipeDir(dir); }
   },
 };

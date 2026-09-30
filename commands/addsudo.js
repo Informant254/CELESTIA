@@ -48,7 +48,7 @@ module.exports = {
 
     if (!numbers.length) {
       return sock.sendMessage(jid, {
-        text: `❌ *Reply to the user's message, tag them, or provide their number directly.*\n\nUsage: *.addsudo @user* — or — *.addsudo ${require('../config/config').ownerNumber}*`,
+        text: '❌ *Reply to the user\'s message, tag them, or provide their number directly.*\n\nUsage: *.addsudo @user* — or — *.addsudo 2547XXXXXXXX*',
       }, { quoted: msg });
     }
 

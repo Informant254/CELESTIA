@@ -73,6 +73,18 @@ function flatCommands(commands) {
   }
   return __flatCommands.arr;
 }
+let __noPrefixCommands = { map: null, lookup: new Map() };
+function noPrefixCommand(commands, text) {
+  if (__noPrefixCommands.map !== commands) {
+    const lookup = new Map();
+    for (const command of flatCommands(commands)) {
+      if (!Array.isArray(command.noprefix)) continue;
+      for (const trigger of command.noprefix) lookup.set(trigger, command);
+    }
+    __noPrefixCommands = { map: commands, lookup };
+  }
+  return __noPrefixCommands.lookup.get(text) || null;
+}
 function escapeRegExp(s) {
   return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -493,24 +505,21 @@ function registerMessageHandler(sock, commands) {
         // Autochat is an explicit opt-in DM/group responder, so it gets the
         // next chance at ordinary text even when command privacy is private.
         let _autochatHandled = false;
+        let _noPrefixCommand = null;
         {
-          let _acSkip = false;
-          const _acText = extractMessageText(msg.message).trim();
+          const _acText = incomingText;
           const _acContent = require('@whiskeysockets/baileys').normalizeMessageContent(msg.message) || msg.message;
-          try {
-            for (const cmd of flatCommands(commands)) {
-              if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(_acText)) { _acSkip = true; break; }
+          _noPrefixCommand = noPrefixCommand(commands, _acText);
+          if (_acText && !_acText.startsWith(activePrefix)) {
+            if (!_noPrefixCommand) {
+              try {
+                _autochatHandled = await require('../autochat/modes').handleIncoming(sock, msg, _acText, commands);
+              } catch (e) { logger.error(`[aimodes] ${e.message}`); }
+              try {
+                if (!_autochatHandled) _autochatHandled = await require('../autochat/index').handleIncoming(sock, msg, _acText, { commands });
+              } catch (e) { logger.error(`[autochat] ${e.message}`); }
             }
-          } catch {}
-          const _acPrefix = settingsStore.get('prefix', config.prefix) || '.';
-          if (!_acSkip && _acText && !_acText.startsWith(_acPrefix)) {
-            try {
-              _autochatHandled = await require('../autochat/modes').handleIncoming(sock, msg, _acText, commands);
-            } catch (e) { logger.error(`[aimodes] ${e.message}`); }
-            try {
-              if (!_autochatHandled) _autochatHandled = await require('../autochat/index').handleIncoming(sock, msg, _acText, { commands });
-            } catch (e) { logger.error(`[autochat] ${e.message}`); }
-          } else if (!_acSkip && _acContent?.audioMessage?.ptt) {
+          } else if (_acContent?.audioMessage?.ptt) {
             try {
               const ac = require('../autochat/index');
               const speech = require('../utils/speech');
@@ -569,9 +578,8 @@ function registerMessageHandler(sock, commands) {
 
         // ═══ END GATE ═══
 
-        const prefix = settingsStore.get('prefix', config.prefix);
-        const workType = settingsStore.get('mode', config.WORK_TYPE);
-        const text = extractMessageText(msg.message).trim();
+        const prefix = activePrefix;
+        const text = incomingText;
 
         // ─── ✨ Her Soul — she hears the owner, even without commands ───
         const soulChatJid = msg.key.remoteJidAlt || msg.key.remoteJid;
@@ -601,7 +609,7 @@ function registerMessageHandler(sock, commands) {
             const chatJid = (msg.key.remoteJidAlt || msg.key.remoteJid || '').split('@')[0].split(':')[0];
             const threads = settingsStore.get('ghost_threads', {});
             if (threads[chatJid]) {
-              const replyText = extractMessageText(msg.message);
+                const replyText = incomingText;
               if (replyText) {
                 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
                 const ownerJid = config.ownerNumber + '@s.whatsapp.net';
@@ -622,7 +630,9 @@ function registerMessageHandler(sock, commands) {
         if (msg.key.remoteJid !== 'status@broadcast' && !msg.key.fromMe) {
           if (settingsStore.get('autoread', false)) {
             try {
-              await sock.readMessages([msg.key]);
+              sock.readMessages([msg.key]).catch((e) => {
+                logger.error(`[autoread] Failed to mark message read: ${e.message}`);
+              });
             } catch (e) {
               logger.error(`[autoread] Failed to mark message read: ${e.message}`);
             }
@@ -798,37 +808,15 @@ function registerMessageHandler(sock, commands) {
         }
 
         // No-prefix triggers (e.g. emoji-only commands like vv2)
-        {
-          let earlyNoPrefixCommand = null;
-          for (const cmd of flatCommands(commands)) {
-            if (Array.isArray(cmd.noprefix) && cmd.noprefix.includes(text)) {
-              earlyNoPrefixCommand = cmd;
-              break;
-            }
-          }
-          if (earlyNoPrefixCommand) {
-            await earlyNoPrefixCommand.execute(sock, msg, [], commands, reply);
-            continue;
-          }
+        if (_noPrefixCommand) {
+          await _noPrefixCommand.execute(sock, msg, [], commands, reply);
+          continue;
         }
 
-        console.log('TEXT RECEIVED =', config.debugMessages ? JSON.stringify(text) : `[redacted:${text.length}]`);
         if (config.debugMessages) {
+          console.log('TEXT RECEIVED =', JSON.stringify(text));
           console.log('PREFIX =', JSON.stringify(prefix));
           console.log('STARTS WITH PREFIX =', text.startsWith(prefix));
-        }
-
-        if (text.startsWith(prefix)) {
-          // React must never kill command processing — degraded connections
-          // throw here, and without this guard every command dies silently.
-          try {
-            sock.sendMessage(msg.key.remoteJid, {
-              react: {
-                text: '🕷️',
-                key: msg.key,
-              },
-            }).catch(() => {});
-          } catch { /* react is cosmetic — command continues below */ }
         }
 
         // Process Prefix Commands
@@ -960,6 +948,14 @@ function registerMessageHandler(sock, commands) {
                 await command.execute(sock, msg, args, commands, reply);
                 stats.completed++;
                 logger.info(`[dispatch] completed command=${commandName}`);
+
+                // Cosmetic acknowledgement follows the real response so it
+                // never takes the front of Baileys' outbound queue.
+                try {
+                  sock.sendMessage(msg.key.remoteJid, {
+                    react: { text: '🕷️', key: msg.key },
+                  }).catch(() => {});
+                } catch { /* reaction never breaks command completion */ }
               } finally {
                 clearTimeout(waiting);
               }

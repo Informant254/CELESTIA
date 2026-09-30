@@ -5,9 +5,6 @@ module.exports = {
 
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
-    const config = require('../config/config');
-    const ownerMpesa = '0' + String(config.ownerNumber).replace(/\D/g, '').slice(3);
-
     const ui = require('../utils/ui');
     const text = [
       ui.renderSectionTitle('❤️ SUPPORT CELESTIA BOT'),
@@ -16,9 +13,9 @@ module.exports = {
       '',
       "If you'd like to support the project and help keep it growing, you can donate using any of the methods below.",
       '',
-      ui.renderCard('🇰🇪 M-PESA', [
-        ui.renderInfo('📱', 'Number', ownerMpesa),
-        ui.renderInfo('👤', 'Name', 'CELESTIA'),
+      ui.renderCard('🔒 PRIVATE SUPPORT', [
+        ui.renderInfo('💬', 'Payment details', 'Available privately'),
+        ui.renderInfo('🛡️', 'Owner contact', 'Not published by the bot'),
       ]),
       '',
       '• Your support helps with hosting, new commands, bug fixes, and keeping CELESTIA BOT free for everyone.',

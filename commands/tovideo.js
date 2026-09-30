@@ -1,8 +1,8 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execSync } = require('child_process');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { ensureFfmpegPath, runOnce } = require('../download/engines');
 // Native/optional modules load lazily inside execute() so a failed
 // install on the host can never crash the whole bot at boot.
 
@@ -12,10 +12,9 @@ module.exports = {
   description: 'Convert a quoted animated sticker to video. Reply to an animated sticker with .tovideo',
   async execute(sock, msg) {
     const jid = msg.key.remoteJid;
-    let sharp, ffmpegPath;
+    let sharp;
     try {
       sharp = require('sharp');
-      ffmpegPath = require('ffmpeg-static');
     } catch {
       return sock.sendMessage(jid, { text: `❌ Video engine unavailable on this host (media module failed to install).` }, { quoted: msg });
     }
@@ -45,7 +44,7 @@ module.exports = {
         {}
       );
 
-      fs.mkdirSync(framesDir, { recursive: true });
+      await fs.promises.mkdir(framesDir, { recursive: true });
 
       const image = sharp(buffer, { animated: true });
       const metadata = await image.metadata();
@@ -58,23 +57,26 @@ module.exports = {
       for (let i = 0; i < pages; i++) {
         const frameBuf = await sharp(buffer, { animated: false, page: i }).png().toBuffer();
         const framePath = path.join(framesDir, `frame_${String(i).padStart(4, '0')}.png`);
-        fs.writeFileSync(framePath, frameBuf);
+        await fs.promises.writeFile(framePath, frameBuf);
       }
 
       try {
-        execSync(
-          `"${ffmpegPath}" -y -framerate 15 -i "${framesDir}/frame_%04d.png" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -pix_fmt yuv420p -movflags faststart "${outputPath}"`,
-          { timeout: 60000, stdio: 'pipe' }
-        );
+        await runOnce(await ensureFfmpegPath(), [
+          '-y', '-framerate', '15', '-i', path.join(framesDir, 'frame_%04d.png'),
+          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2', '-pix_fmt', 'yuv420p',
+          '-movflags', 'faststart', outputPath,
+        ], 60000);
       } catch (e) {
-        return sock.sendMessage(jid, { text: '❌ ffmpeg error: ' + (e.stderr?.toString()?.slice(0, 200) || e.message) }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '❌ ffmpeg error: ' + e.message }, { quoted: msg });
       }
 
-      if (!fs.existsSync(outputPath)) {
+      try {
+        await fs.promises.access(outputPath);
+      } catch {
         return sock.sendMessage(jid, { text: '❌ Output file not created' }, { quoted: msg });
       }
 
-      const videoBuffer = fs.readFileSync(outputPath);
+      const videoBuffer = await fs.promises.readFile(outputPath);
       await sock.sendMessage(jid, {
         video: videoBuffer,
         caption: '*Sticker converted successfully to Video*'
@@ -84,8 +86,10 @@ module.exports = {
       console.error('[TOVIDEO ERROR]', err.message);
       await sock.sendMessage(jid, { text: '❌ Error: ' + err.message }, { quoted: msg });
     } finally {
-      try { fs.rmSync(framesDir, { recursive: true, force: true }); } catch (_) {}
-      try { fs.unlinkSync(outputPath); } catch (_) {}
+      await Promise.allSettled([
+        fs.promises.rm(framesDir, { recursive: true, force: true }),
+        fs.promises.unlink(outputPath),
+      ]);
     }
   },
 };

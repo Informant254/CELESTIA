@@ -1,11 +1,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFileSync } = require('child_process');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-const { ffmpegPath } = require('../download/engines');
+const { ensureFfmpegPath, runOnce } = require('../download/engines');
 
 const queues = new Map(); // jid -> array of file paths
+const merging = new Set();
 
 module.exports = {
   name: 'merge',
@@ -17,34 +17,38 @@ module.exports = {
 
     if (sub === 'cancel') {
       const queue = queues.get(jid) || [];
-      queue.forEach(p => { try { fs.unlinkSync(p); } catch {} });
+      await Promise.allSettled(queue.map((p) => fs.promises.unlink(p)));
       queues.delete(jid);
       return sock.sendMessage(jid, { text: '🗑 Merge queue cleared.' }, { quoted: msg });
     }
 
     if (sub === 'done') {
-      const queue = queues.get(jid) || [];
+      if (merging.has(jid)) {
+        return sock.sendMessage(jid, { text: '⏳ A merge is already running in this chat.' }, { quoted: msg });
+      }
+      const queue = [...(queues.get(jid) || [])];
       if (queue.length < 2) {
         return sock.sendMessage(jid, { text: '❌ Add at least 2 videos first by replying to each with .merge' }, { quoted: msg });
       }
+      queues.delete(jid);
+      merging.add(jid);
 
-      await sock.sendMessage(jid, { text: `🔗 Merging ${queue.length} videos...` }, { quoted: msg });
-
-      const listPath = path.join(os.tmpdir(), `merge_list_${Date.now()}.txt`);
-      const outputPath = path.join(os.tmpdir(), `merge_out_${Date.now()}.mp4`);
+      const id = `${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      const listPath = path.join(os.tmpdir(), `merge_list_${id}.txt`);
+      const outputPath = path.join(os.tmpdir(), `merge_out_${id}.mp4`);
 
       try {
-        fs.writeFileSync(listPath, queue.map(p => `file '${p}'`).join('\n'));
-        execFileSync(ffmpegPath(), ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath]);
+        await sock.sendMessage(jid, { text: `🔗 Merging ${queue.length} videos...` }, { quoted: msg });
+        await fs.promises.writeFile(listPath, queue.map(p => `file '${p}'`).join('\n'));
+        await runOnce(await ensureFfmpegPath(), ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath], 120000);
 
-        const buffer = fs.readFileSync(outputPath);
+        const buffer = await fs.promises.readFile(outputPath);
         await sock.sendMessage(jid, { video: buffer, caption: '✅ Merged video' }, { quoted: msg });
       } catch (e) {
         await sock.sendMessage(jid, { text: '❌ Merge failed: ' + e.message }, { quoted: msg });
       } finally {
-        queue.forEach(p => { try { fs.unlinkSync(p); } catch {} });
-        [listPath, outputPath].forEach(p => { try { fs.unlinkSync(p); } catch {} });
-        queues.delete(jid);
+        await Promise.allSettled([...queue, listPath, outputPath].map((p) => fs.promises.unlink(p)));
+        merging.delete(jid);
       }
       return;
     }
@@ -67,7 +71,7 @@ module.exports = {
       );
 
       const filePath = path.join(os.tmpdir(), `merge_${Date.now()}_${Math.random().toString(36).slice(2)}.mp4`);
-      fs.writeFileSync(filePath, media);
+      await fs.promises.writeFile(filePath, media);
 
       const queue = queues.get(jid) || [];
       queue.push(filePath);
