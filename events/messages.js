@@ -500,6 +500,18 @@ function registerMessageHandler(sock, commands) {
           continue;
         }
 
+        // Business deployments use an explicit, deterministic DM flow. It is
+        // disabled by default and intentionally serves strangers even when
+        // command mode is private. Registered no-prefix commands still win.
+        if (incomingText && !incomingText.startsWith(activePrefix)) {
+          try {
+            const businessNoPrefix = noPrefixCommand(commands, incomingText);
+            if (!businessNoPrefix && await require('../business/assistant').handleIncoming(sock, msg, incomingText)) continue;
+          } catch (e) {
+            logger.error(`[business-assistant] ${e.message}`);
+          }
+        }
+
         // Continuous AI modes (claude/wormgpt/gpt) are explicit opt-ins, so
         // they get first chance at ordinary text — ahead of autochat.
         // Autochat is an explicit opt-in DM/group responder, so it gets the

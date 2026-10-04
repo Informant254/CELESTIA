@@ -107,6 +107,26 @@ docker logs -f celestia
 
 ---
 
+### Business Assistant
+
+Each deployment can become a salon or barbershop booking assistant without AI costs. Set these environment variables before deploying:
+
+```env
+BUSINESS_ASSISTANT_ENABLED=true
+BUSINESS_NAME=Celestia Cuts
+BUSINESS_HOURS=Monday-Saturday, 8:00 AM-7:00 PM
+BUSINESS_LOCATION=Nairobi, Kenya
+BUSINESS_OPEN_DAYS=1,2,3,4,5,6
+BUSINESS_BOOKING_SLOTS=09:00,10:00,11:00,13:00,14:00,15:00,16:00
+BUSINESS_SERVICES_JSON=[{"name":"Haircut","price":500,"durationMinutes":45},{"name":"Beard trim","price":300,"durationMinutes":30}]
+```
+
+Customers message the linked WhatsApp number and use a numbered menu to view prices, book an available slot, see hours and location, or request a human. Confirmed appointments are stored in `data/business-bookings.json` and survive Celestia redeployments. The owner receives new-booking notifications and can manage them privately with `.appointments` and `.appointments cancel <reference>`.
+
+Business mode is disabled by default, so existing CELESTIA deployments keep their current behavior.
+
+---
+
 ### ✨ Commands
 
 | Category | Example |
