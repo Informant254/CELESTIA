@@ -14,8 +14,15 @@ function digits(jid) {
 
 function getQuoted(sock, msg) {
   const jid = resolveJid(msg);
-  const ctx = msg.message?.extendedTextMessage?.contextInfo;
-  const quotedMessage = ctx?.quotedMessage;
+  let ctx = null;
+  try {
+    ctx = require('../utils/jidResolver').contextInfo(msg);
+  } catch {}
+  if (!ctx) ctx = msg.message?.extendedTextMessage?.contextInfo;
+  let quotedMessage = ctx?.quotedMessage;
+  try {
+    quotedMessage = require('@whiskeysockets/baileys').normalizeMessageContent(quotedMessage) || quotedMessage;
+  } catch {}
 
   if (!quotedMessage) {
     return { jid, ctx: null, quotedMessage: null, quotedKey: null };
