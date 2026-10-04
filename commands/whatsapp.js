@@ -137,6 +137,9 @@ module.exports = [
     async execute(sock, msg, args) {
       const { jid, ctx, quotedMessage } = getQuoted(sock, msg);
       const input = args.join(' ').trim();
+      if (!isOwner(msg)) {
+        return sock.sendMessage(jid, { text: '❌ Only the bot owner can publish a Status or change the profile bio.' }, { quoted: msg });
+      }
 
       if (!quotedMessage) {
         if (!input) {
@@ -157,26 +160,7 @@ module.exports = [
       try {
         const statusJid = 'status@broadcast';
 
-        let statusJidList = [sock.user?.id?.split(':')[0] + '@s.whatsapp.net'];
-
-        try {
-          const groups = await Promise.race([
-            sock.groupFetchAllParticipating(),
-            new Promise((_, rej) => setTimeout(() => rej(new Error('group lookup timed out')), 10000)),
-          ]);
-
-          const jids = new Set(statusJidList);
-
-          for (const group of Object.values(groups || {})) {
-            for (const p of group.participants || []) {
-              if (p.id && p.id.endsWith('@s.whatsapp.net')) jids.add(p.id);
-            }
-          }
-
-          statusJidList = Array.from(jids);
-        } catch (e) {
-          console.error('[SETSTATUS] Could not build recipient list, sending to bot only:', e.message);
-        }
+        const statusJidList = await require('../utils/mediaStudio').statusJids(sock);
 
         const quotedText = quotedMessage.conversation || quotedMessage.extendedTextMessage?.text;
 
@@ -214,7 +198,8 @@ module.exports = [
             },
           },
           'buffer',
-          {}
+          {},
+          { reuploadRequest: sock.updateMediaMessage }
         );
 
         if (!mediaBuffer) {
@@ -228,28 +213,24 @@ module.exports = [
         if (mediaType === 'imageMessage') {
           await sock.sendMessage(statusJid, {
             image: mediaBuffer,
-            caption,
-            statusJidList
-          });
+            caption
+          }, { statusJidList });
         } else if (mediaType === 'videoMessage') {
           await sock.sendMessage(statusJid, {
             video: mediaBuffer,
-            caption,
-            statusJidList
-          });
+            caption
+          }, { statusJidList });
         } else if (mediaType === 'audioMessage') {
           const mimetype = quotedMessage.audioMessage?.mimetype || 'audio/mp4';
 
           await sock.sendMessage(statusJid, {
             audio: mediaBuffer,
-            mimetype,
-            statusJidList
-          });
+            mimetype
+          }, { statusJidList });
         } else if (mediaType === 'stickerMessage') {
           await sock.sendMessage(statusJid, {
-            sticker: mediaBuffer,
-            statusJidList
-          });
+            sticker: mediaBuffer
+          }, { statusJidList });
         }
 
         return sock.sendMessage(jid, {

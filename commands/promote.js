@@ -2,7 +2,7 @@ module.exports = {
   name: 'promote',
   aliases: ['crown'],
   description: 'Promotes a mentioned member to group admin (admin only).',
-  async execute(sock, msg) {
+  async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
 
     if (!jid.endsWith('@g.us')) {
@@ -10,11 +10,9 @@ module.exports = {
       return;
     }
 
-    const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    const repliedTo = msg.message?.extendedTextMessage?.contextInfo?.participant;
-    const targetJid = mentioned[0] || repliedTo;
-
-    if (!targetJid) {
+    const metadata = await sock.groupMetadata(jid);
+    const target = require('../utils/jidResolver').resolveGroupTargets(metadata, msg, args)[0];
+    if (!target) {
       await sock.sendMessage(
         jid,
         { text: '❌ *Who should I promote, mention or tag someone with the command.*' },
@@ -23,8 +21,8 @@ module.exports = {
       return;
     }
 
-    const metadata = await sock.groupMetadata(jid);
-    const senderJid = msg.key.participant || msg.key.remoteJid;
+    const targetJid = target.jid;
+    const senderJid = msg.key.participantPn || msg.key.participantAlt || msg.key.participant || msg.key.remoteJid;
     const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
 
     if (!isSenderAdmin(metadata, senderJid)) {
@@ -36,7 +34,11 @@ module.exports = {
       return;
     }
 
-    await sock.groupParticipantsUpdate(jid, [targetJid], 'promote');
+    const result = await sock.groupParticipantsUpdate(jid, [targetJid], 'promote');
+    const status = result?.[0]?.status;
+    if (status !== undefined && Number(status) !== 200) {
+      return sock.sendMessage(jid, { text: `❌ WhatsApp refused the promotion (status ${status}).` }, { quoted: msg });
+    }
     await sock.sendMessage(
       jid,
       { text: `⬆️ *Promoted @${targetJid.split('@')[0]} to admin👑.*`, mentions: [targetJid] },

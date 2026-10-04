@@ -11,22 +11,9 @@ module.exports = {
       return;
     }
 
-    const ctx = msg.message?.extendedTextMessage?.contextInfo;
-    const repliedLid = ctx?.participant;
-    const repliedPn = ctx?.participantAlt || ctx?.participantPn;
-    const number = (args[0] || '').replace(/[^0-9]/g, '');
-
-    let targetJid;
-    let targetLid; // kept alongside, so membership check can match either form
-    if (repliedPn) {
-      targetJid = repliedPn;
-      targetLid = repliedLid;
-    } else if (repliedLid) {
-      targetJid = repliedLid;
-      targetLid = repliedLid;
-    } else if (number) {
-      targetJid = `${number}@s.whatsapp.net`;
-    } else {
+    const metadata = await sock.groupMetadata(jid);
+    const target = require('../utils/jidResolver').resolveGroupTargets(metadata, msg, args, { allowNonMember: true })[0];
+    if (!target) {
       await sock.sendMessage(
         jid,
         { text: '❌ *Who should I add, provide a number or reply to their mesage*' },
@@ -35,8 +22,8 @@ module.exports = {
       return;
     }
 
-    const metadata = await sock.groupMetadata(jid);
-    const senderJid = msg.key.participant || msg.key.remoteJid;
+    const targetJid = target.phoneJid || target.jid;
+    const senderJid = msg.key.participantPn || msg.key.participantAlt || msg.key.participant || msg.key.remoteJid;
 
     if (!isSenderAdmin(metadata, senderJid)) {
       await sock.sendMessage(jid, { text: '❌ *Only group admins can use this command.*' }, { quoted: msg });
@@ -47,9 +34,7 @@ module.exports = {
       return;
     }
 
-    const alreadyMember = metadata.participants.some(
-      (p) => p.id === targetJid || (targetLid && p.id === targetLid) || p.phoneNumber === targetJid
-    );
+    const alreadyMember = Boolean(target.participant);
     if (alreadyMember) {
       await sock.sendMessage(
         jid,
@@ -63,7 +48,7 @@ module.exports = {
       const result = await sock.groupParticipantsUpdate(jid, [targetJid], 'add');
 
       const participantResult = result?.[0];
-      if (participantResult?.status === '409') {
+      if (Number(participantResult?.status) === 409) {
         await sock.sendMessage(
           jid,
           { text: `ℹ️ *@${targetJid.split('@')[0]} is already a member.*`, mentions: [targetJid] },
@@ -72,7 +57,7 @@ module.exports = {
         return;
       }
 
-      if (participantResult && participantResult.status !== '200') {
+      if (participantResult && Number(participantResult.status) !== 200) {
         await sendInviteFallback(sock, jid, targetJid, metadata, msg);
         return;
       }

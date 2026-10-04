@@ -77,11 +77,37 @@ async function createWaveform({ input, cover, output, seconds = 30 }) {
 async function statusJids(sock) {
   const own = sock.user?.id?.split(':')[0];
   const ids = new Set(own ? [`${own}@s.whatsapp.net`] : []);
+  let learned = {};
+  try { learned = require('./mirror').idMap(); } catch {}
   try {
     const groups = await Promise.race([sock.groupFetchAllParticipating(), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))]);
-    for (const group of Object.values(groups || {})) for (const p of group.participants || []) if (p.id?.endsWith('@s.whatsapp.net')) ids.add(p.id);
+    const { participantPhoneJid } = require('./jidResolver');
+    for (const group of Object.values(groups || {})) {
+      for (const participant of group.participants || []) {
+        const phoneJid = participantPhoneJid(participant, learned);
+        if (phoneJid) ids.add(phoneJid);
+      }
+    }
   } catch {}
   return [...ids];
+}
+
+async function groupStatusJids(sock, groupJid, metadata = null) {
+  const group = metadata || await sock.groupMetadata(groupJid);
+  const own = sock.user?.id?.split(':')[0];
+  const ids = new Set(own ? [`${own}@s.whatsapp.net`] : []);
+  let learned = {};
+  try { learned = require('./mirror').idMap(); } catch {}
+  const { participantPhoneJid } = require('./jidResolver');
+  let resolved = 0;
+  let skipped = 0;
+  for (const participant of group?.participants || []) {
+    const phoneJid = participantPhoneJid(participant, learned);
+    if (!phoneJid) { skipped++; continue; }
+    if (!ids.has(phoneJid)) resolved++;
+    ids.add(phoneJid);
+  }
+  return { jids: [...ids], resolved, skipped };
 }
 
 async function postStatus(sock, content) {
@@ -90,4 +116,4 @@ async function postStatus(sock, content) {
   return list.length;
 }
 
-module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, statusJids, postStatus };
+module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, statusJids, groupStatusJids, postStatus };

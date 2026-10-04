@@ -20,6 +20,89 @@ function isLidJid(jid) {
   return typeof jid === 'string' && jid.endsWith('@lid');
 }
 
+function digits(value) {
+  return String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+function contextInfo(msg) {
+  let content = msg?.message || {};
+  try {
+    content = require('@whiskeysockets/baileys').normalizeMessageContent(content) || content;
+  } catch {}
+  for (const value of Object.values(content)) {
+    if (value?.contextInfo) return value.contextInfo;
+  }
+  return null;
+}
+
+function asPhoneJid(value) {
+  if (isPhoneJid(value)) return value;
+  const valueDigits = digits(value);
+  return valueDigits.length >= 8 && valueDigits.length <= 15
+    ? `${valueDigits}@s.whatsapp.net`
+    : null;
+}
+
+function participantPhoneJid(participant, learned = {}) {
+  const candidates = [
+    participant?.phoneNumber,
+    participant?.pn,
+    participant?.participantPn,
+    participant?.jidRecord?.pn,
+    participant?.alt,
+    isPhoneJid(participant?.id) ? participant.id : null,
+  ];
+  for (const candidate of candidates) {
+    const jid = asPhoneJid(candidate);
+    if (jid) return jid;
+  }
+  for (const lid of [participant?.id, participant?.lid]) {
+    const mapped = learned[digits(lid)];
+    const jid = asPhoneJid(mapped);
+    if (jid) return jid;
+  }
+  return null;
+}
+
+function resolveGroupTargets(metadata, msg, args = [], { allowNonMember = false } = {}) {
+  const ctx = contextInfo(msg) || {};
+  const candidates = [];
+  // Explicit targets win over the message being replied to. This prevents
+  // `.promote @Bob` on a reply to Alice from mutating Alice by accident.
+  if (Array.isArray(ctx.mentionedJid)) candidates.push(...ctx.mentionedJid);
+  for (const arg of args) {
+    const jid = asPhoneJid(arg);
+    if (jid) candidates.push(jid);
+  }
+  if (ctx.participant) candidates.push(ctx.participant);
+
+  const { participantMatches, normalize } = require('./isAdmin');
+  const out = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const candidateJid = isLidJid(candidate) || isPhoneJid(candidate) ? candidate : asPhoneJid(candidate);
+    if (!candidateJid) continue;
+    const identifiers = new Set([normalize(candidateJid)]);
+    const participant = (metadata?.participants || []).find((entry) => participantMatches(entry, identifiers));
+    if (participant) {
+      const jid = participant.id || participant.lid || participant.phoneNumber;
+      const key = normalize(jid);
+      if (!jid || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ jid, participant, phoneJid: participantPhoneJid(participant) });
+      continue;
+    }
+    if (allowNonMember) {
+      const phoneJid = asPhoneJid(candidateJid);
+      if (phoneJid && !seen.has(phoneJid)) {
+        seen.add(phoneJid);
+        out.push({ jid: phoneJid, participant: null, phoneJid });
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Resolve the real phone JID for a reply/mention target.
  * @param {object} sock  - Baileys socket
@@ -87,4 +170,8 @@ function displayLabel(targetJid, ownerNumber) {
   return 'them'; // mention array does the naming
 }
 
-module.exports = { isPhoneJid, isLidJid, resolvePhoneJid, phoneJidFromInput, displayLabel };
+module.exports = {
+  isPhoneJid, isLidJid, digits, contextInfo, asPhoneJid,
+  participantPhoneJid, resolveGroupTargets,
+  resolvePhoneJid, phoneJidFromInput, displayLabel,
+};
