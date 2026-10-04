@@ -108,6 +108,61 @@ function bookingId(now = new Date(), randomBytes = crypto.randomBytes) {
   return `BK-${now.toISOString().slice(0, 10).replaceAll('-', '')}-${suffix}`;
 }
 
+function digits(value) {
+  return String(value || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+}
+
+// WhatsApp privacy addressing: DMs increasingly arrive as xxx@lid with the
+// real phone number hidden. Resolve the best reachable contact for display:
+//  1. explicit PN fields Baileys still hydrates (remoteJidAlt / participantPn)
+//  2. a plain @s.whatsapp.net remoteJid (old addressing)
+//  3. the mirror LID<->PN map learned from live traffic
+// Reply routing ALWAYS uses the original remoteJid; this is display only.
+function resolveCustomer(msg) {
+  const remoteJid = String(msg?.key?.remoteJid || '');
+  const candidates = [
+    msg?.key?.remoteJidAlt,
+    msg?.key?.participantAlt,
+    msg?.key?.participantPn,
+    msg?.key?.participant,
+  ];
+  let phoneJid = null;
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.endsWith('@s.whatsapp.net')) {
+      const d = digits(candidate);
+      if (d.length >= 8 && d.length <= 15) { phoneJid = candidate; break; }
+    }
+  }
+  if (!phoneJid && remoteJid.endsWith('@s.whatsapp.net')) phoneJid = remoteJid;
+  if (!phoneJid) {
+    try {
+      const learned = require('../utils/mirror').idMap();
+      const lidDigits = digits(remoteJid);
+      const mapped = learned && learned[lidDigits];
+      const mappedDigits = digits(mapped);
+      if (mappedDigits.length >= 8 && mappedDigits.length <= 15) {
+        phoneJid = `${mappedDigits}@s.whatsapp.net`;
+      }
+    } catch { /* mapping is best-effort only */ }
+  }
+  const lidJid = remoteJid.endsWith('@lid') ? remoteJid : null;
+  return {
+    replyJid: remoteJid,
+    phoneJid,
+    phoneDigits: phoneJid ? digits(phoneJid) : null,
+    lidJid,
+    lidDigits: lidJid ? digits(lidJid) : null,
+  };
+}
+
+function customerLabel(contact) {
+  if (contact.phoneDigits) return `+${contact.phoneDigits} https://wa.me/${contact.phoneDigits}`;
+  if (contact.lidDigits) {
+    return `hidden number (LID ${contact.lidDigits}) — ask the customer to share their number; tap their chat to reply`;
+  }
+  return 'unknown contact';
+}
+
 function minuteOfDay(time) {
   const [hour, minute] = time.split(':').map(Number);
   return hour * 60 + minute;
@@ -200,7 +255,8 @@ function createAssistant(options = {}) {
         return true;
       }
       if (['4', 'human', 'agent', 'person'].includes(normalized)) {
-        const notified = await sendOwnerNotice(sock, `*Customer handoff requested*\nFrom: ${jid.split('@')[0]}\nMessage: ${text}`);
+        const contact = resolveCustomer(msg);
+        const notified = await sendOwnerNotice(sock, `*Customer handoff requested*\nFrom: ${customerLabel(contact)}\nMessage: ${text}`);
         sessions.set(jid, { step: 'handoff', updatedAt: now().getTime() });
         await reply(`${notified ? profile.contactText : 'Your message is visible to our team and they can reply here.'}\n\nReply MENU to return to automated options.`);
         return true;
@@ -285,9 +341,12 @@ function createAssistant(options = {}) {
         return true;
       }
       const createdAt = now();
+      const contact = resolveCustomer(msg);
       const booking = {
         id: bookingId(createdAt, randomBytes),
         customerJid: jid,
+        customerPhone: contact.phoneDigits ? `+${contact.phoneDigits}` : null,
+        customerPhoneLink: contact.phoneDigits ? `https://wa.me/${contact.phoneDigits}` : null,
         customerName: session.customerName,
         service: session.service.name,
         durationMinutes: session.service.durationMinutes,
@@ -308,7 +367,7 @@ function createAssistant(options = {}) {
       sessions.delete(jid);
       await reply(`*Appointment confirmed*\n\nReference: ${booking.id}\n${booking.service}\n${booking.date} at ${booking.time}\n\nKeep this reference. Reply 0 to return to the main menu.`);
       await sendOwnerNotice(sock,
-        `*New appointment*\n\nReference: ${booking.id}\nCustomer: ${booking.customerName}\nWhatsApp: ${jid.split('@')[0]}\nService: ${booking.service}\nDate: ${booking.date}\nTime: ${booking.time}\nPrice: ${booking.currency} ${booking.price}`
+        `*New appointment*\n\nReference: ${booking.id}\nCustomer: ${booking.customerName}\nWhatsApp: ${customerLabel(contact)}\nService: ${booking.service}\nDate: ${booking.date}\nTime: ${booking.time}\nPrice: ${booking.currency} ${booking.price}`
       );
       return true;
     }
@@ -332,11 +391,13 @@ module.exports = {
   SESSION_TTL_MS,
   bookingId,
   createAssistant,
+  customerLabel,
   dateInTimezone,
   loadProfile,
   localTimeInTimezone,
   mainMenu,
   parseServices,
+  resolveCustomer,
   servicesMenu,
   validBookingDate,
   handleIncoming: (...args) => instance().handleIncoming(...args),

@@ -2,8 +2,10 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const {
   createAssistant,
+  customerLabel,
   loadProfile,
   parseServices,
+  resolveCustomer,
   validBookingDate,
 } = require('../business/assistant');
 
@@ -138,6 +140,16 @@ test('human handoff silences automation until the customer requests the menu', a
   assert.equal(sent.length, afterHandoff, 'assistant stays silent during handoff');
   await assistant.handleIncoming(sock, msg, 'menu');
   assert.match(sent.at(-1).content.text, /Services and prices/);
+});
+
+test('owner notices prefer the real number and stay honest on LID-only chats', () => {
+  const withPn = resolveCustomer({ key: { remoteJid: '12345@lid', remoteJidAlt: '254712345678@s.whatsapp.net', fromMe: false } });
+  assert.equal(withPn.phoneDigits, '254712345678');
+  assert.match(customerLabel(withPn), /wa\.me\/254712345678/);
+
+  const lidOnly = resolveCustomer({ key: { remoteJid: '12345@lid', fromMe: false } });
+  assert.equal(lidOnly.phoneDigits, null);
+  assert.match(customerLabel(lidOnly), /hidden number/);
 });
 
 test('disabled assistant and group chats are left untouched', async () => {

@@ -55,9 +55,12 @@ module.exports = {
       return;
     }
 
-    const rows = bookings.map((booking) =>
-      `*${booking.date} ${booking.time}*\n${booking.customerName} - ${booking.service}\n${booking.id}`
-    );
+    const rows = bookings.map((booking) => {
+      const contact = booking.customerPhoneLink || booking.customerPhone
+        ? `${booking.customerPhone || ''} ${booking.customerPhoneLink || ''}`.trim()
+        : 'number hidden by WhatsApp (open the customer chat to reply)';
+      return `*${booking.date} ${booking.time}*\n${booking.customerName} - ${booking.service}\n${contact}\n${booking.id}`;
+    });
     await sock.sendMessage(jid, {
       text: `*Upcoming appointments*\n\n${rows.join('\n\n')}\n\nCancel: .appointments cancel <reference>`,
     }, { quoted: msg });
