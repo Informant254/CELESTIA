@@ -226,6 +226,7 @@ test('news ranking does not mistake author and category listings for articles', 
   const ranked = ls.rankNewsResults([
     { title: 'Politics category', url: 'https://example.com/category/politics', snippet: 'Listing', source: 'example.com', publishedAt: recent },
     { title: 'Reporter archive', url: 'https://example.com/author/jane', snippet: 'Archive', source: 'example.com', publishedAt: recent },
+    { title: 'Nested entertainment category', url: 'https://example.com/thenairobian/category/508/entertainment', snippet: 'Listing', source: 'example.com', publishedAt: recent },
     { title: 'Parliament passes a new bill today', url: 'https://example.com/news/parliament-passes-new-bill-today', snippet: 'A detailed report about the newly passed bill.', source: 'example.com', publishedAt: recent },
   ], ls.detectSearchIntent('latest politics news'), 'latest politics news', 5, now);
   assert.equal(ranked.length, 1);

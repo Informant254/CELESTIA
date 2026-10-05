@@ -193,7 +193,7 @@ function resultShape(result) {
     const path = url.pathname.replace(/\/+$/, '') || '/';
     const segments = path.split('/').filter(Boolean);
     const listingPrefixes = /^(?:author|authors|category|categories|tag|tags|topic|topics|profile|profiles|people|search|users?|channel|channels)$/i;
-    const listing = listingPrefixes.test(segments[0] || '') || (
+    const listing = segments.some((segment) => listingPrefixes.test(segment)) || (
       /^(?:news|latest|entertainment)$/i.test(segments[0] || '') &&
       segments.length <= 2 &&
       !/[-_]|\d/.test(segments[1] || '')
