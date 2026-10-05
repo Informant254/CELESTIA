@@ -247,8 +247,9 @@ module.exports = [
   },
 
   {
-    name: 'status',
-    description: "Get the profile status/bio of the bot, a tagged user, or a replied user.",
+    name: 'bio',
+    aliases: ['mybio'],
+    description: "Get the profile bio of the bot, a tagged user, or a replied user.",
     async execute(sock, msg, args) {
       const jid = resolveJid(msg);
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
@@ -268,7 +269,7 @@ module.exports = [
       const who = isSelf ? 'Bio' : `@${cleanNum}'s status`;
 
       if (isSelf) {
-        const bioText = cachedBotBio || 'No bio set yet — set one with .setstatus <text>.';
+        const bioText = cachedBotBio || 'No bio set yet — set one with .setbio <text>.';
 
         return sock.sendMessage(jid, {
           text: `${who}: ${bioText}`

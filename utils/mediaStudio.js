@@ -97,6 +97,10 @@ async function createWaveform({ input, cover, output, seconds = 30 }) {
   return output;
 }
 
+function syncedStatusContacts(sock) {
+  return [...(statusContacts.get(sock) || new Set())];
+}
+
 async function statusJids(sock) {
   const own = sock.user?.id?.split(':')[0];
   const ids = new Set(own ? [`${own}@s.whatsapp.net`] : []);
@@ -167,4 +171,4 @@ async function postStatus(sock, content, opts = {}) {
   }
 }
 
-module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, noteStatusContacts, noteStatusPrivacy, statusJids, groupStatusJids, postStatus };
+module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, noteStatusContacts, noteStatusPrivacy, syncedStatusContacts, statusJids, groupStatusJids, postStatus };
