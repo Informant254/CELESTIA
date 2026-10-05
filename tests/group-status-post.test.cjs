@@ -255,3 +255,101 @@ test('CELESTIA uses the wolfsocket group-status transport', () => {
   assert.equal(transport.name, 'wolfsocket');
   assert.equal(transport.version, '1.0.1');
 });
+
+function dmStatusSock(sent, relayed) {
+  return {
+    user: { id: '254700000099:4@s.whatsapp.net' },
+    groupGetInviteInfo: async () => ({ id: GROUP }),
+    groupMetadata: async () => ({ id: GROUP, subject: 'DM Target Group' }),
+    sendGroupStatus: async (jid, content) => {
+      relayed.push({ jid, content });
+      return { key: { id: `gs${relayed.length}` } };
+    },
+    sendMessage: async (jid, content, options) => {
+      sent.push({ jid, content, options });
+      return { key: { id: `m${sent.length}` } };
+    },
+  };
+}
+
+const DM = '254700000099@s.whatsapp.net';
+
+test('gstatus posts group status text from owner DM with a JID first', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = dmStatusSock(sent, relayed);
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: { conversation: '.gstatus 120363000000000000@g.us Hello from DM' },
+  };
+  await gstatus.execute(sock, msg, [GROUP, 'Hello', 'from', 'DM']);
+
+  assert.equal(relayed.length, 1);
+  assert.equal(relayed[0].jid, GROUP);
+  assert.equal(relayed[0].content.text, 'Hello from DM');
+  assert.match(sent.at(-1).content.text, /DM Target Group/);
+});
+
+test('grouppost posts replied DM image to the named group with its caption', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = dmStatusSock(sent, relayed);
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: {
+      extendedTextMessage: {
+        text: '.grouppost',
+        contextInfo: {
+          stanzaId: 'dm-media1',
+          quotedMessage: {
+            imageMessage: { caption: 'DM caption', mimetype: 'image/jpeg' },
+          },
+        },
+      },
+    },
+  };
+  const originalDownload = groupPost.downloadSourceMedia;
+  groupPost.downloadSourceMedia = async () => Buffer.from('dm image bytes');
+  try {
+    await groupPost.execute(sock, msg, [GROUP]);
+  } finally {
+    groupPost.downloadSourceMedia = originalDownload;
+  }
+
+  assert.equal(relayed.length, 1);
+  assert.equal(relayed[0].jid, GROUP);
+  assert.equal(relayed[0].content.image.toString(), 'dm image bytes');
+  assert.equal(relayed[0].content.caption, 'DM caption');
+  assert.match(sent.at(-1).content.text, /DM Target Group/);
+});
+
+test('grouppost DM without a group shows DM usage instead of posting', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = dmStatusSock(sent, relayed);
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: { conversation: '.grouppost' },
+  };
+  await groupPost.execute(sock, msg, []);
+
+  assert.equal(relayed.length, 0);
+  assert.match(sent.at(-1).content.text, /GROUP STATUS \(DM\)/);
+});
+
+test('grouppost DM with an unresolvable group does not post', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = {
+    ...dmStatusSock(sent, relayed),
+    groupGetInviteInfo: async () => { throw new Error('no such invite'); },
+  };
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: { conversation: '.grouppost not-a-group hello' },
+  };
+  await groupPost.execute(sock, msg, ['not-a-group', 'hello']);
+
+  assert.equal(relayed.length, 0);
+  assert.match(sent.at(-1).content.text, /could not resolve/);
+});

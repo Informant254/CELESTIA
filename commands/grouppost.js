@@ -15,6 +15,24 @@ function unwrapQuoted(quoted) {
   }
 }
 
+async function resolveTargetGroup(sock, ref) {
+  const s = String(ref || '').trim();
+  if (s.endsWith('@g.us')) return s;
+  if (/^\d{15,}$/.test(s.replace(/[^0-9]/g, '')) && !s.includes('chat.whatsapp.com')) {
+    return `${s.replace(/[^0-9]/g, '')}@g.us`;
+  }
+  const m = s.match(/chat\.whatsapp\.com\/(?:invite\/)?([A-Za-z0-9_-]{10,40})/i);
+  const code = m ? m[1].split('?')[0].split('#')[0] : (/^[A-Za-z0-9_-]{10,40}$/.test(s) ? s : null);
+  if (!code) throw new Error('not a group link, JID, or ID');
+  const info = await sock.groupGetInviteInfo(code);
+  if (!info?.id) throw new Error('invite did not resolve to a group');
+  return info.id;
+}
+
+function dmUsage() {
+  return '✦ *CELESTIA GROUP STATUS (DM)*\n\nUse `.gstatus <group-link|JID> <text>`, or reply to text/music/image/video/sticker with `.gstatus <group-link|JID> [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).';
+}
+
 async function sendGroupStatus(sock, groupJid, content) {
   if (typeof sock.sendGroupStatus !== 'function') {
     throw new Error('CELESTIA Group Status transport is unavailable');
@@ -48,17 +66,37 @@ async function downloadSourceMedia(sock, msg, ctx, source, replied) {
 module.exports = {
   name: 'grouppost',
   aliases: ['gpoststatus', 'groupstory'],
-  description: 'CELESTIA Group Status: post text, images, videos, stickers or a music clip up to 4 minutes for 24 hours.',
+  description: 'CELESTIA Group Status: post text, images, videos, stickers or a music clip up to 4 minutes for 24 hours. Works in groups and owner DMs (in DMs name the group first).',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
-    if (!jid.endsWith('@g.us')) {
-      return sock.sendMessage(jid, { text: '✦ CELESTIA Group Status only works inside a group.' }, { quoted: msg });
-    }
+    const inGroup = jid.endsWith('@g.us');
     if (!isOwner(msg)) {
       return sock.sendMessage(jid, { text: '✦ Only the CELESTIA owner can publish a Group Status.' }, { quoted: msg });
     }
 
-    const input = args.join(' ').trim();
+    let targetJid = jid;
+    let targetName = null;
+    let contentArgs = args;
+    if (!inGroup) {
+      const ref = args[0];
+      if (!ref) {
+        return sock.sendMessage(jid, { text: dmUsage() }, { quoted: msg });
+      }
+      try {
+        targetJid = await resolveTargetGroup(sock, ref);
+      } catch {
+        return sock.sendMessage(jid, { text: `✦ CELESTIA could not resolve that group. ${dmUsage()}` }, { quoted: msg });
+      }
+      contentArgs = args.slice(1);
+      try {
+        const metadata = await sock.groupMetadata(targetJid);
+        targetName = metadata?.subject || targetJid;
+      } catch (error) {
+        return sock.sendMessage(jid, { text: `✦ CELESTIA could not read that group: ${error.message}` }, { quoted: msg });
+      }
+    }
+
+    const input = contentArgs.join(' ').trim();
     const ctx = contextInfo(msg);
     const quoted = unwrapQuoted(ctx?.quotedMessage);
     const current = unwrapQuoted(msg.message);
@@ -69,14 +107,19 @@ module.exports = {
 
     if (!source && !input) {
       return sock.sendMessage(jid, {
-        text: '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).',
+        text: inGroup
+          ? '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).'
+          : dmUsage(),
       }, { quoted: msg });
     }
 
     try {
       const sourceText = source?.conversation || source?.extendedTextMessage?.text;
       if (!source || sourceText) {
-        await sendGroupStatus(sock, jid, { text: input || sourceText });
+        await sendGroupStatus(sock, targetJid, { text: input || sourceText });
+        if (!inGroup) {
+          return sock.sendMessage(jid, { text: `✦ CELESTIA posted that Group Status to *${targetName || targetJid}*.` }, { quoted: msg });
+        }
         return;
       }
 
@@ -114,13 +157,17 @@ module.exports = {
       } else {
         content = { sticker: buffer, mimetype: sourceMedia.mimetype || 'image/webp' };
       }
-      await sendGroupStatus(sock, jid, content);
+      await sendGroupStatus(sock, targetJid, content);
+      if (!inGroup) {
+        return sock.sendMessage(jid, { text: `✦ CELESTIA posted that Group Status to *${targetName || targetJid}*.` }, { quoted: msg });
+      }
     } catch (error) {
       console.error('[GROUPPOST ERROR]', error);
       return sock.sendMessage(jid, { text: `✦ CELESTIA could not publish this Group Status: ${error.message}` }, { quoted: msg });
     }
   },
   sendGroupStatus,
+  resolveTargetGroup,
   downloadSourceMedia,
   prepareStatusAudio,
 };
