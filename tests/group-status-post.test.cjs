@@ -4,6 +4,7 @@ const groupPost = require('../commands/grouppost');
 const gstatus = require('../commands/groupsecurity').find((command) => command.name === 'gstatus');
 const setStatus = require('../commands/whatsapp').find((command) => command.name === 'setstatus');
 const { groupStatusJids } = require('../utils/mediaStudio');
+const { patchMessageBeforeSending } = require('../utils/baileysTransport');
 
 const GROUP = '120363000000000000@g.us';
 const metadata = {
@@ -153,7 +154,12 @@ test('grouppost downloads and freshly uploads replied image media', async () => 
   const image = relayed[0].content.groupStatusMessageV2.message.imageMessage;
   assert.equal(image.directPath, '/v/t62/fresh-image');
   assert.equal(image.caption, 'New caption');
+  assert.equal(relayed[0].content.imageMessage, image, 'rc14 needs a temporary top-level media hint');
   assert.equal(relayed[0].options.additionalAttributes.mediatype, 'image');
+
+  const encoded = patchMessageBeforeSending(relayed[0].content);
+  assert.equal(encoded.imageMessage, undefined, 'duplicate hint must be stripped before protobuf encoding');
+  assert.equal(encoded.groupStatusMessageV2.message.imageMessage, image);
 });
 
 test('gstatus freshly uploads replied music as an audio group status', async () => {
@@ -188,6 +194,7 @@ test('gstatus freshly uploads replied music as an audio group status', async () 
   const audio = relayed[0].content.groupStatusMessageV2.message.audioMessage;
   assert.equal(audio.directPath, '/v/t62/fresh-audio');
   assert.equal(audio.mimetype, 'audio/mpeg');
+  assert.equal(relayed[0].content.audioMessage, audio);
   assert.equal(relayed[0].options.additionalAttributes.mediatype, 'audio');
 });
 

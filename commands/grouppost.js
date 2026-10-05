@@ -8,6 +8,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
 const { contextInfo } = require('../utils/jidResolver');
+const { withGroupStatusMediaHint } = require('../utils/baileysTransport');
 
 function unwrapQuoted(quoted) {
   if (!quoted) return null;
@@ -44,7 +45,8 @@ async function sendGroupStatus(sock, groupJid, content) {
   }, { userJid });
 
   const type = mediaType(inside);
-  await sock.relayMessage(groupJid, message.message, {
+  const relayContent = withGroupStatusMediaHint(message.message, inside);
+  await sock.relayMessage(groupJid, relayContent, {
     messageId: message.key.id,
     ...(type ? { additionalAttributes: { mediatype: type } } : {}),
   });
