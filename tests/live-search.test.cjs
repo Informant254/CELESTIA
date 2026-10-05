@@ -75,3 +75,59 @@ test('search command is registered with free aliases', () => {
   assert.ok(cmd.aliases.includes('web'));
   assert.ok(cmd.aliases.includes('google'));
 });
+
+test('brave API wins when a key is set and returns results', async () => {
+  const calls = [];
+  const restore = stubAxios(async (url) => {
+    calls.push(url);
+    if (!url.includes('brave.com')) throw Object.assign(new Error('unreached'), { code: 'ECONNREFUSED' });
+    return { data: { web: { results: [{ title: 'Brave hit', url: 'https://example.com/b', description: 'brave snippet' }] } } };
+  });
+  const prev = process.env.BRAVE_SEARCH_KEY;
+  process.env.BRAVE_SEARCH_KEY = 'test-key';
+  try {
+    const ls = freshSearch();
+    const r = await ls.searchWeb('hello world', 5);
+    assert.equal(r.instance, 'brave');
+    assert.equal(r.results[0].title, 'Brave hit');
+    assert.equal(r.results[0].snippet, 'brave snippet');
+    assert.equal(calls.length, 1, 'no SearXNG rotation when Brave answers');
+  } finally {
+    if (prev === undefined) delete process.env.BRAVE_SEARCH_KEY;
+    else process.env.BRAVE_SEARCH_KEY = prev;
+    restore();
+  }
+});
+
+test('brave failure falls through to SearXNG rotation', async () => {
+  const restore = stubAxios(async (url) => {
+    if (url.includes('brave.com')) throw Object.assign(new Error('bad key'), { response: { status: 401 } });
+    return { data: { results: [{ title: 'S', url: 'https://example.com/s', content: 'x' }] } };
+  });
+  const prev = process.env.BRAVE_SEARCH_KEY;
+  process.env.BRAVE_SEARCH_KEY = 'bad-key';
+  try {
+    const ls = freshSearch();
+    const r = await ls.searchWeb('hello world', 5);
+    assert.notEqual(r.instance, 'brave');
+    assert.equal(r.results[0].title, 'S');
+  } finally {
+    if (prev === undefined) delete process.env.BRAVE_SEARCH_KEY;
+    else process.env.BRAVE_SEARCH_KEY = prev;
+    restore();
+  }
+});
+
+test('queryBrave stays silent without a key', async () => {
+  const prev = process.env.BRAVE_SEARCH_KEY;
+  const prev2 = process.env.BRAVE_SEARCH_API_KEY;
+  delete process.env.BRAVE_SEARCH_KEY;
+  delete process.env.BRAVE_SEARCH_API_KEY;
+  try {
+    const ls = freshSearch();
+    assert.equal(await ls.queryBrave('q', 5), null);
+  } finally {
+    if (prev !== undefined) process.env.BRAVE_SEARCH_KEY = prev;
+    if (prev2 !== undefined) process.env.BRAVE_SEARCH_API_KEY = prev2;
+  }
+});
