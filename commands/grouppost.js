@@ -1,14 +1,9 @@
-const crypto = require('crypto');
 const {
   downloadMediaMessage,
-  generateWAMessageContent,
-  generateWAMessageFromContent,
-  jidNormalizedUser,
   normalizeMessageContent,
 } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
 const { contextInfo } = require('../utils/jidResolver');
-const { withGroupStatusMediaHint } = require('../utils/baileysTransport');
 
 function unwrapQuoted(quoted) {
   if (!quoted) return null;
@@ -19,37 +14,16 @@ function unwrapQuoted(quoted) {
   }
 }
 
-function mediaType(message) {
-  if (message.imageMessage) return 'image';
-  if (message.videoMessage) return message.videoMessage.gifPlayback ? 'gif' : 'video';
-  if (message.audioMessage) return message.audioMessage.ptt ? 'ptt' : 'audio';
-  if (message.stickerMessage) return 'sticker';
-  return null;
-}
-
 async function sendGroupStatus(sock, groupJid, content) {
-  const inside = await generateWAMessageContent(content, {
-    upload: sock.waUploadToServer,
-  });
-
-  const messageSecret = crypto.randomBytes(32);
-  const userJid = jidNormalizedUser(sock.user?.id || '');
-  const message = generateWAMessageFromContent(groupJid, {
-    messageContextInfo: { messageSecret },
-    groupStatusMessageV2: {
-      message: {
-        ...inside,
-        messageContextInfo: { messageSecret },
-      },
-    },
-  }, { userJid });
-
-  const type = mediaType(inside);
-  const relayContent = withGroupStatusMediaHint(message.message, inside);
-  await sock.relayMessage(groupJid, relayContent, {
-    messageId: message.key.id,
-    ...(type ? { additionalAttributes: { mediatype: type } } : {}),
-  });
+  if (typeof sock.sendGroupStatus !== 'function') {
+    throw new Error('CELESTIA Group Status transport is unavailable');
+  }
+  const message = await sock.sendGroupStatus(groupJid, content);
+  const type = content.image ? 'image'
+    : content.video ? (content.gifPlayback ? 'gif' : 'video')
+      : content.audio ? (content.ptt ? 'ptt' : 'audio')
+        : content.sticker ? 'sticker'
+          : 'text';
   console.log(`[CELESTIA GROUP STATUS] relayed type=${type || 'text'} id=${message.key.id}`);
   return message;
 }

@@ -107,7 +107,6 @@ try {
 
 const path = require('path');
 const { groupCache } = require('./utils/groupCache');
-const { patchMessageBeforeSending } = require('./utils/baileysTransport');
 const figlet = require('figlet');
 const chalk = require('chalk');
 const {
@@ -661,7 +660,6 @@ async function startBotOnce() {
       shouldSyncHistoryMessage: (() => { let budget = 200; return () => (budget-- > 0); })(),
       markOnlineOnConnect: false,
       browser: ['Ubuntu', 'Chrome', '120.0.6099.130'],
-      patchMessageBeforeSending,
       cachedGroupMetadata: async (jid) => groupCache.get(jid),
       getMessage: async (key) => {
         const messageCache = require('./utils/messageCache');
