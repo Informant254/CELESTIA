@@ -192,8 +192,9 @@ function resultShape(result) {
     const host = url.hostname.replace(/^www\./, '').toLowerCase();
     const path = url.pathname.replace(/\/+$/, '') || '/';
     const segments = path.split('/').filter(Boolean);
-    const listingPrefixes = /^(?:author|authors|category|categories|tag|tags|topic|topics|profile|profiles|people|search|users?|channel|channels)$/i;
-    const listing = segments.some((segment) => listingPrefixes.test(segment)) || (
+    const listingPrefixes = /^(?:author|authors|category|categories|tag|tags|topic|topics|profile|profiles|people|search|users?|channel|channels|country|countries|location|locations|section|sections)$/i;
+    const sectionSlug = /^(?:news|latest|entertainment|tech|technology|politics|business|sports?|lifestyle|world|africa|kenya)$/i;
+    const listing = segments.some((segment) => listingPrefixes.test(segment)) || sectionSlug.test(segments.at(-1) || '') || (
       /^(?:news|latest|entertainment)$/i.test(segments[0] || '') &&
       segments.length <= 2 &&
       !/[-_]|\d/.test(segments[1] || '')

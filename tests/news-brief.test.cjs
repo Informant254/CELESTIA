@@ -55,7 +55,7 @@ test('brief source selection keeps one story per publisher', () => {
     title: 'A second story from the same publisher',
     url: 'https://example.com/news/second-story',
   });
-  const selected = newsBrief.selectDiverseSources(results, 5);
+  const selected = newsBrief.selectDiverseSources(results, 5, 'Kenya technology');
   assert.equal(selected.length, 2);
   assert.deepEqual(selected.map((result) => result.source), ['example.com', 'reuters.com']);
 });
@@ -63,7 +63,25 @@ test('brief source selection keeps one story per publisher', () => {
 test('brief source selection normalizes common mobile and AMP subdomains', () => {
   const results = sampleResults();
   results[1] = { ...results[1], source: 'amp.example.com' };
-  assert.equal(newsBrief.selectDiverseSources(results, 5).length, 1);
+  assert.equal(newsBrief.selectDiverseSources(results, 5, 'Kenya technology').length, 1);
+});
+
+test('brief source selection rejects index pages and off-topic articles', () => {
+  const results = [
+    { title: 'Tech | Daily Nation', url: 'https://nation.africa/kenya/news/tech', snippet: 'Kenya technology news', source: 'nation.africa' },
+    { title: 'Kenya Technology Newswire - EIN Presswire', url: 'https://tech.einnews.com/country/kenya', snippet: 'Latest headlines', source: 'tech.einnews.com' },
+    { title: 'Namibia expands its technology sector', url: 'https://example.com/news/namibia-tech', snippet: 'Technology investment in Namibia', source: 'example.com' },
+    { title: 'Kenya opens a new technology hub', url: 'https://reuters.com/world/africa/kenya-technology-hub', snippet: 'Kenyan technology companies joined the launch.', source: 'reuters.com' },
+  ];
+  const selected = newsBrief.selectDiverseSources(results, 5, 'Kenya technology');
+  assert.equal(selected.length, 1);
+  assert.match(selected[0].title, /opens a new technology hub/);
+});
+
+test('generic brief topics can fall back to a weekly query but explicit periods cannot', () => {
+  assert.equal(newsBrief.weeklyFallbackQuery('Kenya technology'), 'Kenya technology news this week');
+  assert.equal(newsBrief.weeklyFallbackQuery('Kenya technology today'), null);
+  assert.equal(newsBrief.weeklyFallbackQuery('Kenya technology this week'), null);
 });
 
 test('AI brief validation accepts multi-source citations and rejects unsupported output', () => {

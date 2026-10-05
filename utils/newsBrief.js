@@ -1,6 +1,12 @@
 const backend = require('../autochat/backend');
 const { detectSearchIntent, formatPublishedDate } = require('./liveSearch');
 
+const TOPIC_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'are', 'at', 'breaking', 'current', 'currently', 'for', 'from',
+  'in', 'latest', 'news', 'now', 'of', 'on', 'recent', 'the', 'this', 'today',
+  'trending', 'week', 'with', 'yesterday',
+]);
+
 function toNewsSearchQuery(topic) {
   const query = String(topic || '').replace(/\s+/g, ' ').trim().slice(0, 180);
   if (!query) return '';
@@ -22,10 +28,42 @@ function publisherKey(result) {
   return host.replace(/^(?:amp|m|mobile|edition)\./, '') || `unknown:${result.url}`;
 }
 
-function selectDiverseSources(results, limit = 5) {
+function normalizeKeyword(word) {
+  const value = String(word || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (/^kenya(?:n|ns)?$/.test(value)) return 'kenya';
+  if (/^(?:tech|technology|technologies|technological|digital|ai)$/.test(value)) return 'tech';
+  return value.replace(/(?:ies|ing|ed|s)$/, '');
+}
+
+function topicKeywords(topic) {
+  return [...new Set(String(topic || '').toLowerCase().split(/\s+/)
+    .map(normalizeKeyword)
+    .filter((word) => word.length > 2 && !TOPIC_STOP_WORDS.has(word)))];
+}
+
+function relevantToTopic(result, topic) {
+  const keywords = topicKeywords(topic);
+  if (!keywords.length) return true;
+  const haystack = new Set(`${result.title || ''} ${result.snippet || ''} ${result.source || ''}`
+    .toLowerCase().split(/\s+/).map(normalizeKeyword).filter(Boolean));
+  const matches = keywords.filter((keyword) => (
+    haystack.has(keyword) || keyword === 'kenya' && haystack.has('nairobi')
+  )).length;
+  const required = keywords.length <= 2 ? keywords.length : Math.ceil(keywords.length * 0.6);
+  return matches >= required;
+}
+
+function looksLikeSectionPage(result) {
+  const title = String(result.title || '').trim();
+  if (/\b(?:latest headlines|newswire|news\s*&\s*updates)\b/i.test(title)) return true;
+  return /^(?:kenya\s+)?(?:tech(?:nology)?|news|entertainment|politics|business|sports?)(?:\s+news)?\s*[|—-]/i.test(title);
+}
+
+function selectDiverseSources(results, limit = 5, topic = '') {
   const selected = [];
   const seen = new Set();
   for (const result of Array.isArray(results) ? results : []) {
+    if (looksLikeSectionPage(result) || !relevantToTopic(result, topic)) continue;
     const source = publisherKey(result);
     if (seen.has(source)) continue;
     seen.add(source);
@@ -33,6 +71,12 @@ function selectDiverseSources(results, limit = 5) {
     if (selected.length >= limit) break;
   }
   return selected;
+}
+
+function weeklyFallbackQuery(topic) {
+  const query = String(topic || '').replace(/\s+/g, ' ').trim().slice(0, 170);
+  if (!query || /\b(?:today|yesterday|tonight|this\s+week|past\s+week|last\s+week|past\s+7\s+days)\b/i.test(query)) return null;
+  return `${query} news this week`;
 }
 
 function buildBriefPrompt(topic, results) {
@@ -93,6 +137,12 @@ async function generateNewsBrief(topic, results, complete = backend.complete) {
   if (!Array.isArray(results) || !results.length) {
     throw new Error('A news brief needs at least one source.');
   }
+  const remoteAi = backend.codexStatus().authenticated || backend.apixKey() || backend.groqKey() ||
+    backend.nvidiaKey() || backend.openzenKey() || backend.openrouterKey() ||
+    backend.geminiKey() || backend.openaiKey();
+  if (complete === backend.complete && !remoteAi) {
+    return { text: deterministicBrief(results), engine: 'deterministic', generated: false };
+  }
   const prompt = buildBriefPrompt(topic, results);
   try {
     const response = await complete(prompt.system, prompt.user, { maxTokens: 700 });
@@ -142,7 +192,11 @@ module.exports = {
   toNewsSearchQuery,
   sourcePackets,
   publisherKey,
+  topicKeywords,
+  relevantToTopic,
+  looksLikeSectionPage,
   selectDiverseSources,
+  weeklyFallbackQuery,
   buildBriefPrompt,
   sanitizeAiBrief,
   deterministicBrief,

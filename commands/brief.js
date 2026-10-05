@@ -2,6 +2,7 @@ const { searchWeb } = require('../utils/liveSearch');
 const {
   toNewsSearchQuery,
   selectDiverseSources,
+  weeklyFallbackQuery,
   generateNewsBrief,
   formatBriefResponse,
 } = require('../utils/newsBrief');
@@ -33,7 +34,22 @@ module.exports = {
     try {
       const query = toNewsSearchQuery(topic);
       const search = await searchWeb(query, 8);
-      const sources = selectDiverseSources(search.results, 5);
+      let candidates = search.results;
+      let sources = selectDiverseSources(candidates, 5, topic);
+      const weeklyQuery = weeklyFallbackQuery(topic);
+      if (sources.length < 2 && weeklyQuery) {
+        console.log(`[CELESTIA BRIEF] fallback=WEEK topic=${topic.slice(0, 80)}`);
+        try {
+          const weekly = await searchWeb(weeklyQuery, 8);
+          candidates = candidates.concat(weekly.results);
+          sources = selectDiverseSources(candidates, 5, topic);
+        } catch (error) {
+          console.warn('[CELESTIA BRIEF] weekly fallback failed:', String(error.message || error).slice(0, 120));
+        }
+      }
+      if (!sources.length) {
+        throw new Error(`No relevant recent articles were found for "${topic}". Try a broader topic.`);
+      }
       const brief = await generateNewsBrief(topic, sources);
       console.log(`[CELESTIA BRIEF] topic=${topic.slice(0, 80)} sources=${sources.length} engine=${brief.engine}`);
       return await sock.sendMessage(
@@ -43,7 +59,7 @@ module.exports = {
       );
     } catch (error) {
       console.error('[CELESTIA BRIEF]', String(error.message || error).slice(0, 160));
-      const text = /No verifiably recent news results/i.test(error.message)
+      const text = /No (?:verifiably recent news results|relevant recent articles)/i.test(error.message)
         ? `❌ ${error.message}`
         : '❌ Could not build a current news brief right now. Please try again shortly.';
       try {
