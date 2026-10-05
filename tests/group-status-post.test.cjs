@@ -149,7 +149,7 @@ test('grouppost downloads and freshly uploads replied image media', async () => 
   assert.equal(relayed[0].content.caption, 'New caption');
 });
 
-test('gstatus freshly uploads replied music as an audio group status', async () => {
+test('gstatus converts downloaded music into voice-status audio with fresh metadata', async () => {
   const sent = [];
   const relayed = [];
   const sock = groupStatusSock(sent, relayed);
@@ -168,15 +168,25 @@ test('gstatus freshly uploads replied music as an audio group status', async () 
     },
   };
   const originalDownload = groupPost.downloadSourceMedia;
+  const originalPrepare = groupPost.prepareStatusAudio;
   groupPost.downloadSourceMedia = async () => Buffer.from('fresh audio bytes');
+  groupPost.prepareStatusAudio = async (buffer) => {
+    assert.equal(buffer.toString(), 'fresh audio bytes');
+    return { audio: Buffer.from('converted opus'), mimetype: 'audio/ogg; codecs=opus', ptt: true, seconds: 30 };
+  };
   try {
     await gstatus.execute(sock, msg, []);
   } finally {
     groupPost.downloadSourceMedia = originalDownload;
+    groupPost.prepareStatusAudio = originalPrepare;
   }
 
-  assert.equal(relayed[0].content.audio.toString(), 'fresh audio bytes');
-  assert.equal(relayed[0].content.mimetype, 'audio/mpeg');
+  assert.equal(sent.length, 0);
+  assert.equal(relayed[0].content.audio.toString(), 'converted opus');
+  assert.equal(relayed[0].content.mimetype, 'audio/ogg; codecs=opus');
+  assert.equal(relayed[0].content.ptt, true);
+  assert.equal(relayed[0].content.seconds, 30);
+  assert.equal(relayed[0].content.waveform, undefined);
 });
 
 test('grouppost shows usage when there is nothing to post', async () => {

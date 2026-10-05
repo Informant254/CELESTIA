@@ -4,6 +4,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
 const { contextInfo } = require('../utils/jidResolver');
+const { prepareStatusAudio } = require('../utils/groupStatusAudio');
 
 function unwrapQuoted(quoted) {
   if (!quoted) return null;
@@ -47,7 +48,7 @@ async function downloadSourceMedia(sock, msg, ctx, source, replied) {
 module.exports = {
   name: 'grouppost',
   aliases: ['gpoststatus', 'groupstory'],
-  description: 'CELESTIA Group Status: post text, music, images, videos or stickers for 24 hours.',
+  description: 'CELESTIA Group Status: post text, images, videos, stickers or a 30-second music clip for 24 hours.',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     if (!jid.endsWith('@g.us')) {
@@ -68,7 +69,7 @@ module.exports = {
 
     if (!source && !input) {
       return sock.sendMessage(jid, {
-        text: '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.',
+        text: '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.\n\nMusic is converted to a playable voice-status clip (first 30 seconds).',
       }, { quoted: msg });
     }
 
@@ -109,13 +110,7 @@ module.exports = {
           seconds: sourceMedia.seconds,
         };
       } else if (sourceType === 'audioMessage') {
-        content = {
-          audio: buffer,
-          mimetype: sourceMedia.mimetype || 'audio/mpeg',
-          ptt: Boolean(sourceMedia.ptt),
-          seconds: sourceMedia.seconds,
-          waveform: sourceMedia.waveform,
-        };
+        content = await module.exports.prepareStatusAudio(buffer);
       } else {
         content = { sticker: buffer, mimetype: sourceMedia.mimetype || 'image/webp' };
       }
@@ -127,4 +122,5 @@ module.exports = {
   },
   sendGroupStatus,
   downloadSourceMedia,
+  prepareStatusAudio,
 };
