@@ -54,10 +54,10 @@ test('setstatus includes PN identities for LID-addressed shared-group members', 
   assert.ok(status.options.statusJidList.includes('254700000002@s.whatsapp.net'));
 });
 
-function groupStatusSock(sent, relayed) {
+function groupStatusSock(sent, relayed, upload = async () => { throw new Error('text must not upload'); }) {
   return {
     user: { id: '254700000099:4@s.whatsapp.net' },
-    waUploadToServer: async () => { throw new Error('text and quoted media must not upload'); },
+    waUploadToServer: upload,
     relayMessage: async (jid, content, options) => {
       relayed.push({ jid, content, options });
       return options.messageId;
@@ -107,10 +107,13 @@ test('grouppost relays replied text as a group status, including wrapped replies
   assert.equal(relayed[0].content.groupStatusMessageV2.message.extendedTextMessage.text, 'Wrapped hello');
 });
 
-test('grouppost reuses replied media without a failing download or upload', async () => {
+test('grouppost downloads and freshly uploads replied image media', async () => {
   const sent = [];
   const relayed = [];
-  const sock = groupStatusSock(sent, relayed);
+  const sock = groupStatusSock(sent, relayed, async () => ({
+    mediaUrl: 'https://mmg.whatsapp.net/fresh-image',
+    directPath: '/v/t62/fresh-image',
+  }));
   const msg = {
     key: { remoteJid: GROUP, fromMe: true },
     message: {
@@ -124,19 +127,68 @@ test('grouppost reuses replied media without a failing download or upload', asyn
               directPath: '/v/t62/example',
               mediaKey: Buffer.alloc(32, 1),
               caption: 'Old caption',
+              jpegThumbnail: Buffer.from([1, 2, 3]),
+              width: 100,
+              height: 100,
             },
           },
         },
       },
     },
   };
-  await groupPost.execute(sock, msg, ['New', 'caption']);
+  const originalDownload = groupPost.downloadSourceMedia;
+  let downloaded = false;
+  groupPost.downloadSourceMedia = async () => {
+    downloaded = true;
+    return Buffer.from('fresh image bytes');
+  };
+  try {
+    await groupPost.execute(sock, msg, ['New', 'caption']);
+  } finally {
+    groupPost.downloadSourceMedia = originalDownload;
+  }
 
+  assert.equal(downloaded, true);
   assert.equal(sent.length, 0);
   const image = relayed[0].content.groupStatusMessageV2.message.imageMessage;
-  assert.equal(image.directPath, '/v/t62/example');
+  assert.equal(image.directPath, '/v/t62/fresh-image');
   assert.equal(image.caption, 'New caption');
   assert.equal(relayed[0].options.additionalAttributes.mediatype, 'image');
+});
+
+test('gstatus freshly uploads replied music as an audio group status', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = groupStatusSock(sent, relayed, async () => ({
+    mediaUrl: 'https://mmg.whatsapp.net/fresh-audio',
+    directPath: '/v/t62/fresh-audio',
+  }));
+  const msg = {
+    key: { remoteJid: GROUP, fromMe: true },
+    message: {
+      extendedTextMessage: {
+        text: '.gstatus',
+        contextInfo: {
+          stanzaId: 'audio1',
+          quotedMessage: {
+            audioMessage: { mimetype: 'audio/mpeg', seconds: 180, ptt: false },
+          },
+        },
+      },
+    },
+  };
+  const originalDownload = groupPost.downloadSourceMedia;
+  groupPost.downloadSourceMedia = async () => Buffer.from('fresh audio bytes');
+  try {
+    await gstatus.execute(sock, msg, []);
+  } finally {
+    groupPost.downloadSourceMedia = originalDownload;
+  }
+
+  const audio = relayed[0].content.groupStatusMessageV2.message.audioMessage;
+  assert.equal(audio.directPath, '/v/t62/fresh-audio');
+  assert.equal(audio.mimetype, 'audio/mpeg');
+  assert.equal(relayed[0].options.additionalAttributes.mediatype, 'audio');
 });
 
 test('grouppost shows usage when there is nothing to post', async () => {
@@ -152,7 +204,7 @@ test('grouppost shows usage when there is nothing to post', async () => {
     message: { conversation: '.grouppost' },
   };
   await groupPost.execute(sock, msg, []);
-  assert.match(sent.at(-1).content.text, /Usage/);
+  assert.match(sent.at(-1).content.text, /CELESTIA GROUP STATUS/);
 });
 
 test('gstatus posts text inside the group, including wrapped replies', async () => {
@@ -192,7 +244,7 @@ test('grouppost refuses non-owner group members', async () => {
   };
   await groupPost.execute(sock, msg, ['denied']);
   assert.equal(relayed.length, 0);
-  assert.match(sent.at(-1).content.text, /Only the bot owner/);
+  assert.match(sent.at(-1).content.text, /Only the CELESTIA owner/);
 });
 
 test('group status aliases remain registered', () => {

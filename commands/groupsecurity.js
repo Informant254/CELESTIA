@@ -241,7 +241,7 @@ module.exports = [
   {
     name: 'gstatus',
     aliases: ['gas', 'gps'],
-    description: 'Post a real 24-hour Status in the current group.',
+    description: 'CELESTIA Group Status: post text, music, images, videos or stickers for 24 hours.',
     async execute(sock, msg, args) {
       return require('./grouppost').execute(sock, msg, args);
     }
