@@ -241,57 +241,9 @@ module.exports = [
   {
     name: 'gstatus',
     aliases: ['gas', 'gps'],
-    description: "Post a replied photo/video into this group's chat (not the bot's WhatsApp status). Usage: reply to media with .gstatus",
+    description: 'Post a real 24-hour Status in the current group.',
     async execute(sock, msg, args) {
-      const jid = msg.key.remoteJid;
-
-      if (!jid.endsWith('@g.us')) {
-        return sock.sendMessage(jid, { text: '❌ This command only works in groups.' }, { quoted: msg });
-      }
-
-      const { contextInfo } = require('../utils/jidResolver');
-      const ctx = contextInfo(msg);
-      let quoted = ctx?.quotedMessage;
-      try {
-        quoted = require('@whiskeysockets/baileys').normalizeMessageContent(quoted) || quoted;
-      } catch {}
-      const input = (args || []).join(' ').trim();
-      const quotedText = quoted?.conversation || quoted?.extendedTextMessage?.text;
-
-      if (!quoted && !input) {
-        return sock.sendMessage(jid, { text: '❌ Reply to text/photo/video with .gstatus [caption], or use `.gstatus <text>`.' }, { quoted: msg });
-      }
-      if (!quoted && input) {
-        return sock.sendMessage(jid, { text: `📢 *GROUP STATUS*\n\n${input}` }, { quoted: msg });
-      }
-      if (quotedText) {
-        const text = input || quotedText;
-        return sock.sendMessage(jid, { text: `📢 *GROUP STATUS*\n\n${text}` }, { quoted: msg });
-      }
-
-      if (!quoted?.imageMessage && !quoted?.videoMessage) {
-        return sock.sendMessage(jid, { text: '❌ Reply to a text, photo or video with .gstatus' }, { quoted: msg });
-      }
-
-      try {
-        const { downloadMediaMessage } = require('@whiskeysockets/baileys');
-        const media = await downloadMediaMessage(
-          { message: quoted, key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant || msg.key.participant } },
-          'buffer',
-          {},
-          { reuploadRequest: sock.updateMediaMessage }
-        );
-        if (!media) throw new Error('replied media could not be downloaded');
-
-        const type = quoted.imageMessage ? 'image' : 'video';
-        const caption = input || quoted[`${type}Message`]?.caption || '';
-        const header = '📢 *GROUP STATUS*';
-
-        await sock.sendMessage(jid, { [type]: media, caption: caption ? `${header}\n\n${caption}` : header }, { quoted: msg });
-      } catch (e) {
-        console.error('[GSTATUS ERROR]', e);
-        await sock.sendMessage(jid, { text: '❌ Failed to post: ' + e.message }, { quoted: msg });
-      }
+      return require('./grouppost').execute(sock, msg, args);
     }
   },
 

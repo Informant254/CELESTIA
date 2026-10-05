@@ -1,4 +1,10 @@
-const { downloadMediaMessage, normalizeMessageContent } = require('@whiskeysockets/baileys');
+const crypto = require('crypto');
+const {
+  generateWAMessageContent,
+  generateWAMessageFromContent,
+  jidNormalizedUser,
+  normalizeMessageContent,
+} = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
 const { contextInfo } = require('../utils/jidResolver');
 
@@ -11,10 +17,59 @@ function unwrapQuoted(quoted) {
   }
 }
 
+function withCaption(message, caption) {
+  if (!caption) return message;
+  if (message.imageMessage) {
+    return { ...message, imageMessage: { ...message.imageMessage, caption } };
+  }
+  if (message.videoMessage) {
+    return { ...message, videoMessage: { ...message.videoMessage, caption } };
+  }
+  return message;
+}
+
+function mediaType(message) {
+  if (message.imageMessage) return 'image';
+  if (message.videoMessage) return message.videoMessage.gifPlayback ? 'gif' : 'video';
+  if (message.audioMessage) return message.audioMessage.ptt ? 'ptt' : 'audio';
+  if (message.stickerMessage) return 'sticker';
+  return null;
+}
+
+async function sendGroupStatus(sock, groupJid, content, quoted = false) {
+  let inside;
+  if (quoted) {
+    inside = content;
+  } else {
+    inside = await generateWAMessageContent(content, {
+      upload: sock.waUploadToServer,
+    });
+  }
+
+  const messageSecret = crypto.randomBytes(32);
+  const userJid = jidNormalizedUser(sock.user?.id || '');
+  const message = generateWAMessageFromContent(groupJid, {
+    messageContextInfo: { messageSecret },
+    groupStatusMessageV2: {
+      message: {
+        ...inside,
+        messageContextInfo: { messageSecret },
+      },
+    },
+  }, { userJid });
+
+  const type = mediaType(inside);
+  await sock.relayMessage(groupJid, message.message, {
+    messageId: message.key.id,
+    ...(type ? { additionalAttributes: { mediatype: type } } : {}),
+  });
+  return message;
+}
+
 module.exports = {
   name: 'grouppost',
   aliases: ['gpoststatus', 'groupstory'],
-  description: 'Post a status-style update inside the current group (owner only).',
+  description: 'Post a real 24-hour Status in the current group (owner only).',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     if (!jid.endsWith('@g.us')) {
@@ -36,11 +91,7 @@ module.exports = {
     try {
       const quotedText = quoted?.conversation || quoted?.extendedTextMessage?.text;
       if (!quoted || quotedText) {
-        const text = input || quotedText;
-        if (!text) {
-          return sock.sendMessage(jid, { text: 'Give me some text to post.' }, { quoted: msg });
-        }
-        await sock.sendMessage(jid, { text: `📢 *GROUP STATUS*\n\n${text}` }, { quoted: msg });
+        await sendGroupStatus(sock, jid, { text: input || quotedText });
         return;
       }
 
@@ -50,28 +101,15 @@ module.exports = {
       if (!mediaType) {
         return sock.sendMessage(jid, { text: 'Reply to text, image, video, audio, or a sticker.' }, { quoted: msg });
       }
-      const buffer = await downloadMediaMessage({
-        message: quoted,
-        key: { remoteJid: jid, id: ctx.stanzaId, participant: ctx.participant || msg.key.participant },
-      }, 'buffer', {}, { reuploadRequest: sock.updateMediaMessage });
-      if (!buffer) throw new Error('replied media could not be downloaded');
-      const caption = input || quoted[mediaType]?.caption || '';
-      const header = '📢 *GROUP STATUS*';
-      let content;
-      if (mediaType === 'imageMessage') content = { image: buffer, caption: caption ? `${header}\n\n${caption}` : header };
-      if (mediaType === 'videoMessage') content = { video: buffer, caption: caption ? `${header}\n\n${caption}` : header };
-      if (mediaType === 'audioMessage') content = { audio: buffer, mimetype: quoted.audioMessage?.mimetype || 'audio/mp4' };
-      if (mediaType === 'stickerMessage') content = { sticker: buffer };
-      await sock.sendMessage(jid, content, { quoted: msg });
-      if (mediaType === 'audioMessage' && caption) {
-        await sock.sendMessage(jid, { text: `${header}\n\n${caption}` }, { quoted: msg });
-      }
-      if (mediaType === 'stickerMessage' && caption) {
-        await sock.sendMessage(jid, { text: `${header}\n\n${caption}` }, { quoted: msg });
-      }
+
+      // Reuse the encrypted media reference. Downloading and re-uploading an
+      // older reply can fail even though WhatsApp can still relay it in-group.
+      const content = withCaption({ [mediaType]: quoted[mediaType] }, input);
+      await sendGroupStatus(sock, jid, content, true);
     } catch (error) {
       console.error('[GROUPPOST ERROR]', error);
-      return sock.sendMessage(jid, { text: `Failed to post group Status: ${error.message}` }, { quoted: msg });
+      return sock.sendMessage(jid, { text: `Unable to post group Status: ${error.message}` }, { quoted: msg });
     }
   },
+  sendGroupStatus,
 };

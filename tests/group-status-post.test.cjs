@@ -54,35 +54,42 @@ test('setstatus includes PN identities for LID-addressed shared-group members', 
   assert.ok(status.options.statusJidList.includes('254700000002@s.whatsapp.net'));
 });
 
-test('grouppost publishes text inside the group chat', async () => {
-  const sent = [];
-  const sock = {
+function groupStatusSock(sent, relayed) {
+  return {
+    user: { id: '254700000099:4@s.whatsapp.net' },
+    waUploadToServer: async () => { throw new Error('text and quoted media must not upload'); },
+    relayMessage: async (jid, content, options) => {
+      relayed.push({ jid, content, options });
+      return options.messageId;
+    },
     sendMessage: async (jid, content, options) => {
       sent.push({ jid, content, options });
       return { key: { id: `m${sent.length}` } };
     },
   };
+}
+
+test('grouppost relays a real groupStatusMessageV2 for text', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = groupStatusSock(sent, relayed);
   const msg = {
     key: { remoteJid: GROUP, fromMe: true },
     message: { conversation: '.grouppost Exam starts Monday' },
   };
   await groupPost.execute(sock, msg, ['Exam', 'starts', 'Monday']);
 
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].jid, GROUP);
-  assert.match(sent[0].content.text, /GROUP STATUS/);
-  assert.match(sent[0].content.text, /Exam starts Monday/);
-  assert.ok(!sent.some((entry) => entry.jid === 'status@broadcast'), 'must not touch the Status tab');
+  assert.equal(sent.length, 0, 'must not claim success with a normal chat message');
+  assert.equal(relayed.length, 1);
+  assert.equal(relayed[0].jid, GROUP);
+  assert.equal(relayed[0].content.groupStatusMessageV2.message.extendedTextMessage.text, 'Exam starts Monday');
+  assert.ok(relayed[0].content.messageContextInfo.messageSecret);
 });
 
-test('grouppost reposts replied text inside the group, including wrapped replies', async () => {
+test('grouppost relays replied text as a group status, including wrapped replies', async () => {
   const sent = [];
-  const sock = {
-    sendMessage: async (jid, content, options) => {
-      sent.push({ jid, content, options });
-      return { key: { id: `m${sent.length}` } };
-    },
-  };
+  const relayed = [];
+  const sock = groupStatusSock(sent, relayed);
   const msg = {
     key: { remoteJid: GROUP, fromMe: true },
     message: {
@@ -96,9 +103,40 @@ test('grouppost reposts replied text inside the group, including wrapped replies
   };
   await groupPost.execute(sock, msg, []);
 
-  assert.equal(sent.length, 1);
-  assert.equal(sent[0].jid, GROUP);
-  assert.match(sent[0].content.text, /Wrapped hello/);
+  assert.equal(sent.length, 0);
+  assert.equal(relayed[0].content.groupStatusMessageV2.message.extendedTextMessage.text, 'Wrapped hello');
+});
+
+test('grouppost reuses replied media without a failing download or upload', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = groupStatusSock(sent, relayed);
+  const msg = {
+    key: { remoteJid: GROUP, fromMe: true },
+    message: {
+      extendedTextMessage: {
+        text: '.grouppost New caption',
+        contextInfo: {
+          stanzaId: 'media1',
+          quotedMessage: {
+            imageMessage: {
+              url: 'https://expired.invalid/image',
+              directPath: '/v/t62/example',
+              mediaKey: Buffer.alloc(32, 1),
+              caption: 'Old caption',
+            },
+          },
+        },
+      },
+    },
+  };
+  await groupPost.execute(sock, msg, ['New', 'caption']);
+
+  assert.equal(sent.length, 0);
+  const image = relayed[0].content.groupStatusMessageV2.message.imageMessage;
+  assert.equal(image.directPath, '/v/t62/example');
+  assert.equal(image.caption, 'New caption');
+  assert.equal(relayed[0].options.additionalAttributes.mediatype, 'image');
 });
 
 test('grouppost shows usage when there is nothing to post', async () => {
@@ -119,22 +157,18 @@ test('grouppost shows usage when there is nothing to post', async () => {
 
 test('gstatus posts text inside the group, including wrapped replies', async () => {
   const sent = [];
-  const sock = {
-    sendMessage: async (jid, content, options) => {
-      sent.push({ jid, content, options });
-      return { key: { id: `m${sent.length}` } };
-    },
-  };
+  const relayed = [];
+  const sock = groupStatusSock(sent, relayed);
   const direct = {
-    key: { remoteJid: GROUP, participant: '111111111111111@lid', fromMe: false },
+    key: { remoteJid: GROUP, participant: '111111111111111@lid', fromMe: true },
     message: { conversation: '.gstatus Hello group' },
   };
   await gstatus.execute(sock, direct, ['Hello', 'group']);
-  assert.match(sent.at(-1).content.text, /Hello group/);
+  assert.equal(relayed.at(-1).content.groupStatusMessageV2.message.extendedTextMessage.text, 'Hello group');
 
-  sent.length = 0;
+  relayed.length = 0;
   const wrapped = {
-    key: { remoteJid: GROUP, participant: '111111111111111@lid', fromMe: false },
+    key: { remoteJid: GROUP, participant: '111111111111111@lid', fromMe: true },
     message: {
       ephemeralMessage: { message: {
         extendedTextMessage: {
@@ -145,5 +179,23 @@ test('gstatus posts text inside the group, including wrapped replies', async () 
     },
   };
   await gstatus.execute(sock, wrapped, []);
-  assert.match(sent.at(-1).content.text, /Wrapped status/);
+  assert.equal(relayed.at(-1).content.groupStatusMessageV2.message.extendedTextMessage.text, 'Wrapped status');
+});
+
+test('grouppost refuses non-owner group members', async () => {
+  const sent = [];
+  const relayed = [];
+  const sock = groupStatusSock(sent, relayed);
+  const msg = {
+    key: { remoteJid: GROUP, participant: '254700000001@s.whatsapp.net', fromMe: false },
+    message: { conversation: '.grouppost denied' },
+  };
+  await groupPost.execute(sock, msg, ['denied']);
+  assert.equal(relayed.length, 0);
+  assert.match(sent.at(-1).content.text, /Only the bot owner/);
+});
+
+test('group status aliases remain registered', () => {
+  assert.deepEqual(groupPost.aliases, ['gpoststatus', 'groupstory']);
+  assert.deepEqual(gstatus.aliases, ['gas', 'gps']);
 });
