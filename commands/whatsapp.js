@@ -141,13 +141,31 @@ module.exports = [
   {
     name: 'setstatus',
     aliases: ['poststatus'],
-    description: 'CELESTIA Status: post text, images, videos, stickers or a music clip up to 4 minutes. Works in DMs and groups.',
+    description: 'CELESTIA personal Status: post text, images, videos or music clips up to 4 minutes. In groups uses the current group audience; in DMs name the group first.',
     async execute(sock, msg, args) {
       const { jid, ctx, quotedMessage } = getQuoted(sock, msg);
-      const input = args.join(' ').trim();
       if (!isOwner(msg)) {
-        return sock.sendMessage(jid, { text: '❌ Only the bot owner can publish a Status or change the profile bio.' }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '❌ Only the bot owner can publish a Status.' }, { quoted: msg });
       }
+      const groupPost = require('./grouppost');
+      const inGroup = jid.endsWith('@g.us');
+      let targetJid = jid;
+      let contentArgs = args;
+      if (!inGroup) {
+        const ref = args[0];
+        if (!ref) {
+          return sock.sendMessage(jid, {
+            text: '✦ *CELESTIA STATUS (DM)*\n\nUse `.setstatus <group-link|JID> <text>`, or reply to text/music/image/video/sticker with `.setstatus <group-link|JID> [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).\nUse `.setbio <text>` to change the profile bio.'
+          }, { quoted: msg });
+        }
+        try {
+          targetJid = await groupPost.resolveTargetGroup(sock, ref);
+        } catch {
+          return sock.sendMessage(jid, { text: '✦ CELESTIA could not resolve that group. Use `.setstatus <group-link|JID> <text>`.' }, { quoted: msg });
+        }
+        contentArgs = args.slice(1);
+      }
+      const input = contentArgs.join(' ').trim();
 
       const current = normalizeMessageContent(msg.message) || msg.message;
       const supported = ['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage'];
@@ -166,19 +184,31 @@ module.exports = [
       }
       activePersonalStatusCommands.add(sock);
       try {
-        await sock.sendMessage(jid, { text: '✦ CELESTIA is preparing your Status. Publishing to the full audience may take a little while—please wait for the result.' }, { quoted: msg });
+        await sock.sendMessage(jid, { text: '✦ CELESTIA is preparing your Status. Publishing to the audience may take a little while—please wait for the result.' }, { quoted: msg });
         console.log('[CELESTIA STATUS] preparing content');
-        const groupPost = require('./grouppost');
         const content = await groupPost.prepareStatusContent(sock, msg, ctx, source, replied, input);
         if (!content) {
           return sock.sendMessage(jid, {
             text: '❌ Unsupported message type for status. Reply to text, image, video, audio, or a sticker.'
           }, { quoted: msg });
         }
-        const recipientCount = await require('../utils/mediaStudio').postStatus(sock, content);
+        let recipients = [];
+        try {
+          recipients = await groupPost.getPersonalStatusRecipients(sock, targetJid);
+        } catch (error) {
+          return sock.sendMessage(jid, {
+            text: `✦ CELESTIA could not resolve Status recipients: ${error.message}`
+          }, { quoted: msg });
+        }
+        const sent = await groupPost.sendPersonalStatus(sock, content, recipients);
+        if (!sent) {
+          return sock.sendMessage(jid, {
+            text: '✦ Stickers can only go to Group Status — use `.gstatus` for those.'
+          }, { quoted: msg });
+        }
 
         return sock.sendMessage(jid, {
-          text: `✦ CELESTIA posted that to your WhatsApp Status (${recipientCount} recipient(s)).`
+          text: `✦ CELESTIA posted that to your WhatsApp Status (${sent.recipients} recipients).`
         }, { quoted: msg });
 
       } catch (error) {

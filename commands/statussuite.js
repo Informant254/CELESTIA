@@ -123,8 +123,20 @@ module.exports = {
 
 async function postStatus(sock, msg, reply, text) {
   try {
-    const recipients = await require('../utils/mediaStudio').postStatus(sock, { text });
-    return reply(`📱 *Posted to status (${recipients} recipients):*\n\n${text.slice(0, 300)}`);
+    const studio = require('../utils/mediaStudio');
+    const chatJid = msg.key.remoteJid;
+    let recipients;
+    if (chatJid?.endsWith('@g.us')) {
+      try {
+        recipients = await require('./grouppost').getPersonalStatusRecipients(sock, chatJid);
+      } catch (error) {
+        console.error('[STATUSSUITE RECIPIENT ERROR]', error);
+      }
+    }
+    const options = { broadcast: true, backgroundColor: '#111111', font: 1 };
+    if (recipients?.length) options.statusJidList = recipients;
+    const count = await studio.postStatus(sock, { text }, options);
+    return reply(`📱 *Posted to status (${count} recipients):*\n\n${text.slice(0, 300)}`);
   } catch (e) {
     return reply(`📱 Status failed: ${e.message}`);
   }

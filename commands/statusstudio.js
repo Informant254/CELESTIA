@@ -5,6 +5,16 @@ const { isOwner } = require('../utils/isOwner');
 const { jobDir, wipeDir } = require('../download/cleanup');
 const studio = require('../utils/mediaStudio');
 
+async function personalRecipients(sock, jid) {
+  if (!jid?.endsWith('@g.us')) return undefined;
+  try {
+    return await require('./grouppost').getPersonalStatusRecipients(sock, jid);
+  } catch (error) {
+    console.error('[STATUSSTUDIO RECIPIENT ERROR]', error);
+    return undefined;
+  }
+}
+
 module.exports = {
   name: 'statusstudio', aliases: ['statusai', 'statstudio'], description: 'Create AI quote cards and waveform status videos',
   async execute(sock, msg, args) {
@@ -25,7 +35,8 @@ module.exports = {
         await studio.createCard({ text: quote.slice(0, 320), author: author.slice(0, 60), background, output });
         const image = await fs.promises.readFile(output);
         if (post) {
-          const count = await studio.postStatus(sock, { image, caption: '' });
+          const recipients = await personalRecipients(sock, jid);
+          const count = await studio.postStatus(sock, { image, caption: '' }, recipients?.length ? { statusJidList: recipients, broadcast: true } : { broadcast: true });
           return sock.sendMessage(jid, { text: `✅ Quote card posted to status (${count} recipients).` }, { quoted: msg });
         }
         return sock.sendMessage(jid, { image, caption: '✦ Created in CELESTIA Status Studio' }, { quoted: msg });
@@ -43,7 +54,8 @@ module.exports = {
         await studio.createWaveform({ input, cover, output });
         const video = await fs.promises.readFile(output);
         if (post) {
-          const count = await studio.postStatus(sock, { video, caption: '' });
+          const recipients = await personalRecipients(sock, jid);
+          const count = await studio.postStatus(sock, { video, caption: '' }, recipients?.length ? { statusJidList: recipients, broadcast: true } : { broadcast: true });
           return sock.sendMessage(jid, { text: `✅ Waveform posted to status (${count} recipients).` }, { quoted: msg });
         }
         return sock.sendMessage(jid, { video, caption: '✦ CELESTIA waveform status' }, { quoted: msg });

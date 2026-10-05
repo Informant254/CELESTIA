@@ -137,7 +137,7 @@ async function groupStatusJids(sock, groupJid, metadata = null) {
   return { jids: [...ids], resolved, skipped };
 }
 
-async function postStatus(sock, content) {
+async function postStatus(sock, content, opts = {}) {
   if (activeStatusPosts.has(sock)) {
     throw new Error('CELESTIA is still publishing a personal Status. Please wait before sending another.');
   }
@@ -145,14 +145,20 @@ async function postStatus(sock, content) {
   const started = Date.now();
   let progress;
   try {
-    console.log('[CELESTIA STATUS] resolving audience');
-    const list = await statusJids(sock);
-    console.log(`[CELESTIA STATUS] broadcasting recipients=${list.length}`);
+    const list = opts.statusJidList || await (async () => {
+      console.log('[CELESTIA STATUS] resolving audience');
+      return statusJids(sock);
+    })();
+    console.log(`[CELESTIA STATUS] broadcasting recipients=${list.length}${opts.statusJidList ? ' (explicit)' : ''}`);
     progress = setInterval(() => {
       console.log(`[CELESTIA STATUS] broadcast pending elapsedSeconds=${Math.round((Date.now() - started) / 1000)} heapMB=${Math.round(process.memoryUsage().heapUsed / 1048576)}`);
     }, 20000);
     progress.unref?.();
-    await sock.sendMessage('status@broadcast', content, { statusJidList: list });
+    const options = { statusJidList: list };
+    if (opts.broadcast) options.broadcast = true;
+    if (opts.backgroundColor) options.backgroundColor = opts.backgroundColor;
+    if (opts.font !== undefined) options.font = opts.font;
+    await sock.sendMessage('status@broadcast', content, options);
     console.log(`[CELESTIA STATUS] broadcast completed elapsedSeconds=${Math.round((Date.now() - started) / 1000)}`);
     return list.length;
   } finally {

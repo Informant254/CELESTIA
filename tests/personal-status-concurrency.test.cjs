@@ -30,18 +30,19 @@ test('setstatus acknowledges progress and refuses a second command while the fir
   let signal;
   const ready = new Promise((resolve) => { signal = resolve; });
   const pending = new Promise((resolve) => { release = resolve; });
+  const group = '120363000000000000@g.us';
   const sock = {
     user: { id: '254700000099:4@s.whatsapp.net' },
-    groupFetchAllParticipating: async () => ({}),
+    groupMetadata: async () => ({ id: group, subject: 'Status Group', participants: [{ id: '254700000001@s.whatsapp.net' }] }),
     sendMessage: async (jid, content) => {
       sent.push({ jid, content });
       if (jid === 'status@broadcast') { signal(); await pending; }
     },
   };
   const msg = { key: { remoteJid: '254700000099@s.whatsapp.net', fromMe: true }, message: { conversation: '.setstatus Hello' } };
-  const first = setStatus.execute(sock, msg, ['Hello']);
+  const first = setStatus.execute(sock, msg, [group, 'Hello']);
   await ready;
-  await setStatus.execute(sock, msg, ['Again']);
+  await setStatus.execute(sock, msg, [group, 'Again']);
   assert.match(sent[0].content.text, /preparing your Status/);
   assert.match(sent.at(-1).content.text, /previous Status/);
   assert.equal(sent.filter((e) => e.jid === 'status@broadcast').length, 1);
