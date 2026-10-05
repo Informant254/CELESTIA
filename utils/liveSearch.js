@@ -37,6 +37,11 @@ const SOCIAL_HOSTS = [
   'x.com',
   'tiktok.com',
   'threads.net',
+  'youtube.com',
+  'youtu.be',
+  'linkedin.com',
+  'pinterest.com',
+  'snapchat.com',
 ];
 const NEWS_HOST_HINTS = [
   'reuters.com',
@@ -92,6 +97,10 @@ function detectSearchIntent(query) {
 
 function rewriteNewsQuery(query) {
   let rewritten = clean(query, 200);
+  if (/\bnairobi\b/i.test(rewritten) && /\bgossip\b/i.test(rewritten)) {
+    const period = WEEK_INTENT.test(rewritten) ? 'this week' : 'today';
+    return `Nairobi trending entertainment news Kenya ${period}`;
+  }
   if (/\bgossip\b/i.test(rewritten)) {
     rewritten = rewritten.replace(/\bgossip\b/gi, 'entertainment');
   }
@@ -183,7 +192,7 @@ function resultShape(result) {
     const host = url.hostname.replace(/^www\./, '').toLowerCase();
     const path = url.pathname.replace(/\/+$/, '') || '/';
     const segments = path.split('/').filter(Boolean);
-    const listingPrefixes = /^(?:author|authors|category|categories|tag|tags|topic|topics|profile|profiles|people|search|users?)$/i;
+    const listingPrefixes = /^(?:author|authors|category|categories|tag|tags|topic|topics|profile|profiles|people|search|users?|channel|channels)$/i;
     const listing = listingPrefixes.test(segments[0] || '') || (
       /^(?:news|latest|entertainment)$/i.test(segments[0] || '') &&
       segments.length <= 2 &&

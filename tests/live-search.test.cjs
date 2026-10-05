@@ -157,7 +157,11 @@ test('news query rewriting preserves intent while clarifying Nairobi gossip sear
   const ls = freshSearch();
   assert.equal(
     ls.rewriteNewsQuery('Nairobi gossip trending news today'),
-    'Nairobi entertainment trending news today Kenya'
+    'Nairobi trending entertainment news Kenya today'
+  );
+  assert.equal(
+    ls.rewriteNewsQuery('Nairobi gossip stories this week'),
+    'Nairobi trending entertainment news Kenya this week'
   );
   assert.equal(ls.rewriteNewsQuery('latest JavaScript news'), 'latest JavaScript news');
 });
@@ -192,6 +196,7 @@ test('news ranking rejects stale dates and profiles, prefers articles, and remov
   const input = [
     { title: 'Home - Nairobi Gossip Club', url: 'https://nairobigossipclub.co.ke/', snippet: 'Homepage', source: 'nairobigossipclub.co.ke', publishedAt: null },
     { title: 'Nairobi Gossip Club profile', url: 'https://facebook.com/nairobigossipclub', snippet: 'Profile page', source: 'facebook.com', publishedAt: hourAgo },
+    { title: 'The Star Kenya - YouTube', url: 'https://youtube.com/channel/example', snippet: 'Video channel', source: 'youtube.com', publishedAt: hourAgo },
     { title: 'Singer launches new Nairobi album today', url: 'https://nairobigossipclub.co.ke/2026/10/singer-launches-new-nairobi-album', snippet: 'A detailed and current entertainment report from Nairobi published this morning.', source: 'nairobigossipclub.co.ke', publishedAt: hourAgo },
     { title: 'Singer launches new Nairobi album today', url: 'https://nairobigossipclub.co.ke/2026/10/singer-launches-new-nairobi-album?utm_source=x', snippet: 'Duplicate', source: 'nairobigossipclub.co.ke', publishedAt: hourAgo },
     { title: 'Old entertainment report', url: 'https://example.com/news/old-report', snippet: 'Old report', source: 'example.com', publishedAt: stale },
