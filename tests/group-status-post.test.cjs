@@ -110,17 +110,9 @@ test('grouppost relays a real groupStatusMessageV2 for text', async () => {
   assert.equal(relayed.length, 1);
   assert.equal(relayed[0].jid, GROUP);
   assert.equal(relayed[0].content.text, 'Exam starts Monday');
-  const status = sent.find((entry) => entry.jid === 'status@broadcast');
-  assert.equal(status.content.text, 'Exam starts Monday');
-  assert.equal(status.options.backgroundColor, '#111111');
-  assert.equal(status.options.font, 1);
-  assert.deepEqual(status.options.statusJidList.sort(), [
-    '254700000001@s.whatsapp.net',
-    '254700000002@s.whatsapp.net',
-    '254700000099@s.whatsapp.net',
-  ].sort());
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false, 'group posts must not touch personal Status');
   assert.match(sent.at(-1).content.text, /Group Status published/);
-  assert.match(sent.at(-1).content.text, /Personal Status sent \(3 recipients\)/);
+  assert.doesNotMatch(sent.at(-1).content.text, /Personal Status/);
 });
 
 test('grouppost relays replied text as a group status, including wrapped replies', async () => {
@@ -141,9 +133,8 @@ test('grouppost relays replied text as a group status, including wrapped replies
   await groupPost.execute(sock, msg, []);
 
   assert.equal(relayed[0].content.text, 'Wrapped hello');
-  const status = sent.find((entry) => entry.jid === 'status@broadcast');
-  assert.equal(status.content.text, 'Wrapped hello');
-  assert.match(sent.at(-1).content.text, /Personal Status sent \(3 recipients\)/);
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
+  assert.match(sent.at(-1).content.text, /Group Status published/);
 });
 
 test('grouppost downloads and freshly uploads replied image media', async () => {
@@ -187,10 +178,8 @@ test('grouppost downloads and freshly uploads replied image media', async () => 
   assert.equal(downloaded, true);
   assert.equal(relayed[0].content.image.toString(), 'fresh image bytes');
   assert.equal(relayed[0].content.caption, 'New caption');
-  const status = sent.find((entry) => entry.jid === 'status@broadcast');
-  assert.equal(status.content.image.toString(), 'fresh image bytes');
-  assert.equal(status.content.caption, 'New caption');
-  assert.match(sent.at(-1).content.text, /Personal Status sent \(3 recipients\)/);
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
+  assert.match(sent.at(-1).content.text, /Group Status published/);
 });
 
 test('gstatus converts downloaded music into voice-status audio with fresh metadata', async () => {
@@ -230,10 +219,8 @@ test('gstatus converts downloaded music into voice-status audio with fresh metad
   assert.equal(relayed[0].content.ptt, true);
   assert.equal(relayed[0].content.seconds, 240);
   assert.equal(relayed[0].content.waveform, undefined);
-  const status = sent.find((entry) => entry.jid === 'status@broadcast');
-  assert.equal(status.content.audio.toString(), 'converted opus');
-  assert.equal(status.options.backgroundColor, '#000000');
-  assert.match(sent.at(-1).content.text, /Personal Status sent \(3 recipients\)/);
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
+  assert.match(sent.at(-1).content.text, /Group Status published/);
 });
 
 test('grouppost shows usage when there is nothing to post', async () => {
@@ -249,7 +236,7 @@ test('grouppost shows usage when there is nothing to post', async () => {
     message: { conversation: '.grouppost' },
   };
   await groupPost.execute(sock, msg, []);
-  assert.match(sent.at(-1).content.text, /CELESTIA STATUS/);
+  assert.match(sent.at(-1).content.text, /CELESTIA GROUP STATUS/);
 });
 
 test('gstatus posts text inside the group, including wrapped replies', async () => {
@@ -342,7 +329,7 @@ test('gstatus posts group status text from owner DM with a JID first', async () 
   assert.equal(relayed[0].jid, GROUP);
   assert.equal(relayed[0].content.text, 'Hello from DM');
   assert.match(sent.at(-1).content.text, /DM Target Group/);
-  assert.match(sent.at(-1).content.text, /Personal Status sent \(3 recipients\)/);
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
 });
 
 test('grouppost posts replied DM image to the named group with its caption', async () => {
@@ -376,7 +363,7 @@ test('grouppost posts replied DM image to the named group with its caption', asy
   assert.equal(relayed[0].content.image.toString(), 'dm image bytes');
   assert.equal(relayed[0].content.caption, 'DM caption');
   assert.match(sent.at(-1).content.text, /DM Target Group/);
-  assert.match(sent.at(-1).content.text, /Personal Status sent \(3 recipients\)/);
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
 });
 
 test('grouppost DM without a group shows DM usage instead of posting', async () => {
@@ -390,7 +377,7 @@ test('grouppost DM without a group shows DM usage instead of posting', async () 
   await groupPost.execute(sock, msg, []);
 
   assert.equal(relayed.length, 0);
-  assert.match(sent.at(-1).content.text, /CELESTIA STATUS \(DM\)/);
+  assert.match(sent.at(-1).content.text, /CELESTIA GROUP STATUS \(DM\)/);
 });
 
 test('grouppost DM with an unresolvable group does not post', async () => {
@@ -550,7 +537,7 @@ test('statussuite uses the same audience-aware personal Status sender', async ()
   assert.match(replies.at(-1), /1 recipients/);
 });
 
-test('grouppost still reports honestly when personal Status delivery fails', async () => {
+test('grouppost never touches personal Status, even when it could fail there', async () => {
   const sent = [];
   const relayed = [];
   const base = groupStatusSock(sent, relayed);
@@ -564,16 +551,17 @@ test('grouppost still reports honestly when personal Status delivery fails', asy
   };
   const msg = {
     key: { remoteJid: GROUP, fromMe: true },
-    message: { conversation: '.grouppost Honest report' },
+    message: { conversation: '.grouppost Group only' },
   };
-  await groupPost.execute(sock, msg, ['Honest', 'report']);
+  await groupPost.execute(sock, msg, ['Group', 'only']);
 
-  assert.equal(relayed[0].content.text, 'Honest report');
+  assert.equal(relayed[0].content.text, 'Group only');
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
   assert.match(sent.at(-1).content.text, /Group Status published/);
-  assert.match(sent.at(-1).content.text, /Personal Status failed: relay rejected/);
+  assert.doesNotMatch(sent.at(-1).content.text, /Personal Status/);
 });
 
-test('grouppost skips personal send for stickers and says so', async () => {
+test('grouppost publishes stickers to Group Status only', async () => {
   const sent = [];
   const relayed = [];
   const sock = groupStatusSock(sent, relayed);
@@ -596,7 +584,7 @@ test('grouppost skips personal send for stickers and says so', async () => {
 
   assert.equal(relayed[0].content.sticker.toString(), 'sticker bytes');
   assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
-  assert.match(sent.at(-1).content.text, /Personal Status skipped: stickers/);
+  assert.match(sent.at(-1).content.text, /Group Status published/);
 });
 
 test('personal recipients stay LID-only when no PN identities exist', async () => {

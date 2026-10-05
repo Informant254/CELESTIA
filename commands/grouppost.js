@@ -136,7 +136,7 @@ async function resolveTargetGroup(sock, ref) {
 }
 
 function dmUsage() {
-  return '✦ *CELESTIA STATUS (DM)*\n\nPosts to Group Status AND your personal WhatsApp Status.\n\nUse `.gstatus <group-link|JID> <text>`, or reply to text/music/image/video/sticker with `.gstatus <group-link|JID> [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).';
+  return '✦ *CELESTIA GROUP STATUS (DM)*\n\nUse `.gstatus <group-link|JID> <text>`, or reply to text/music/image/video/sticker with `.gstatus <group-link|JID> [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).';
 }
 
 async function prepareStatusContent(sock, msg, ctx, source, replied, input = '') {
@@ -176,48 +176,10 @@ async function prepareStatusContent(sock, msg, ctx, source, replied, input = '')
   return { sticker: buffer, mimetype: sourceMedia.mimetype || 'image/webp' };
 }
 
-async function publishEverywhere(sock, groupJid, content) {
-  let statusJidList = [];
-  try {
-    statusJidList = await getPersonalStatusRecipients(sock, groupJid);
-  } catch (error) {
-    console.error('[PERSONAL STATUS RECIPIENT ERROR]', error);
-  }
-
-  await sendGroupStatus(sock, groupJid, content);
-
-  if (!statusJidList.length) {
-    return { group: true, personal: { status: 'skipped', reason: 'no recipients resolved' } };
-  }
-  try {
-    const sent = await sendPersonalStatus(sock, content, statusJidList);
-    if (!sent) {
-      return { group: true, personal: { status: 'skipped', reason: 'stickers are not supported by personal Status' } };
-    }
-    return { group: true, personal: { status: 'published', recipients: sent.recipients } };
-  } catch (error) {
-    console.error('[CELESTIA PERSONAL STATUS ERROR]', error);
-    return { group: true, personal: { status: 'failed', reason: error?.message || 'unknown error' } };
-  }
-}
-
-function publishSummary(result, targetName) {
-  const lines = [`✦ CELESTIA Group Status published${targetName ? ` to *${targetName}*` : ''}.`];
-  const personal = result.personal;
-  if (personal.status === 'published') {
-    lines.push(`✦ Personal Status sent (${personal.recipients} recipients).`);
-  } else if (personal.status === 'skipped') {
-    lines.push(`✦ Personal Status skipped: ${personal.reason}.`);
-  } else {
-    lines.push(`✦ Personal Status failed: ${personal.reason}. Group Status is unaffected.`);
-  }
-  return lines.join('\n');
-}
-
 module.exports = {
   name: 'grouppost',
   aliases: ['gpoststatus', 'groupstory'],
-  description: 'CELESTIA Status: publish text, images, videos and audio to Group Status and WhatsApp Status. Works in groups and owner DMs (in DMs name the group first).',
+  description: 'CELESTIA Group Status: post text, images, videos, stickers or a music clip up to 4 minutes for 24 hours. Works in groups and owner DMs (in DMs name the group first).',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     const inGroup = jid?.endsWith('@g.us');
@@ -259,7 +221,7 @@ module.exports = {
     if (!source && !input) {
       return sock.sendMessage(jid, {
         text: inGroup
-          ? '✦ *CELESTIA STATUS*\n\nPost to both Group Status and your normal WhatsApp Status.\n\n• `.grouppost <text>`\n• Add `.grouppost` as an image/video caption\n• Reply to text/music/image/video/sticker with `.grouppost [caption]`\n\nMusic is prepared as a playable status audio clip (up to the first 4 minutes).'
+          ? '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).'
           : dmUsage(),
       }, { quoted: msg });
     }
@@ -269,16 +231,16 @@ module.exports = {
       if (!source || sourceText) {
         const text = input || sourceText;
         if (!text) throw new Error('No text was found');
-        const result = await publishEverywhere(sock, targetJid, { text });
-        return sock.sendMessage(jid, { text: publishSummary(result, inGroup ? null : targetName) }, { quoted: msg });
+        await sendGroupStatus(sock, targetJid, { text });
+        return sock.sendMessage(jid, { text: `✦ CELESTIA Group Status published${inGroup ? '' : ` to *${targetName}*`}.` }, { quoted: msg });
       }
 
       const content = await module.exports.prepareStatusContent(sock, msg, ctx, source, replied, input);
       if (!content) {
-        return sock.sendMessage(jid, { text: '✦ CELESTIA supports text, music, images, videos and stickers for Status.' }, { quoted: msg });
+        return sock.sendMessage(jid, { text: '✦ CELESTIA supports text, music, images, videos and stickers for Group Status.' }, { quoted: msg });
       }
-      const result = await publishEverywhere(sock, targetJid, content);
-      return sock.sendMessage(jid, { text: publishSummary(result, inGroup ? null : targetName) }, { quoted: msg });
+      await sendGroupStatus(sock, targetJid, content);
+      return sock.sendMessage(jid, { text: `✦ CELESTIA Group Status published${inGroup ? '' : ` to *${targetName}*`}.` }, { quoted: msg });
     } catch (error) {
       console.error('[GROUPPOST ERROR]', error);
       return sock.sendMessage(jid, { text: `✦ CELESTIA could not publish this Status: ${error.message}` }, { quoted: msg });
@@ -287,7 +249,6 @@ module.exports = {
   sendGroupStatus,
   sendPersonalStatus,
   getPersonalStatusRecipients,
-  publishEverywhere,
   resolveTargetGroup,
   downloadSourceMedia,
   prepareStatusContent,
