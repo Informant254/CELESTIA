@@ -11,7 +11,7 @@ test('downloaded MP3 becomes decodable mono Opus, with long songs capped and sho
   try {
     const ffmpeg = await ensureFfmpegPath();
     const ffprobe = await ensureFfprobePath();
-    for (const seconds of [2, 35]) {
+    for (const seconds of [2, 245]) {
       const source = path.join(dir, 'download.mp3');
       await runOnce(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi',
         '-i', 'sine=frequency=440:sample_rate=44100', '-t', String(seconds), '-ac', '2',
@@ -26,8 +26,8 @@ test('downloaded MP3 becomes decodable mono Opus, with long songs capped and sho
       assert.equal(probe.streams[0].codec_name, 'opus');
       assert.equal(probe.streams[0].channels, 1);
       assert.equal(probe.streams[0].sample_rate, '48000');
-      assert.ok(Math.abs(Number(probe.format.duration) - Math.min(seconds, 30)) < 0.1);
-      assert.ok(result.seconds <= 30);
+      assert.ok(Math.abs(Number(probe.format.duration) - Math.min(seconds, 240)) < 0.1);
+      assert.ok(result.seconds <= 240);
       // Decode the complete output; headers alone do not prove it is playable.
       await runOnce(ffmpeg, ['-v', 'error', '-xerror', '-i', output, '-f', 'null', '-'], 30000);
     }

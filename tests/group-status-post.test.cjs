@@ -172,7 +172,7 @@ test('gstatus converts downloaded music into voice-status audio with fresh metad
   groupPost.downloadSourceMedia = async () => Buffer.from('fresh audio bytes');
   groupPost.prepareStatusAudio = async (buffer) => {
     assert.equal(buffer.toString(), 'fresh audio bytes');
-    return { audio: Buffer.from('converted opus'), mimetype: 'audio/ogg; codecs=opus', ptt: true, seconds: 30 };
+    return { audio: Buffer.from('converted opus'), mimetype: 'audio/ogg; codecs=opus', ptt: true, seconds: 240 };
   };
   try {
     await gstatus.execute(sock, msg, []);
@@ -185,7 +185,7 @@ test('gstatus converts downloaded music into voice-status audio with fresh metad
   assert.equal(relayed[0].content.audio.toString(), 'converted opus');
   assert.equal(relayed[0].content.mimetype, 'audio/ogg; codecs=opus');
   assert.equal(relayed[0].content.ptt, true);
-  assert.equal(relayed[0].content.seconds, 30);
+  assert.equal(relayed[0].content.seconds, 240);
   assert.equal(relayed[0].content.waveform, undefined);
 });
 

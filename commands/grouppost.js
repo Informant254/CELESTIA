@@ -48,7 +48,7 @@ async function downloadSourceMedia(sock, msg, ctx, source, replied) {
 module.exports = {
   name: 'grouppost',
   aliases: ['gpoststatus', 'groupstory'],
-  description: 'CELESTIA Group Status: post text, images, videos, stickers or a 30-second music clip for 24 hours.',
+  description: 'CELESTIA Group Status: post text, images, videos, stickers or a music clip up to 4 minutes for 24 hours.',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     if (!jid.endsWith('@g.us')) {
@@ -69,7 +69,7 @@ module.exports = {
 
     if (!source && !input) {
       return sock.sendMessage(jid, {
-        text: '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.\n\nMusic is converted to a playable voice-status clip (first 30 seconds).',
+        text: '✦ *CELESTIA GROUP STATUS*\n\nUse `.grouppost <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.grouppost [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).',
       }, { quoted: msg });
     }
 

@@ -4,7 +4,7 @@ const path = require('path');
 const { ensureFfmpegPath, ensureFfprobePath, runOnce } = require('../download/engines');
 
 // Status audio uses a voice-note payload, not a full-length chat music attachment.
-const MAX_SECONDS = 30;
+const MAX_SECONDS = 240;
 
 async function prepareStatusAudio(buffer) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'celestia-status-audio-'));
