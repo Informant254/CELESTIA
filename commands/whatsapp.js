@@ -42,6 +42,7 @@ function getQuoted(sock, msg) {
 }
 
 let cachedBotBio = null;
+const activePersonalStatusCommands = new WeakSet();
 
 module.exports = [
 
@@ -160,7 +161,13 @@ module.exports = [
         }, { quoted: msg });
       }
 
+      if (activePersonalStatusCommands.has(sock)) {
+        return sock.sendMessage(jid, { text: '✦ CELESTIA is still preparing or publishing your previous Status. Please wait before trying again.' }, { quoted: msg });
+      }
+      activePersonalStatusCommands.add(sock);
       try {
+        await sock.sendMessage(jid, { text: '✦ CELESTIA is preparing your Status. Publishing to the full audience may take a little while—please wait for the result.' }, { quoted: msg });
+        console.log('[CELESTIA STATUS] preparing content');
         const groupPost = require('./grouppost');
         const content = await groupPost.prepareStatusContent(sock, msg, ctx, source, replied, input);
         if (!content) {
@@ -180,6 +187,8 @@ module.exports = [
         return sock.sendMessage(jid, {
           text: `❌ Failed to post status: ${error.message}`
         }, { quoted: msg });
+      } finally {
+        activePersonalStatusCommands.delete(sock);
       }
     },
   },

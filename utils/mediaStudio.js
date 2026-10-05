@@ -5,6 +5,7 @@ const settingsStore = require('./settingsStore');
 const { ensureFfmpegPath, ensureFfprobePath, runOnce } = require('../download/engines');
 
 const WA_LIMIT = 16 * 1024 * 1024;
+const activeStatusPosts = new WeakSet();
 
 function escapeXml(value) {
   return String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
@@ -80,7 +81,15 @@ async function statusJids(sock) {
   let learned = {};
   try { learned = require('./mirror').idMap(); } catch {}
   try {
-    const groups = await Promise.race([sock.groupFetchAllParticipating(), new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000))]);
+    let timer;
+    let groups;
+    try {
+      groups = await Promise.race([sock.groupFetchAllParticipating(), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('timeout')), 10000);
+      })]);
+    } finally {
+      clearTimeout(timer);
+    }
     const { participantPhoneJid } = require('./jidResolver');
     for (const group of Object.values(groups || {})) {
       for (const participant of group.participants || []) {
@@ -111,9 +120,27 @@ async function groupStatusJids(sock, groupJid, metadata = null) {
 }
 
 async function postStatus(sock, content) {
-  const list = await statusJids(sock);
-  await sock.sendMessage('status@broadcast', content, { statusJidList: list });
-  return list.length;
+  if (activeStatusPosts.has(sock)) {
+    throw new Error('CELESTIA is still publishing a personal Status. Please wait before sending another.');
+  }
+  activeStatusPosts.add(sock);
+  const started = Date.now();
+  let progress;
+  try {
+    console.log('[CELESTIA STATUS] resolving audience');
+    const list = await statusJids(sock);
+    console.log(`[CELESTIA STATUS] broadcasting recipients=${list.length}`);
+    progress = setInterval(() => {
+      console.log(`[CELESTIA STATUS] broadcast pending elapsedSeconds=${Math.round((Date.now() - started) / 1000)} heapMB=${Math.round(process.memoryUsage().heapUsed / 1048576)}`);
+    }, 20000);
+    progress.unref?.();
+    await sock.sendMessage('status@broadcast', content, { statusJidList: list });
+    console.log(`[CELESTIA STATUS] broadcast completed elapsedSeconds=${Math.round((Date.now() - started) / 1000)}`);
+    return list.length;
+  } finally {
+    clearInterval(progress);
+    activeStatusPosts.delete(sock);
+  }
 }
 
 module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, statusJids, groupStatusJids, postStatus };

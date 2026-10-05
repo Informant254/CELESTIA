@@ -19,4 +19,4 @@ COPY . .
 # EXPOSE 3000 — Railway injects PORT env automatically; she reads it
 ENV NODE_ENV=production
 # Bot on $PORT; pairing station (optional second service) on PAIRING_PORT
-CMD ["node", "--max-old-space-size=512", "index.js"]
+CMD ["node", "--max-old-space-size=2048", "index.js"]
