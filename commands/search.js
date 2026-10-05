@@ -1,4 +1,19 @@
-const { searchWeb } = require('../utils/liveSearch');
+const { searchWeb, formatPublishedDate } = require('../utils/liveSearch');
+
+function formatSearchResponse(query, search) {
+  if (search.mode !== 'NEWS') {
+    const lines = search.results
+      .map((result, index) => `*${index + 1}.* ${result.title}\n${result.snippet ? `${result.snippet}\n` : ''}🔗 ${result.url}`)
+      .join('\n\n');
+    return `🌐 *Live results for "${query}":*\n\n${lines}`;
+  }
+
+  const lines = search.results.map((result, index) => {
+    const summary = result.snippet || 'No summary provided by the source.';
+    return `*${index + 1}. ${result.title}*\n*Source:* ${result.source || 'Unknown'}\n*Published:* ${formatPublishedDate(result.publishedAt)}\n*Summary:* ${summary}\n*Link:* ${result.url}`;
+  }).join('\n\n');
+  return `📰 *News results for "${query}":*\n\n${lines}`;
+}
 
 module.exports = {
   name: 'search',
@@ -26,13 +41,10 @@ module.exports = {
     );
 
     try {
-      const { results } = await searchWeb(query, 5);
-      const lines = results
-        .map((r, i) => `*${i + 1}.* ${r.title}\n${r.snippet ? `${r.snippet}\n` : ''}🔗 ${r.url}`)
-        .join('\n\n');
+      const search = await searchWeb(query, 5);
       await sock.sendMessage(
         jid,
-        { text: `🌐 *Live results for "${query}":*\n\n${lines}`, edit: thinkingMsg.key },
+        { text: formatSearchResponse(query, search), edit: thinkingMsg.key },
         { quoted: msg }
       );
     } catch (e) {
@@ -43,4 +55,5 @@ module.exports = {
       );
     }
   },
+  formatSearchResponse,
 };
