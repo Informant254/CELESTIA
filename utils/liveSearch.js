@@ -309,7 +309,8 @@ async function fetchCandidates(query, limit, options, errors, acceptResults) {
   }
 
   const own = String(process.env.SEARXNG_URL || '').trim().replace(/\/+$/, '');
-  for (const base of instances()) {
+  const searxInstances = options.ownOnly && own ? [own] : instances();
+  for (const base of searxInstances) {
     try {
       const results = await queryInstance(base, query, limit, options);
       if (results.length) {
@@ -328,15 +329,17 @@ function offlineError(errors) {
   return new Error('Live search is offline right now (' + errors.slice(0, 3).join(' · ') + '). Set BRAVE_SEARCH_KEY or SEARXNG_URL for reliable results.');
 }
 
-async function searchWeb(query, limit = 5) {
+async function searchWeb(query, limit = 5, searchOptions = {}) {
   const q = clean(query, 200);
   if (!q) throw new Error('Empty search query.');
-  const intent = detectSearchIntent(q);
+  const intent = searchOptions.mode === 'WEB'
+    ? { mode: 'WEB', timeRange: null, freshnessMs: null }
+    : detectSearchIntent(q);
   const errors = [];
   console.log(`[CELESTIA SEARCH] mode=${intent.mode}`);
 
   if (intent.mode === 'WEB') {
-    const response = await fetchCandidates(q, limit, intent, errors);
+    const response = await fetchCandidates(q, limit, { ...intent, ownOnly: searchOptions.ownOnly }, errors);
     if (!response) throw offlineError(errors);
     console.log(`[CELESTIA SEARCH] raw_results=${response.results.length}`);
     console.log(`[CELESTIA SEARCH] filtered_results=${response.results.length}`);
@@ -350,7 +353,8 @@ async function searchWeb(query, limit = 5) {
     const ranked = rankNewsResults(results, intent, q, limit);
     return qualityArticleCount(ranked, q) > 0;
   };
-  const news = await fetchCandidates(searchQuery, NEWS_CANDIDATE_LIMIT, intent, errors, hasFreshArticle);
+  const providerOptions = { ...intent, ownOnly: searchOptions.ownOnly };
+  const news = await fetchCandidates(searchQuery, NEWS_CANDIDATE_LIMIT, providerOptions, errors, hasFreshArticle);
   let raw = news?.results || [];
   let instance = news?.instance || null;
   let filtered = rankNewsResults(raw, intent, q, limit);
@@ -359,7 +363,7 @@ async function searchWeb(query, limit = 5) {
   if (qualityArticleCount(filtered, q) < Math.min(3, limit)) {
     usedFallback = true;
     console.log('[CELESTIA SEARCH] fallback=WEB');
-    const general = await fetchCandidates(searchQuery, NEWS_CANDIDATE_LIMIT, { mode: 'WEB' }, errors, hasFreshArticle);
+    const general = await fetchCandidates(searchQuery, NEWS_CANDIDATE_LIMIT, { mode: 'WEB', ownOnly: searchOptions.ownOnly }, errors, hasFreshArticle);
     if (general) {
       raw = raw.concat(general.results);
       instance = instance || general.instance;

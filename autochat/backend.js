@@ -366,17 +366,21 @@ async function complete(system, user, options = {}) {
   const or = await openrouter(system, user, options);
   if (or) return or;
   const prompt = `${system}\n\n---\n\n${user}`;
-  let g = await gemini(prompt, options);
-  if (!g) {
-    await nap(3000);
+  let g = null;
+  if (geminiKey()) {
     g = await gemini(prompt, options);
-  }
-  if (!g) {
-    await nap(8000);
-    g = await gemini(prompt, options);
+    if (!g) {
+      await nap(3000);
+      g = await gemini(prompt, options);
+    }
+    if (!g) {
+      await nap(8000);
+      g = await gemini(prompt, options);
+    }
   }
   if (g === AUTH_FAILURE) g = null;
   if (g) return { text: g, engine: 'gemini' };
+  if (options.allowLocal === false) return null;
   // On-server model: free, always awake, dumber — the safety net.
   try {
     const local = require('./local');

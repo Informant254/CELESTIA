@@ -95,7 +95,7 @@ function buildBriefPrompt(topic, results) {
   };
 }
 
-function sanitizeAiBrief(value, sourceCount) {
+function sanitizeAiBrief(value, sourceCount, options = {}) {
   let text = String(value || '').trim();
   if (!text) return null;
   const sourcesHeading = text.search(/(?:^|\n)\s*\*{0,2}(?:sources|references)\*{0,2}\s*:/i);
@@ -107,7 +107,7 @@ function sanitizeAiBrief(value, sourceCount) {
   if (sourceCount > 1 && new Set(citations).size < 2) return null;
   const blocks = text.split(/\n+/).map((block) => block.trim()).filter(Boolean);
   const uncited = blocks.some((block) => {
-    const heading = /^#{1,3}\s+|^\*{1,2}[^*]+\*{1,2}:?$/.test(block);
+    const heading = options.allowHeadings !== false && (/^#{1,3}\s+|^\*{1,2}[^*]+\*{1,2}:?$/.test(block));
     return !heading && !/(?:\[\d+\]\s*)+(?:[.!?])?$/.test(block);
   });
   if (uncited) return null;
@@ -133,19 +133,24 @@ function deterministicBrief(results) {
   }).join('\n\n');
 }
 
+function hasRemoteAi() {
+  return Boolean(
+    backend.codexStatus().authenticated || backend.apixKey() || backend.groqKey() ||
+    backend.nvidiaKey() || backend.openzenKey() || backend.openrouterKey() ||
+    backend.geminiKey() || backend.openaiKey()
+  );
+}
+
 async function generateNewsBrief(topic, results, complete = backend.complete) {
   if (!Array.isArray(results) || !results.length) {
     throw new Error('A news brief needs at least one source.');
   }
-  const remoteAi = backend.codexStatus().authenticated || backend.apixKey() || backend.groqKey() ||
-    backend.nvidiaKey() || backend.openzenKey() || backend.openrouterKey() ||
-    backend.geminiKey() || backend.openaiKey();
-  if (complete === backend.complete && !remoteAi) {
+  if (complete === backend.complete && !hasRemoteAi()) {
     return { text: deterministicBrief(results), engine: 'deterministic', generated: false };
   }
   const prompt = buildBriefPrompt(topic, results);
   try {
-    const response = await complete(prompt.system, prompt.user, { maxTokens: 700 });
+    const response = await complete(prompt.system, prompt.user, { maxTokens: 700, allowLocal: false });
     const text = sanitizeAiBrief(response?.text, results.length);
     if (text) return { text, engine: response.engine || 'ai', generated: true };
     console.warn('[CELESTIA BRIEF] AI output lacked valid multi-source citations; using deterministic brief.');
@@ -200,6 +205,8 @@ module.exports = {
   buildBriefPrompt,
   sanitizeAiBrief,
   deterministicBrief,
+  hasRemoteAi,
+  safeSourceText,
   generateNewsBrief,
   formatBriefResponse,
 };

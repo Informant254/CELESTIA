@@ -346,3 +346,39 @@ test('publication age formatter uses singular units', () => {
   assert.equal(ls.formatPublishedDate(new Date(now - 60_000).toISOString(), now), '1 minute ago');
   assert.equal(ls.formatPublishedDate(new Date(now - 3_600_000).toISOString(), now), '1 hour ago');
 });
+
+test('internal callers can force general web mode for freshness-word queries', async () => {
+  let params;
+  const restore = stubAxios(async (_url, options) => {
+    params = options.params;
+    return { data: { results: [{ title: 'General result', url: 'https://example.com/article', content: 'Result' }] } };
+  });
+  try {
+    const ls = freshSearch();
+    const result = await ls.searchWeb('claim from today fact check', 5, { mode: 'WEB' });
+    assert.equal(result.mode, 'WEB');
+    assert.equal(params.categories, undefined);
+    assert.equal(params.time_range, undefined);
+  } finally {
+    restore();
+  }
+});
+
+test('internal callers can restrict failover to the configured SearXNG instance', async () => {
+  const calls = [];
+  const restore = stubAxios(async (url) => {
+    calls.push(url);
+    throw Object.assign(new Error('down'), { code: 'ECONNREFUSED' });
+  });
+  const previous = process.env.SEARXNG_URL;
+  process.env.SEARXNG_URL = 'https://own.test';
+  try {
+    const ls = freshSearch();
+    await assert.rejects(() => ls.searchWeb('ordinary query', 5, { mode: 'WEB', ownOnly: true }), /offline/);
+    assert.deepEqual(calls, ['https://own.test/search']);
+  } finally {
+    if (previous === undefined) delete process.env.SEARXNG_URL;
+    else process.env.SEARXNG_URL = previous;
+    restore();
+  }
+});
