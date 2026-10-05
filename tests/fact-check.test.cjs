@@ -156,7 +156,7 @@ test('formatted verification includes verdict, claim, evidence, and checked date
     confidence: 'Low',
     explanation: 'Available evidence requires further analysis.',
     evidence: factCheck.rankEvidence(evidenceResults(), 'Kenya introduced a social media tax', 5),
-  }, new Date('2026-10-06T12:00:00Z'));
+  }, new Date('2026-10-05T22:30:00Z'));
   assert.match(text, /CELESTIA VERIFY/);
   assert.match(text, /\*Verdict:\* Unverified/);
   assert.match(text, /treasury\.go\.ke/);

@@ -241,7 +241,9 @@ function formatFactCheck(result, now = new Date()) {
     '',
     '*What the evidence shows:*',
   ].join('\n');
-  const checked = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+  const checked = now.toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'long', year: 'numeric', timeZone: process.env.TZ || 'Africa/Nairobi',
+  });
   const footer = `\n\n*Evidence*\n${sources}\n\n*Checked:* ${checked}`;
   const budget = Math.max(0, 4000 - header.length - footer.length - 1);
   const blocks = String(result.explanation || '').split(/\n\n+/).filter(Boolean);
