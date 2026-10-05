@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const groupPost = require('../commands/grouppost');
 const gstatus = require('../commands/groupsecurity').find((command) => command.name === 'gstatus');
 const setStatus = require('../commands/whatsapp').find((command) => command.name === 'setstatus');
+const setBio = require('../commands/whatsapp').find((command) => command.name === 'setbio');
+const statusSuite = require('../commands/statussuite');
 const { groupStatusJids } = require('../utils/mediaStudio');
 
 const GROUP = '120363000000000000@g.us';
@@ -352,4 +354,131 @@ test('grouppost DM with an unresolvable group does not post', async () => {
 
   assert.equal(relayed.length, 0);
   assert.match(sent.at(-1).content.text, /could not resolve/);
+});
+
+function personalStatusSock(sent) {
+  return {
+    user: { id: '254700000099:4@s.whatsapp.net' },
+    groupFetchAllParticipating: async () => ({}),
+    sendMessage: async (jid, content, options) => {
+      sent.push({ jid, content, options });
+      return { key: { id: `m${sent.length}` } };
+    },
+  };
+}
+
+test('setstatus posts direct DM text to personal Status instead of changing the bio', async () => {
+  const sent = [];
+  const sock = personalStatusSock(sent);
+  let bioChanged = false;
+  sock.updateProfileStatus = async () => { bioChanged = true; };
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: { conversation: '.setstatus Personal status text' },
+  };
+  await setStatus.execute(sock, msg, ['Personal', 'status', 'text']);
+
+  assert.equal(bioChanged, false);
+  const status = sent.find((entry) => entry.jid === 'status@broadcast');
+  assert.equal(status.content.text, 'Personal status text');
+  assert.deepEqual(status.options.statusJidList, [DM]);
+  assert.match(sent.at(-1).content.text, /your WhatsApp Status \(1 recipient/);
+});
+
+test('setstatus freshly uploads replied image using the shared working media path', async () => {
+  const sent = [];
+  const sock = personalStatusSock(sent);
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: {
+      extendedTextMessage: {
+        text: '.setstatus Fresh caption',
+        contextInfo: {
+          stanzaId: 'personal-image-1',
+          quotedMessage: {
+            imageMessage: { caption: 'Old caption', mimetype: 'image/jpeg', width: 720, height: 1280 },
+          },
+        },
+      },
+    },
+  };
+  const originalDownload = groupPost.downloadSourceMedia;
+  groupPost.downloadSourceMedia = async () => Buffer.from('fresh personal image');
+  try {
+    await setStatus.execute(sock, msg, ['Fresh', 'caption']);
+  } finally {
+    groupPost.downloadSourceMedia = originalDownload;
+  }
+
+  const status = sent.find((entry) => entry.jid === 'status@broadcast');
+  assert.equal(status.content.image.toString(), 'fresh personal image');
+  assert.equal(status.content.caption, 'Fresh caption');
+  assert.equal(status.content.width, 720);
+});
+
+test('setstatus converts replied music through the same playable Opus path as Group Status', async () => {
+  const sent = [];
+  const sock = personalStatusSock(sent);
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: {
+      extendedTextMessage: {
+        text: '.setstatus',
+        contextInfo: {
+          stanzaId: 'personal-audio-1',
+          quotedMessage: { audioMessage: { mimetype: 'audio/mpeg', seconds: 180 } },
+        },
+      },
+    },
+  };
+  const originalDownload = groupPost.downloadSourceMedia;
+  const originalPrepare = groupPost.prepareStatusAudio;
+  groupPost.downloadSourceMedia = async () => Buffer.from('downloaded song');
+  groupPost.prepareStatusAudio = async (buffer) => {
+    assert.equal(buffer.toString(), 'downloaded song');
+    return { audio: Buffer.from('personal opus'), mimetype: 'audio/ogg; codecs=opus', ptt: true, seconds: 180 };
+  };
+  try {
+    await setStatus.execute(sock, msg, []);
+  } finally {
+    groupPost.downloadSourceMedia = originalDownload;
+    groupPost.prepareStatusAudio = originalPrepare;
+  }
+
+  const status = sent.find((entry) => entry.jid === 'status@broadcast');
+  assert.equal(status.content.audio.toString(), 'personal opus');
+  assert.equal(status.content.mimetype, 'audio/ogg; codecs=opus');
+  assert.equal(status.content.ptt, true);
+});
+
+test('setbio keeps profile bio updates explicit and separate from Status posting', async () => {
+  const sent = [];
+  const sock = personalStatusSock(sent);
+  let bio;
+  sock.updateProfileStatus = async (value) => { bio = value; };
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: { conversation: '.setbio CELESTIA online' },
+  };
+  await setBio.execute(sock, msg, ['CELESTIA', 'online']);
+
+  assert.equal(bio, 'CELESTIA online');
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
+  assert.match(sent.at(-1).content.text, /Profile bio updated/);
+});
+
+test('statussuite uses the same audience-aware personal Status sender', async () => {
+  const sent = [];
+  const replies = [];
+  const sock = personalStatusSock(sent);
+  const msg = {
+    key: { remoteJid: DM, fromMe: true },
+    message: { conversation: '.statussuite text fire CELESTIA online' },
+  };
+  await statusSuite.execute(sock, msg, ['text', 'fire', 'CELESTIA', 'online'], null, async (text) => replies.push(text));
+
+  const status = sent.find((entry) => entry.jid === 'status@broadcast');
+  assert.match(status.content.text, /CELESTIA.*online/);
+  assert.deepEqual(status.options.statusJidList, [DM]);
+  assert.match(replies.at(-1), /1 recipients/);
 });

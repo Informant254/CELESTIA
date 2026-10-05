@@ -63,6 +63,43 @@ async function downloadSourceMedia(sock, msg, ctx, source, replied) {
   );
 }
 
+async function prepareStatusContent(sock, msg, ctx, source, replied, input = '') {
+  const sourceText = source?.conversation || source?.extendedTextMessage?.text;
+  if (!source || sourceText) return { text: input || sourceText };
+
+  const supported = ['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage'];
+  const sourceType = Object.keys(source).find((key) => supported.includes(key));
+  if (!sourceType) return null;
+
+  const buffer = await module.exports.downloadSourceMedia(sock, msg, ctx, source, replied);
+  if (!buffer?.length) throw new Error('WhatsApp returned an empty media file');
+  const sourceMedia = source[sourceType];
+  if (sourceType === 'imageMessage') {
+    return {
+      image: buffer,
+      caption: input || sourceMedia.caption || '',
+      mimetype: sourceMedia.mimetype || 'image/jpeg',
+      jpegThumbnail: sourceMedia.jpegThumbnail,
+      width: sourceMedia.width,
+      height: sourceMedia.height,
+    };
+  }
+  if (sourceType === 'videoMessage') {
+    return {
+      video: buffer,
+      caption: input || sourceMedia.caption || '',
+      mimetype: sourceMedia.mimetype || 'video/mp4',
+      gifPlayback: Boolean(sourceMedia.gifPlayback),
+      jpegThumbnail: sourceMedia.jpegThumbnail,
+      width: sourceMedia.width,
+      height: sourceMedia.height,
+      seconds: sourceMedia.seconds,
+    };
+  }
+  if (sourceType === 'audioMessage') return module.exports.prepareStatusAudio(buffer);
+  return { sticker: buffer, mimetype: sourceMedia.mimetype || 'image/webp' };
+}
+
 module.exports = {
   name: 'grouppost',
   aliases: ['gpoststatus', 'groupstory'],
@@ -114,48 +151,9 @@ module.exports = {
     }
 
     try {
-      const sourceText = source?.conversation || source?.extendedTextMessage?.text;
-      if (!source || sourceText) {
-        await sendGroupStatus(sock, targetJid, { text: input || sourceText });
-        if (!inGroup) {
-          return sock.sendMessage(jid, { text: `✦ CELESTIA posted that Group Status to *${targetName || targetJid}*.` }, { quoted: msg });
-        }
-        return;
-      }
-
-      const sourceType = Object.keys(source).find((key) => supported.includes(key));
-      if (!sourceType) {
+      const content = await module.exports.prepareStatusContent(sock, msg, ctx, source, replied, input);
+      if (!content) {
         return sock.sendMessage(jid, { text: '✦ CELESTIA supports text, music, images, videos and stickers for Group Status.' }, { quoted: msg });
-      }
-
-      const buffer = await module.exports.downloadSourceMedia(sock, msg, ctx, source, replied);
-      if (!buffer?.length) throw new Error('WhatsApp returned an empty media file');
-      const sourceMedia = source[sourceType];
-      let content;
-      if (sourceType === 'imageMessage') {
-        content = {
-          image: buffer,
-          caption: input || sourceMedia.caption || '',
-          mimetype: sourceMedia.mimetype || 'image/jpeg',
-          jpegThumbnail: sourceMedia.jpegThumbnail,
-          width: sourceMedia.width,
-          height: sourceMedia.height,
-        };
-      } else if (sourceType === 'videoMessage') {
-        content = {
-          video: buffer,
-          caption: input || sourceMedia.caption || '',
-          mimetype: sourceMedia.mimetype || 'video/mp4',
-          gifPlayback: Boolean(sourceMedia.gifPlayback),
-          jpegThumbnail: sourceMedia.jpegThumbnail,
-          width: sourceMedia.width,
-          height: sourceMedia.height,
-          seconds: sourceMedia.seconds,
-        };
-      } else if (sourceType === 'audioMessage') {
-        content = await module.exports.prepareStatusAudio(buffer);
-      } else {
-        content = { sticker: buffer, mimetype: sourceMedia.mimetype || 'image/webp' };
       }
       await sendGroupStatus(sock, targetJid, content);
       if (!inGroup) {
@@ -169,5 +167,6 @@ module.exports = {
   sendGroupStatus,
   resolveTargetGroup,
   downloadSourceMedia,
+  prepareStatusContent,
   prepareStatusAudio,
 };

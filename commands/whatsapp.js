@@ -1,4 +1,4 @@
-const { downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { downloadMediaMessage, normalizeMessageContent } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
 
 function resolveJid(msg) {
@@ -140,7 +140,7 @@ module.exports = [
   {
     name: 'setstatus',
     aliases: ['poststatus'],
-    description: "Reply to text/image/video/audio/sticker with .setstatus [caption] to post it to WhatsApp Status. With no reply, .setstatus <text> updates the bot's profile bio instead.",
+    description: 'CELESTIA Status: post text, images, videos, stickers or a music clip up to 4 minutes. Works in DMs and groups.',
     async execute(sock, msg, args) {
       const { jid, ctx, quotedMessage } = getQuoted(sock, msg);
       const input = args.join(' ').trim();
@@ -148,100 +148,30 @@ module.exports = [
         return sock.sendMessage(jid, { text: '❌ Only the bot owner can publish a Status or change the profile bio.' }, { quoted: msg });
       }
 
-      if (!quotedMessage) {
-        if (!input) {
-          return sock.sendMessage(jid, {
-            text: '❌ *Usage:*\n• Reply to text/image/video/audio/sticker with `.setstatus [caption]` to post to Status.\n• Use `.setstatus <text>` with no reply to update the profile bio.'
-          }, { quoted: msg });
-        }
+      const current = normalizeMessageContent(msg.message) || msg.message;
+      const supported = ['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage'];
+      const currentMediaType = Object.keys(current || {}).find((key) => supported.includes(key));
+      const source = quotedMessage || (currentMediaType ? current : null);
+      const replied = Boolean(quotedMessage);
 
-        try {
-          await sock.updateProfileStatus(input);
-          cachedBotBio = input;
-          return sock.sendMessage(jid, { text: `✅ Profile status (bio) updated to:\n*${input}*` }, { quoted: msg });
-        } catch (e) {
-          return sock.sendMessage(jid, { text: `❌ Failed to update bio: ${e.message}` }, { quoted: msg });
-        }
+      if (!source && !input) {
+        return sock.sendMessage(jid, {
+          text: '✦ *CELESTIA STATUS*\n\nUse `.setstatus <text>`, add it to an image/video caption, or reply to text/music/image/video/sticker with `.setstatus [caption]`.\n\nMusic is converted to a voice-status clip (up to the first 4 minutes).\nUse `.setbio <text>` to change the profile bio.'
+        }, { quoted: msg });
       }
 
       try {
-        const statusJid = 'status@broadcast';
-
-        const statusJidList = await require('../utils/mediaStudio').statusJids(sock);
-
-        const quotedText = quotedMessage.conversation || quotedMessage.extendedTextMessage?.text;
-
-        if (quotedText) {
-          await sock.sendMessage(statusJid, {
-            text: input || quotedText
-          }, {
-            backgroundColor: '#075E54',
-            font: 1,
-            statusJidList
-          });
-
-          return sock.sendMessage(jid, {
-            text: `✅ Text posted to WhatsApp Status! (${statusJidList.length} recipient(s))`
-          }, { quoted: msg });
-        }
-
-        const mediaType = Object.keys(quotedMessage).find((k) =>
-          ['imageMessage', 'videoMessage', 'audioMessage', 'stickerMessage'].includes(k)
-        );
-
-        if (!mediaType) {
+        const groupPost = require('./grouppost');
+        const content = await groupPost.prepareStatusContent(sock, msg, ctx, source, replied, input);
+        if (!content) {
           return sock.sendMessage(jid, {
             text: '❌ Unsupported message type for status. Reply to text, image, video, audio, or a sticker.'
           }, { quoted: msg });
         }
-
-        const mediaBuffer = await downloadMediaMessage(
-          {
-            message: quotedMessage,
-            key: {
-              remoteJid: jid,
-              id: ctx.stanzaId,
-              participant: ctx.participant || msg.key.participant,
-            },
-          },
-          'buffer',
-          {},
-          { reuploadRequest: sock.updateMediaMessage }
-        );
-
-        if (!mediaBuffer) {
-          return sock.sendMessage(jid, {
-            text: '❌ Failed to download the replied media.'
-          }, { quoted: msg });
-        }
-
-        const caption = input || quotedMessage[mediaType]?.caption || '';
-
-        if (mediaType === 'imageMessage') {
-          await sock.sendMessage(statusJid, {
-            image: mediaBuffer,
-            caption
-          }, { statusJidList });
-        } else if (mediaType === 'videoMessage') {
-          await sock.sendMessage(statusJid, {
-            video: mediaBuffer,
-            caption
-          }, { statusJidList });
-        } else if (mediaType === 'audioMessage') {
-          const mimetype = quotedMessage.audioMessage?.mimetype || 'audio/mp4';
-
-          await sock.sendMessage(statusJid, {
-            audio: mediaBuffer,
-            mimetype
-          }, { statusJidList });
-        } else if (mediaType === 'stickerMessage') {
-          await sock.sendMessage(statusJid, {
-            sticker: mediaBuffer
-          }, { statusJidList });
-        }
+        const recipientCount = await require('../utils/mediaStudio').postStatus(sock, content);
 
         return sock.sendMessage(jid, {
-          text: `✅ Media posted to WhatsApp Status! (${statusJidList.length} recipient(s))`
+          text: `✦ CELESTIA posted that to your WhatsApp Status (${recipientCount} recipient(s)).`
         }, { quoted: msg });
 
       } catch (error) {
@@ -250,6 +180,29 @@ module.exports = [
         return sock.sendMessage(jid, {
           text: `❌ Failed to post status: ${error.message}`
         }, { quoted: msg });
+      }
+    },
+  },
+
+  {
+    name: 'setbio',
+    aliases: ['profilebio'],
+    description: 'Update the bot profile bio. Usage: .setbio <text>',
+    async execute(sock, msg, args) {
+      const jid = resolveJid(msg);
+      const input = args.join(' ').trim();
+      if (!isOwner(msg)) {
+        return sock.sendMessage(jid, { text: '❌ Only the bot owner can change the profile bio.' }, { quoted: msg });
+      }
+      if (!input) {
+        return sock.sendMessage(jid, { text: '❌ Usage: `.setbio <text>`' }, { quoted: msg });
+      }
+      try {
+        await sock.updateProfileStatus(input);
+        cachedBotBio = input;
+        return sock.sendMessage(jid, { text: `✅ Profile bio updated to:\n*${input}*` }, { quoted: msg });
+      } catch (error) {
+        return sock.sendMessage(jid, { text: `❌ Failed to update bio: ${error.message}` }, { quoted: msg });
       }
     },
   },

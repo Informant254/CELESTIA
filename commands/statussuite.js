@@ -123,12 +123,8 @@ module.exports = {
 
 async function postStatus(sock, msg, reply, text) {
   try {
-    const { jidNormalizedUser } = require('@whiskeysockets/baileys');
-    const selfJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-    if (!selfJid) throw new Error('not connected');
-
-    await sock.sendMessage('status@broadcast', { text });
-    return reply(`📱 *Posted to status:*\n\n${text.slice(0, 300)}`);
+    const recipients = await require('../utils/mediaStudio').postStatus(sock, { text });
+    return reply(`📱 *Posted to status (${recipients} recipients):*\n\n${text.slice(0, 300)}`);
   } catch (e) {
     return reply(`📱 Status failed: ${e.message}`);
   }
