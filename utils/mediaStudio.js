@@ -6,6 +6,28 @@ const { ensureFfmpegPath, ensureFfprobePath, runOnce } = require('../download/en
 
 const WA_LIMIT = 16 * 1024 * 1024;
 const activeStatusPosts = new WeakSet();
+const statusContacts = new WeakMap();
+const statusPrivacy = new WeakMap();
+
+function noteStatusContacts(sock, contacts) {
+  const ids = statusContacts.get(sock) || new Set();
+  let learned = {};
+  try { learned = require('./mirror').idMap(); } catch {}
+  const { participantPhoneJid } = require('./jidResolver');
+  for (const contact of contacts || []) {
+    const jid = participantPhoneJid(contact, learned);
+    if (jid) ids.add(jid);
+  }
+  statusContacts.set(sock, ids);
+  console.log(`[CELESTIA STATUS] contacts synced count=${ids.size}`);
+}
+
+function noteStatusPrivacy(sock, value) {
+  if (!value) return;
+  const users = new Set((value.userJid || []).filter((jid) => String(jid).endsWith('@s.whatsapp.net')));
+  statusPrivacy.set(sock, { mode: Number(value.mode), users });
+  console.log(`[CELESTIA STATUS] privacy synced mode=${Number(value.mode)} users=${users.size}`);
+}
 
 function escapeXml(value) {
   return String(value || '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' }[c]));
@@ -78,26 +100,22 @@ async function createWaveform({ input, cover, output, seconds = 30 }) {
 async function statusJids(sock) {
   const own = sock.user?.id?.split(':')[0];
   const ids = new Set(own ? [`${own}@s.whatsapp.net`] : []);
-  let learned = {};
-  try { learned = require('./mirror').idMap(); } catch {}
+  const contacts = statusContacts.get(sock) || new Set();
+  const privacy = statusPrivacy.get(sock);
+  let serverPrivacy = null;
   try {
-    let timer;
-    let groups;
-    try {
-      groups = await Promise.race([sock.groupFetchAllParticipating(), new Promise((_, reject) => {
-        timer = setTimeout(() => reject(new Error('timeout')), 10000);
-      })]);
-    } finally {
-      clearTimeout(timer);
-    }
-    const { participantPhoneJid } = require('./jidResolver');
-    for (const group of Object.values(groups || {})) {
-      for (const participant of group.participants || []) {
-        const phoneJid = participantPhoneJid(participant, learned);
-        if (phoneJid) ids.add(phoneJid);
-      }
-    }
+    serverPrivacy = await sock.fetchPrivacySettings?.();
   } catch {}
+
+  // Modes: 0 allow list, 1 contacts except deny list, 2 contacts, 3 close friends.
+  if (privacy?.mode === 0 || privacy?.mode === 3) {
+    for (const jid of privacy.users) ids.add(jid);
+  } else if (serverPrivacy?.status !== 'none') {
+    for (const jid of contacts) {
+      if (privacy?.mode !== 1 || !privacy.users.has(jid)) ids.add(jid);
+    }
+  }
+  console.log(`[CELESTIA STATUS] audience contacts=${contacts.size} recipients=${ids.size} privacy=${serverPrivacy?.status || 'synced'}`);
   return [...ids];
 }
 
@@ -143,4 +161,4 @@ async function postStatus(sock, content) {
   }
 }
 
-module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, statusJids, groupStatusJids, postStatus };
+module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, noteStatusContacts, noteStatusPrivacy, statusJids, groupStatusJids, postStatus };

@@ -5,7 +5,7 @@ const gstatus = require('../commands/groupsecurity').find((command) => command.n
 const setStatus = require('../commands/whatsapp').find((command) => command.name === 'setstatus');
 const setBio = require('../commands/whatsapp').find((command) => command.name === 'setbio');
 const statusSuite = require('../commands/statussuite');
-const { groupStatusJids } = require('../utils/mediaStudio');
+const { groupStatusJids, noteStatusContacts, noteStatusPrivacy, statusJids } = require('../utils/mediaStudio');
 
 const GROUP = '120363000000000000@g.us';
 const metadata = {
@@ -31,16 +31,20 @@ test('group status audience resolves PN identities and counts LID-only skips', a
   assert.equal(result.skipped, 1);
 });
 
-test('setstatus includes PN identities for LID-addressed shared-group members', async () => {
+test('setstatus uses synced contacts instead of every shared-group member', async () => {
   const sent = [];
   const sock = {
     user: { id: '254700000099:4@s.whatsapp.net' },
-    groupFetchAllParticipating: async () => ({ [GROUP]: metadata }),
+    fetchPrivacySettings: async () => ({ status: 'contacts' }),
     sendMessage: async (jid, content, options) => {
       sent.push({ jid, content, options });
       return { key: { id: `m${sent.length}` } };
     },
   };
+  noteStatusContacts(sock, [
+    { id: '254700000001@s.whatsapp.net' },
+    { id: '254700000002@s.whatsapp.net' },
+  ]);
   const msg = {
     key: { remoteJid: '254700000099@s.whatsapp.net', fromMe: true },
     message: {
@@ -54,6 +58,23 @@ test('setstatus includes PN identities for LID-addressed shared-group members', 
   const status = sent.find((entry) => entry.jid === 'status@broadcast');
   assert.ok(status.options.statusJidList.includes('254700000001@s.whatsapp.net'));
   assert.ok(status.options.statusJidList.includes('254700000002@s.whatsapp.net'));
+  assert.equal(status.options.statusJidList.length, 3);
+});
+
+test('personal Status obeys synced allow-list privacy', async () => {
+  const sock = {
+    user: { id: '254700000099:4@s.whatsapp.net' },
+    fetchPrivacySettings: async () => ({ status: 'contacts' }),
+  };
+  noteStatusContacts(sock, [
+    { id: '254700000001@s.whatsapp.net' },
+    { id: '254700000002@s.whatsapp.net' },
+  ]);
+  noteStatusPrivacy(sock, { mode: 0, userJid: ['254700000002@s.whatsapp.net'] });
+  assert.deepEqual((await statusJids(sock)).sort(), [
+    '254700000002@s.whatsapp.net',
+    '254700000099@s.whatsapp.net',
+  ].sort());
 });
 
 function groupStatusSock(sent, relayed) {
@@ -199,6 +220,10 @@ test('grouppost shows usage when there is nothing to post', async () => {
       return { key: { id: `m${sent.length}` } };
     },
   };
+  noteStatusContacts(sock, [
+    { id: '254700000001@s.whatsapp.net' },
+    { id: '254700000002@s.whatsapp.net' },
+  ]);
   const msg = {
     key: { remoteJid: GROUP, fromMe: true },
     message: { conversation: '.grouppost' },
