@@ -8,7 +8,7 @@ const { isOwner } = require('../utils/isOwner');
 const { contextInfo } = require('../utils/jidResolver');
 const { prepareStatusAudio } = require('../utils/groupStatusAudio');
 
-const STATUS_JID = 'status@broadcast';
+const activePersonalStatusCommands = new WeakSet();
 
 /**
  * Safely unwrap WhatsApp message content.
@@ -279,19 +279,18 @@ async function sendPersonalStatus(
     options.backgroundColor = '#000000';
   }
 
-  const result = await sock.sendMessage(
-    STATUS_JID,
+  const recipients = await require('../utils/mediaStudio').postStatus(
+    sock,
     content,
     options
   );
 
   console.log(
     `[CELESTIA PERSONAL STATUS] published ` +
-    `id=${result?.key?.id || 'unknown'} ` +
-    `recipients=${statusJidList.length}`
+    `recipients=${recipients}`
   );
 
-  return result;
+  return recipients;
 }
 
 module.exports = {
@@ -396,6 +395,21 @@ module.exports = {
       );
     }
 
+    if (activePersonalStatusCommands.has(sock)) {
+      return sock.sendMessage(
+        jid,
+        {
+          text:
+            '✦ CELESTIA is still publishing your previous personal Status. Please wait for the final confirmation before trying again.',
+        },
+        {
+          quoted: msg,
+        }
+      );
+    }
+
+    activePersonalStatusCommands.add(sock);
+
     try {
       /**
        * Get PERSONAL Status recipients.
@@ -419,6 +433,18 @@ module.exports = {
           }
         );
       }
+
+      await sock.sendMessage(
+        jid,
+        {
+          text:
+            `✦ Preparing your personal Status for ${statusJidList.length} recipient(s). ` +
+            'Publishing can take a little while; CELESTIA will confirm when it finishes.',
+        },
+        {
+          quoted: msg,
+        }
+      );
 
       /**
        * TEXT STATUS
@@ -651,6 +677,8 @@ module.exports = {
           quoted: msg,
         }
       );
+    } finally {
+      activePersonalStatusCommands.delete(sock);
     }
   },
 

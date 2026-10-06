@@ -9,7 +9,9 @@ const WA_LIMIT = 16 * 1024 * 1024;
 const activeStatusPosts = new WeakSet();
 const statusContacts = new WeakMap();
 const statusPrivacy = new WeakMap();
-const STATUS_CONTACTS_KEY = 'status_contacts';
+// V2 intentionally excludes people seen only in groups. The original cache
+// grew with ordinary group traffic and made Status fan-out take several minutes.
+const STATUS_CONTACTS_KEY = 'status_contacts_v2';
 const MAX_STATUS_CONTACTS = 5000;
 
 function normalizeStatusContact(value) {
@@ -78,14 +80,9 @@ function contactsFromMessage(msg) {
   const remoteJid = String(key.remoteJid || '');
   const contacts = [];
 
-  if (remoteJid.endsWith('@g.us')) {
-    contacts.push({
-      id: key.participant,
-      participantPn: key.participantPn,
-      participantAlt: key.participantAlt,
-    });
-  } else if (
+  if (
     remoteJid &&
+    !remoteJid.endsWith('@g.us') &&
     remoteJid !== 'status@broadcast' &&
     !remoteJid.endsWith('@newsletter')
   ) {

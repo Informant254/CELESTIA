@@ -109,7 +109,7 @@ test('status refuses honestly when no contacts are available', async () => {
   assert.doesNotMatch(sent.at(-1).content.text, /sock\.|global\.store/);
 });
 
-test('status learns recipients from synced history and live message identities', async () => {
+test('status learns recipients from direct history and live message identities', async () => {
   const sent = [];
   const sock = statusSock(sent);
   noteStatusMessage(sock, {
@@ -121,9 +121,7 @@ test('status learns recipients from synced history and live message identities',
   }, { persist: false });
   noteStatusMessage(sock, {
     key: {
-      remoteJid: '120363000000000000@g.us',
-      participant: '234567890123456@lid',
-      participantPn: '254700000002@s.whatsapp.net',
+      remoteJid: '254700000002@s.whatsapp.net',
       fromMe: false,
     },
   }, { persist: false });
@@ -136,6 +134,24 @@ test('status learns recipients from synced history and live message identities',
     '254700000002@s.whatsapp.net',
     '254700000099@s.whatsapp.net',
   ].sort());
+});
+
+test('status does not absorb ordinary group participants into the personal audience', async () => {
+  const sent = [];
+  const sock = statusSock(sent);
+  noteStatusMessage(sock, {
+    key: {
+      remoteJid: '120363000000000000@g.us',
+      participant: '234567890123456@lid',
+      participantPn: '254700000002@s.whatsapp.net',
+      fromMe: false,
+    },
+  }, { persist: false });
+
+  await statusCmd.execute(sock, dmTextMsg(), ['Private', 'audience']);
+
+  assert.equal(sent.some((entry) => entry.jid === 'status@broadcast'), false);
+  assert.match(sent.at(-1).content.text, /does not know any personal Status recipients/);
 });
 
 test('status stays LID-only for LID-based accounts', async () => {

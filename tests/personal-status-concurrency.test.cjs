@@ -2,6 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { postStatus } = require('../utils/mediaStudio');
 const setStatus = require('../commands/whatsapp').find((c) => c.name === 'setstatus');
+const personalStatus = require('../commands/status');
 
 test('personal broadcasts reject overlap and release the lock after success or failure', async () => {
   let release;
@@ -49,4 +50,46 @@ test('setstatus acknowledges progress and refuses a second command while the fir
   release();
   await first;
   assert.match(sent.at(-1).content.text, /posted that/);
+});
+
+test('pstatus acknowledges progress and rejects an overlapping personal broadcast', async () => {
+  const sent = [];
+  let release;
+  let signal;
+  const ready = new Promise((resolve) => { signal = resolve; });
+  const pending = new Promise((resolve) => { release = resolve; });
+  const dm = '254700000099@s.whatsapp.net';
+  const sock = {
+    user: { id: '254700000099:4@s.whatsapp.net' },
+    store: {
+      contacts: {
+        '254700000001@s.whatsapp.net': {},
+        '254700000002@s.whatsapp.net': {},
+      },
+    },
+    sendMessage: async (jid, content, options) => {
+      sent.push({ jid, content, options });
+      if (jid === 'status@broadcast') {
+        signal();
+        await pending;
+      }
+      return { key: { id: `m${sent.length}` } };
+    },
+  };
+  const msg = {
+    key: { remoteJid: dm, fromMe: true },
+    message: { conversation: '.pstatus Hello' },
+  };
+
+  const first = personalStatus.execute(sock, msg, ['Hello']);
+  await ready;
+  await personalStatus.execute(sock, msg, ['Again']);
+
+  assert.match(sent[0].content.text, /Preparing your personal Status/);
+  assert.match(sent.at(-1).content.text, /previous personal Status/);
+  assert.equal(sent.filter((entry) => entry.jid === 'status@broadcast').length, 1);
+
+  release();
+  await first;
+  assert.match(sent.at(-1).content.text, /Personal Status published/);
 });
