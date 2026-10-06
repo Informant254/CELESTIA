@@ -387,12 +387,14 @@ function registerMessageHandler(sock, commands) {
     return rawSend(...args);
   };
   const statusStudio = require('../utils/mediaStudio');
-  sock.ev.on('contacts.upsert', (contacts) => statusStudio.noteStatusContacts(sock, contacts));
-  sock.ev.on('contacts.update', (contacts) => statusStudio.noteStatusContacts(sock, contacts));
+  statusStudio.restoreStatusContacts(sock);
+  sock.ev.on('contacts.upsert', (contacts) => statusStudio.noteStatusContacts(sock, contacts, { persist: true }));
+  sock.ev.on('contacts.update', (contacts) => statusStudio.noteStatusContacts(sock, contacts, { persist: true }));
   sock.ev.on('settings.update', ({ setting, value }) => {
     if (setting === 'statusPrivacy') statusStudio.noteStatusPrivacy(sock, value);
   });
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
+    statusStudio.noteStatusMessages(sock, messages);
     if (type !== 'notify') return;
 
     for (const msg of messages) {

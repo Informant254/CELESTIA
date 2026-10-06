@@ -410,9 +410,9 @@ module.exports = {
           jid,
           {
             text:
-              '✦ CELESTIA cannot publish your personal Status because no contact store is available.\n\n' +
+              '✦ CELESTIA does not know any personal Status recipients yet.\n\n' +
 
-              'The WhatsApp connection needs to expose its contacts through `sock.store.contacts`, `sock.contacts`, or `global.store.contacts`.',
+              'Keep CELESTIA connected while your chats sync, then try again. You can also use `.setstatus <group-link-or-JID> <text>` to choose a Status audience.',
           },
           {
             quoted: msg,

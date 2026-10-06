@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const settingsStore = require('./settingsStore');
 const { ensureFfmpegPath, ensureFfprobePath, runOnce } = require('../download/engines');
 
@@ -8,18 +9,104 @@ const WA_LIMIT = 16 * 1024 * 1024;
 const activeStatusPosts = new WeakSet();
 const statusContacts = new WeakMap();
 const statusPrivacy = new WeakMap();
+const STATUS_CONTACTS_KEY = 'status_contacts';
+const MAX_STATUS_CONTACTS = 5000;
 
-function noteStatusContacts(sock, contacts) {
+function normalizeStatusContact(value) {
+  if (!value || typeof value !== 'string') return null;
+  try {
+    const jid = jidNormalizedUser(value);
+    return jid.endsWith('@s.whatsapp.net') ? jid : null;
+  } catch {
+    return null;
+  }
+}
+
+function addStatusContacts(sock, contacts) {
   const ids = statusContacts.get(sock) || new Set();
   let learned = {};
   try { learned = require('./mirror').idMap(); } catch {}
   const { participantPhoneJid } = require('./jidResolver');
+  const before = ids.size;
+
   for (const contact of contacts || []) {
-    const jid = participantPhoneJid(contact, learned);
-    if (jid) ids.add(jid);
+    const entry = typeof contact === 'string' ? { id: contact } : contact || {};
+    const candidates = [
+      entry.id,
+      entry.jid,
+      entry.phoneNumber,
+      entry.pn,
+      entry.participantPn,
+      entry.participantAlt,
+      participantPhoneJid(entry, learned),
+    ];
+    for (const candidate of candidates) {
+      const jid = normalizeStatusContact(candidate);
+      if (jid) ids.add(jid);
+    }
   }
+
   statusContacts.set(sock, ids);
-  console.log(`[CELESTIA STATUS] contacts synced count=${ids.size}`);
+  return { ids, added: ids.size - before };
+}
+
+function persistStatusContacts(ids) {
+  settingsStore.set(STATUS_CONTACTS_KEY, [...ids].slice(-MAX_STATUS_CONTACTS));
+}
+
+function restoreStatusContacts(sock) {
+  const saved = settingsStore.get(STATUS_CONTACTS_KEY, []);
+  const viewers = Object.keys(settingsStore.get('status_views', {}) || {})
+    .map((number) => `${String(number).replace(/\D/g, '')}@s.whatsapp.net`);
+  const { ids, added } = addStatusContacts(sock, [...(Array.isArray(saved) ? saved : []), ...viewers]);
+  if (added) {
+    console.log(`[CELESTIA STATUS] restored contacts count=${ids.size}`);
+  }
+  return [...ids];
+}
+
+function noteStatusContacts(sock, contacts, { persist = false } = {}) {
+  const { ids, added } = addStatusContacts(sock, contacts);
+  if (added) {
+    if (persist) persistStatusContacts(ids);
+    console.log(`[CELESTIA STATUS] contacts synced count=${ids.size} added=${added}`);
+  }
+}
+
+function contactsFromMessage(msg) {
+  const key = msg?.key || {};
+  const remoteJid = String(key.remoteJid || '');
+  const contacts = [];
+
+  if (remoteJid.endsWith('@g.us')) {
+    contacts.push({
+      id: key.participant,
+      participantPn: key.participantPn,
+      participantAlt: key.participantAlt,
+    });
+  } else if (
+    remoteJid &&
+    remoteJid !== 'status@broadcast' &&
+    !remoteJid.endsWith('@newsletter')
+  ) {
+    contacts.push({
+      id: remoteJid,
+      phoneNumber: key.remoteJidAlt,
+      participantPn: key.participantPn,
+      participantAlt: key.participantAlt,
+    });
+  }
+
+  return contacts;
+}
+
+function noteStatusMessages(sock, messages, { persist = true } = {}) {
+  const contacts = (messages || []).flatMap(contactsFromMessage);
+  noteStatusContacts(sock, contacts, { persist });
+}
+
+function noteStatusMessage(sock, msg, options) {
+  noteStatusMessages(sock, [msg], options);
 }
 
 function noteStatusPrivacy(sock, value) {
@@ -171,4 +258,4 @@ async function postStatus(sock, content, opts = {}) {
   }
 }
 
-module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, noteStatusContacts, noteStatusPrivacy, syncedStatusContacts, statusJids, groupStatusJids, postStatus };
+module.exports = { WA_LIMIT, escapeXml, wrapText, createCard, generateImage, mediaDuration, createWaveform, restoreStatusContacts, noteStatusContacts, noteStatusMessage, noteStatusMessages, noteStatusPrivacy, syncedStatusContacts, statusJids, groupStatusJids, postStatus };

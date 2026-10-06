@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const statusCmd = require('../commands/status');
 const whatsappCommands = require('../commands/whatsapp');
-const { noteStatusContacts } = require('../utils/mediaStudio');
+const { noteStatusContacts, noteStatusMessage } = require('../utils/mediaStudio');
 
 const DM = '254700000099@s.whatsapp.net';
 
@@ -105,7 +105,37 @@ test('status refuses honestly when no contacts are available', async () => {
   await statusCmd.execute(sock, dmTextMsg(), ['Nobody', 'here']);
 
   assert.equal(sent.some((e) => e.jid === 'status@broadcast'), false);
-  assert.match(sent.at(-1).content.text, /no contact store/);
+  assert.match(sent.at(-1).content.text, /does not know any personal Status recipients/);
+  assert.doesNotMatch(sent.at(-1).content.text, /sock\.|global\.store/);
+});
+
+test('status learns recipients from synced history and live message identities', async () => {
+  const sent = [];
+  const sock = statusSock(sent);
+  noteStatusMessage(sock, {
+    key: {
+      remoteJid: '123456789012345@lid',
+      remoteJidAlt: '254700000001@s.whatsapp.net',
+      fromMe: false,
+    },
+  }, { persist: false });
+  noteStatusMessage(sock, {
+    key: {
+      remoteJid: '120363000000000000@g.us',
+      participant: '234567890123456@lid',
+      participantPn: '254700000002@s.whatsapp.net',
+      fromMe: false,
+    },
+  }, { persist: false });
+
+  await statusCmd.execute(sock, dmTextMsg(), ['Learned', 'audience']);
+
+  const status = sent.find((entry) => entry.jid === 'status@broadcast');
+  assert.deepEqual(status.options.statusJidList.sort(), [
+    '254700000001@s.whatsapp.net',
+    '254700000002@s.whatsapp.net',
+    '254700000099@s.whatsapp.net',
+  ].sort());
 });
 
 test('status stays LID-only for LID-based accounts', async () => {
