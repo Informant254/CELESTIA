@@ -218,6 +218,13 @@
   .done-mark { font-size: 44px; margin-bottom: 10px; filter: drop-shadow(0 0 16px rgba(125, 255, 168, 0.4)); }
   .done-title { font-size: 18px; font-weight: 800; letter-spacing: 2px; color: var(--green); margin-bottom: 6px; }
   a { color: var(--cyan); }
+  button.secondary { margin-top: 12px; background: transparent; color: var(--cyan); border: 1px solid var(--line); }
+  .music-panel { padding: 12px 14px; margin: 0 0 24px; border: 1px solid var(--line); border-radius: 14px; background: rgba(0, 229, 255, 0.035); }
+  .music-panel button { padding: 10px; font-size: 11px; letter-spacing: 2px; background: transparent; color: var(--cyan); border: 1px solid var(--line); }
+  .music-panel button[aria-pressed="true"] { background: rgba(0, 229, 255, 0.12); }
+  .music-volume { display: flex; align-items: center; gap: 12px; margin-top: 10px; color: var(--muted); font-size: 11px; }
+  .music-volume input { flex: 1; min-width: 0; accent-color: var(--cyan); }
+  .music-caption { font-size: 10px; color: var(--muted); margin-top: 8px; }
   @media (max-width: 480px) {
     .card { padding: 36px 22px 26px; border-radius: 22px; }
     h1 { font-size: 27px; letter-spacing: 7px; }
@@ -237,6 +244,12 @@
   <h1>CELESTIA</h1>
   <div class="sub">Pairing Station</div>
   <div class="poem">✦ Howl of the Wolf → Light of the Stars ✦</div>
+
+  <div class="music-panel">
+    <button id="music-toggle" type="button" aria-pressed="false" aria-label="Play background music">♫ Play background music</button>
+    <label class="music-volume" for="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="5" value="20"></label>
+    <div class="music-caption" id="music-status" role="status" aria-live="polite">Starlight · a soft ambient loop. Tap to play.</div>
+  </div>
 
   <div id="stage-input">
     <label class="field-label" for="phone">WhatsApp number</label>
@@ -260,8 +273,10 @@
       <b>3</b>Tap <b>"Link with phone number instead"</b><br>
       <b>4</b>Enter the code above
     </div>
-    <button onclick="checkStatus()"><span class="spinner"></span>&nbsp; I've entered it — check</button>
+    <button onclick="checkStatus()">I've entered it — check</button>
     <div class="err" id="err2" role="alert"></div>
+    <div class="micro" id="waiting" role="status" aria-live="polite">Waiting for you to link WhatsApp…</div>
+    <button class="secondary" onclick="location.reload()">Start again</button>
   </div>
 
   <div id="stage-done" style="display:none">
@@ -272,8 +287,10 @@
     <div class="warn">🔐 Treat this string like a password. Anyone holding it controls this WhatsApp link. Never share or post it.</div>
     <div class="steps session-note">
       <b>★</b>Paste it into your <code>SESSION_ID</code> environment variable — she'll wake up as YOUR bot.<br><br>
-      <b>★</b>Or just start chatting: send <code>.menu</code> to her on WhatsApp.
+      <b>★</b>Deploy your bot in <a href="/control">CELESTIA Cloud</a>, then send <code>.menu</code> on WhatsApp.
     </div>
+    <button onclick="copySession()">Copy session ID</button>
+    <button class="secondary" onclick="downloadSession()">Download session ID</button>
   </div>
 
   <div class="foot">Celestia · Forged in the Wolf's Den</div>
@@ -281,25 +298,36 @@
 
 <script>
 const $ = id => document.getElementById(id);
+let pairingPhone = '';
+let requestToken = '';
+let pollTimer;
+let pollBusy = false;
+let polling = false;
+let pollDeadline = 0;
 
 async function requestCode() {
   const phone = $('phone').value.replace(/\D/g, '');
   $('err').textContent = '';
-  if (phone.length < 8) { $('err').textContent = 'Number looks too short — include country code.'; return; }
+  if (phone.length < 8 || phone.length > 15) { $('err').textContent = 'Use your full international number, including country code.'; return; }
   document.querySelector('#stage-input button').disabled = true;
   document.querySelector('#stage-input button').innerHTML = '<span class="spinner"></span>&nbsp; REQUESTING…';
   try {
-    const r = await fetch('/api/pair', {
+    const r = await fetch('./api/pair', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone })
+      body: JSON.stringify({ phone }),
+      signal: AbortSignal.timeout(180000)
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'request failed');
+    pairingPhone = phone;
+    requestToken = d.requestToken;
     $('code').textContent = d.code;
     $('stage-input').style.display = 'none';
     $('stage-code').style.display = 'block';
     // auto-poll for link
-    pollLink(phone);
+    polling = true;
+    pollDeadline = Date.now() + 10 * 60 * 1000;
+    pollLink();
   } catch (e) {
     $('err').textContent = e.message;
     document.querySelector('#stage-input button').disabled = false;
@@ -307,35 +335,75 @@ async function requestCode() {
   }
 }
 
-async function checkStatus() { /* manual check also handled by poll */ }
+async function checkStatus() {
+  if (pollBusy || !polling) return;
+  clearTimeout(pollTimer);
+  await pollLink();
+}
 
-let pollCount = 0;
-async function pollLink(phone) {
-  pollCount++;
-  if (pollCount > 60) return; // ~3 min of polling
+async function pollLink() {
+  if (!polling || pollBusy) return;
+  if (Date.now() >= pollDeadline) {
+    polling = false;
+    $('err2').textContent = 'Pairing expired. Press Start again to request a fresh code.';
+    return;
+  }
+  pollBusy = true;
   try {
-    const r = await fetch('/api/status', {
+    const r = await fetch('./api/status', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone })
+      body: JSON.stringify({ phone: pairingPhone, requestToken }),
+      signal: AbortSignal.timeout(15000)
     });
     const d = await r.json();
+    if (!r.ok) {
+      polling = false;
+      $('err2').textContent = d.error || 'Pairing failed. Press Start again.';
+      return;
+    }
     if (d.linked && d.sessionString) {
+      polling = false;
+      requestToken = '';
       $('stage-code').style.display = 'none';
       $('session').textContent = d.sessionString;
       $('stage-done').style.display = 'block';
       return;
     }
-  } catch {}
-  setTimeout(() => pollLink(phone), 3000);
+    $('err2').textContent = '';
+    $('waiting').textContent = 'Waiting for WhatsApp to finish linking…';
+  } catch {
+    $('err2').textContent = 'Connection interrupted — retrying…';
+  } finally {
+    pollBusy = false;
+    if (polling) pollTimer = setTimeout(pollLink, 3000);
+  }
 }
 
-function copyCode() {
-  navigator.clipboard.writeText($('code').textContent);
-  flash($('code'), 'COPIED ✓');
+async function copyCode() {
+  try {
+    await navigator.clipboard.writeText($('code').textContent);
+    flash($('code'), 'COPIED ✓');
+  } catch {
+    $('err2').textContent = 'Select the code and copy it manually.';
+  }
 }
-function copySession() {
-  navigator.clipboard.writeText($('session').textContent);
-  flash($('session'), 'session copied ✓');
+async function copySession() {
+  try {
+    await navigator.clipboard.writeText($('session').textContent);
+  } catch {
+    const range = document.createRange();
+    range.selectNodeContents($('session'));
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  }
+}
+function downloadSession() {
+  const url = URL.createObjectURL(new Blob([$('session').textContent], { type: 'text/plain' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'CELESTIA-session.txt';
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 function flash(el, msg) {
   const old = el.textContent;
@@ -343,5 +411,6 @@ function flash(el, msg) {
   setTimeout(() => el.textContent = old, 900);
 }
 </script>
+<script src="./music.js" defer></script>
 </body>
 </html>

@@ -1,0 +1,24 @@
+services:
+  pairing:
+    build:
+      context: ../..
+      dockerfile: deploy/pairing/Dockerfile
+    image: celestia/pairing:local
+    container_name: celestia-pairing
+    environment:
+      PORT: "3001"
+      PAIRING_TRUST_PROXY: "1"
+    restart: unless-stopped
+    mem_limit: 256m
+    volumes:
+      - pairing_sessions:/app/pairing_sessions
+    networks:
+      - control
+
+volumes:
+  pairing_sessions:
+
+networks:
+  control:
+    external: true
+    name: celestia-cloud_control

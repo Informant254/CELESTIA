@@ -1,0 +1,13 @@
+{
+  "name": "celestia-pairing",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@whiskeysockets/baileys": "npm:wolfsocket@1.0.1",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "engines": {
+    "node": ">=20.19.0"
+  }
+}

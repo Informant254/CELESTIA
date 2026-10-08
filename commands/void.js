@@ -31,7 +31,7 @@ IDENTITY:
 • Official repo: https://github.com/Informant254/CELESTIA
 
 OFFICIAL PAIRING SITES:
-• https://celestia.pairsite.space
+• https://celestia-cloud.spaincentral.cloudapp.azure.com/pair/
 
 CELESTIA HELP:
 • FORK: Open the official repo → Fork → select the user's GitHub account.
@@ -41,7 +41,7 @@ CELESTIA HELP:
 LINKING / PAIRING:
 1. Fork the official CELESTIA repository.
 2. Deploy the user's own fork.
-3. Open either official pairing site.
+3. Open the official pairing site.
 4. Follow the pairing instructions.
 
 PAIRING CODE:

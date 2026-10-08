@@ -26,6 +26,9 @@ const {
 } = require('@whiskeysockets/baileys');
 
 const app = express();
+// This service is reachable only through the private Caddy network.
+// Set to one hop in the hosted station so limits apply per visitor.
+if (process.env.PAIRING_TRUST_PROXY === '1') app.set('trust proxy', 1);
 // Railway/Render inject PORT; use it when present (single-service deployments).
 // Local/Docker: PAIRING_PORT keeps the station separate from the bot.
 const PORT = process.env.PORT || process.env.PAIRING_PORT || 3001;
@@ -35,7 +38,7 @@ if (!fs.existsSync(PAIRING_DIR)) fs.mkdirSync(PAIRING_DIR, { recursive: true });
 
 const silentLogger = {
   info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {},
-  child: () => ({ info: () => {}, warn: () => {}, error: () => {}, debug: () => {}, trace: () => {} }),
+  child: () => silentLogger,
 };
 
 const activeSockets = new Map(); // phone -> session
@@ -78,7 +81,7 @@ async function startPairingAttempt(phone, requestToken) {
   const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
   const { version } = await fetchLatestBaileysVersion();
 
-  const sock = makeWASocket({
+  const socketOptions = {
     version,
     auth: { creds: state.creds, keys: makeCacheableSignalKeyStore(state.keys, silentLogger) },
     logger: silentLogger,
@@ -86,7 +89,8 @@ async function startPairingAttempt(phone, requestToken) {
     browser: ['Ubuntu', 'Chrome', '120.0.6099.130'],
     syncFullHistory: false,
     shouldSyncHistoryMessage: () => false,
-  });
+  };
+  let sock = makeWASocket(socketOptions);
 
   const session = {
     sock,
@@ -117,7 +121,8 @@ async function startPairingAttempt(phone, requestToken) {
     }, 30000);
     session.timers.add(timer);
 
-    sock.ev.on('connection.update', async (update) => {
+    const onConnectionUpdate = async (update) => {
+      if (session.disposed) return;
       const { connection, lastDisconnect } = update;
 
       if (connection === 'connecting' || connection === 'connected') {
@@ -156,6 +161,23 @@ async function startPairingAttempt(phone, requestToken) {
 
       if (connection === 'close') {
         const status = lastDisconnect?.error?.output?.statusCode;
+        if (session.ready && status === 515) {
+          // WhatsApp requires a fresh socket after accepting the code. Keep
+          // the same auth state and export only after that socket opens.
+          try {
+            await session.credsSaveChain;
+            try { sock.ev.removeAllListeners(); } catch {}
+            try { sock.end(undefined); } catch {}
+            if (session.disposed) return;
+            sock = makeWASocket(socketOptions);
+            session.sock = sock;
+            sock.ev.on('creds.update', () => { queueCredsSave().catch(() => {}); });
+            sock.ev.on('connection.update', onConnectionUpdate);
+          } catch {
+            session.error = 'Could not complete the linked connection. Please start again.';
+          }
+          return;
+        }
         // if we already have a code, the flap doesn't matter â€” keep session
         if (session.ready) return;
         // 401/428 while un-registered is normal during pairing attempts â€”
@@ -163,7 +185,8 @@ async function startPairingAttempt(phone, requestToken) {
         clearTimeout(timer);
         finishErr('socket closed (status ' + status + ') â€” retrying');
       }
-    });
+    };
+    sock.ev.on('connection.update', onConnectionUpdate);
   });
 }
 
@@ -172,16 +195,15 @@ async function startPairingAttempt(phone, requestToken) {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const RATE = new Map();
-app.use(express.json());
+app.use(express.json({ limit: '16kb' }));
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 app.get('/', (req, res, next) => {
   fs.readFile(path.join(__dirname, 'public', 'index.html'), 'utf8', (error, html) => {
     if (error) return next(error);
-    const tokenAwareHtml = html
-      .replace('pollLink(phone);', 'pollLink(phone, d.requestToken);')
-      .replace('async function pollLink(phone) {', 'async function pollLink(phone, requestToken) {')
-      .replace('body: JSON.stringify({ phone })\n    });\n    const d = await r.json();\n    if (d.linked', 'body: JSON.stringify({ phone, requestToken })\n    });\n    const d = await r.json();\n    if (d.linked')
-      .replace('setTimeout(() => pollLink(phone), 3000);', 'setTimeout(() => pollLink(phone, requestToken), 3000);');
-    res.type('html').send(tokenAwareHtml);
+    res.type('html').send(html);
   });
 });
 app.use(express.static(path.join(__dirname, 'public')));
@@ -223,17 +245,19 @@ app.post('/api/pair', async (req, res) => {
   const ip = req.ip || 'anon';
   if (rateLimited(ip)) return res.status(429).json({ error: 'Too many attempts. Try again in an hour.' });
 
-  const phone = String(req.body.phone || '').replace(/\D/g, '');
+  const phone = String(req.body?.phone || '').replace(/\D/g, '');
   if (phone.length < 8 || phone.length > 15) {
     return res.status(400).json({ error: 'Invalid number. Use full international format, digits only.' });
   }
   if (!RATE.has(ip)) RATE.set(ip, []);
+  if (activeSockets.size + pairingLocks.size >= 20 && !activeSockets.has(phone)) {
+    return res.status(503).json({ error: 'The pairing station is busy. Please try again shortly.' });
+  }
   RATE.get(ip).push(Date.now());
 
   try {
     const requestToken = crypto.randomBytes(32).toString('base64url');
     const session = await replacePairingSession(phone, requestToken);
-    res.setHeader('Set-Cookie', `pairing_request=${encodeURIComponent(requestToken)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1000}`);
     res.json({ ok: true, code: session.code, requestToken });
   } catch (e) {
     res.status(502).json({ error: e.message });
@@ -241,10 +265,10 @@ app.post('/api/pair', async (req, res) => {
 });
 
 app.post('/api/status', async (req, res) => {
-  const phone = String(req.body.phone || '').replace(/\D/g, '');
+  const phone = String(req.body?.phone || '').replace(/\D/g, '');
   const session = activeSockets.get(phone);
   if (!session) return res.status(404).json({ error: 'no session â€” start again' });
-  const requestToken = req.body.requestToken || readCookie(req, 'pairing_request');
+  const requestToken = req.body?.requestToken || readCookie(req, 'pairing_request');
   if (!tokenMatches(requestToken, session.requestToken)) return res.status(403).json({ error: 'invalid request token' });
   if (Date.now() >= session.expiresAt) {
     await disposeSession(phone, session);
@@ -258,7 +282,6 @@ app.post('/api/status', async (req, res) => {
   if (session.linked && session.sessionString) {
     const sessionString = session.sessionString;
     await disposeSession(phone, session);
-    res.setHeader('Set-Cookie', 'pairing_request=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0');
     return res.json({ ok: true, linked: true, sessionString });
   }
   res.json({ ok: true, linked: false });
@@ -269,12 +292,21 @@ const expiryTimer = setInterval(() => {
   for (const [phone, session] of activeSockets) {
     if (now >= session.expiresAt) disposeSession(phone, session).catch(() => {});
   }
+  for (const [ip, attempts] of RATE) {
+    const recent = attempts.filter((timestamp) => now - timestamp < 60 * 60 * 1000);
+    if (recent.length) RATE.set(ip, recent);
+    else RATE.delete(ip);
+  }
 }, 30000);
 expiryTimer.unref();
 
 app.get('/health', (req, res) => res.json({ ok: true, service: 'celestia-pairing' }));
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`ðŸŒ CELESTIA pairing station on http://0.0.0.0:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`CELESTIA pairing station on http://0.0.0.0:${PORT}`);
+  });
+}
+
+module.exports = { app, startPairingAttempt, disposeSession };
 

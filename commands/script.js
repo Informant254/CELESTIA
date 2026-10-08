@@ -51,7 +51,7 @@ Hello 👋 *${senderName},*
 ⭐ Please star and fork the repository!
 
 🔗 *WhatsApp Pairing:*
-↳ https://celestia.pairsite.space
+↳ https://celestia-cloud.spaincentral.cloudapp.azure.com/pair/
 ★ Save your Session-ID!
 
 ⚙️ *Requirements:*
