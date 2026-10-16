@@ -1,37 +1,17 @@
-# Render Blueprint — one-click deploy of bot + pairing station.
-# Render injects $PORT automatically; she reads it (config.dashboardPort).
+# Isolated media-engine service blueprint. Only on feature branch; CELESTIA main is untouched.
 services:
   - type: web
-    name: celestia
-    runtime: node
-    buildCommand: npm install --production
-    startCommand: node index.js
+    name: novahex-media-engine
+    runtime: docker
+    plan: free
+    region: frankfurt
+    branch: feature/novahex-media-engine-v1
+    dockerContext: media-engine
+    dockerfilePath: media-engine/Dockerfile
     healthCheckPath: /health
+    autoDeployTrigger: off
     envVars:
-      - key: SESSION_ID
+      - key: NOVAHEX_API_KEY
         sync: false
-      - key: OWNER_NUMBER
-        sync: false
-      - key: QR_ACCESS_TOKEN
-        sync: false
-      - key: BOT_NAME
-        value: CELESTIA
-      - key: BOT_PREFIX
-        value: .
-      - key: TIMEZONE
-        value: Africa/Nairobi
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: DASHBOARD_API_KEY
-        generateValue: true
-      - key: LOG_LEVEL
-        value: info
-  # Optional second service: public pairing page for fresh SESSION_IDs.
-  - type: web
-    name: celestia-pairing
-    runtime: node
-    buildCommand: npm install --production
-    startCommand: node pairing-site.js
-    healthCheckPath: /health
+      - key: MAX_MEDIA_MB
+        value: "35"
