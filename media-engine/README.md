@@ -24,3 +24,23 @@ const bytes = Buffer.from(await response.arrayBuffer());
 // Supply bytes to your bot and obey platform upload-size limits.
 
 This is an MVP, not a 24/7 uptime SLA. Free Render services can idle/sleep and use ephemeral disks. For production, use an always-on worker, a rate limiter, outbound network isolation to guard against DNS rebinding, and bot-side user access control.
+
+
+## Render manual deployment (when API repository resolution fails)
+
+Use Render Dashboard > New > Web Service > **Git Provider**. Select the **Informant254/CELESTIA** repository and then:
+
+| Setting | Value |
+| --- | --- |
+| Name | novahex-media-engine |
+| Branch | feature/novahex-media-engine-v1 |
+| Runtime | Docker |
+| Dockerfile Path | media-engine/Dockerfile |
+| Docker Context | media-engine |
+| Plan | Free for testing (sleeps when idle) |
+| Region | Frankfurt |
+| Health Check Path | /health |
+
+Under Environment add `NOVAHEX_API_KEY` with your secret key and `MAX_MEDIA_MB=35`. Keep the API key out of Git and bot chat messages. After a successful deploy check `/health` and `/docs`. The source repo's root Render Blueprint is reserved for CELESTIA and must not be used for this standalone service.
+
+**Important:** Connect the repository in Render's Git Deployment Credentials, not only in ChatGPT's separate GitHub plugin. Do not merge this feature branch into CELESTIA's main branch to deploy the media engine.
