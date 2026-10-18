@@ -305,15 +305,7 @@ async function apixVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
 async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
   const errs = [];
 
-  // 1) Keith first — no API key required by the client.
-  try {
-    return await keithAudio(videoUrl, fallbackTitle, signal);
-  } catch (e) {
-    if (signal?.aborted) throw signal.reason || e;
-    errs.push('keith: ' + (e.response?.status || e.message));
-  }
-
-  // 2) bk9 — keyless and links generally stream cross-network.
+  // 1) bk9 — keyless and links generally stream cross-network.
   try {
     const r = await axios.get(
       `https://api.bk9.dev/download/ytmp3?url=${encodeURIComponent(videoUrl)}`,
@@ -329,7 +321,7 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
     errs.push('bk9: ' + (e.response?.status || e.message));
   }
 
-  // 3) davidcyril is optional and is never contacted without an owner key.
+  // 2) davidcyril is optional and is never contacted without an owner key.
   if (process.env.DAVIDCYRIL_APIKEY) {
     try {
       const r = await axios.get(dcUrl('ytmp3', videoUrl), { timeout: API_TIMEOUT, signal });
@@ -343,21 +335,23 @@ async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
       errs.push('davidcyril: ' + (e.response?.status || e.message));
     }
   }
+
+  // 3) Keith is a legacy keyless lane whose hosted app has been offline since
+  // its Railway project vanished; kept dead-last (and revivable via
+  // KEITH_BASE) so it never costs latency while newer lanes still answer.
+  try {
+    return await keithAudio(videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    if (signal?.aborted) throw signal.reason || e;
+    errs.push('keith: ' + (e.response?.status || e.message));
+  }
   throw new Error('Audio download failed (' + errs.join(' · ') + '). Try again later.');
 }
 
 async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
   const errs = [];
 
-  // 1) Keith first — no API key required by the client.
-  try {
-    return await keithVideo(videoUrl, fallbackTitle, signal);
-  } catch (e) {
-    if (signal?.aborted) throw signal.reason || e;
-    errs.push('keith: ' + (e.response?.status || e.message));
-  }
-
-  // 2) BK9 remains a keyless fallback.
+  // 1) BK9 remains a keyless fallback.
   try {
     const r = await axios.get(
       `https://api.bk9.dev/download/youtube?url=${encodeURIComponent(videoUrl)}&quality=480p&type=video`,
@@ -378,7 +372,7 @@ async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
     errs.push('bk9: ' + (e.response?.status || e.message));
   }
 
-  // 3) davidcyril is optional and is never contacted without an owner key.
+  // 2) davidcyril is optional and is never contacted without an owner key.
   if (process.env.DAVIDCYRIL_APIKEY) {
     try {
       const r = await axios.get(dcUrl('ytmp4', videoUrl), { timeout: API_TIMEOUT, signal });
@@ -391,6 +385,16 @@ async function ytVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
       if (signal?.aborted) throw signal.reason || e;
       errs.push('davidcyril: ' + (e.response?.status || e.message));
     }
+  }
+
+  // 3) Keith is a legacy keyless lane whose hosted app has been offline since
+  // its Railway project vanished; kept dead-last (and revivable via
+  // KEITH_BASE) so it never costs latency while newer lanes still answer.
+  try {
+    return await keithVideo(videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    if (signal?.aborted) throw signal.reason || e;
+    errs.push('keith: ' + (e.response?.status || e.message));
   }
   throw new Error('Video download failed (' + errs.join(' · ') + '). Try again later.');
 }
