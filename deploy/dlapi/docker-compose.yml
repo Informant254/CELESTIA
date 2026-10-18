@@ -1,0 +1,28 @@
+# CELESTIA Download API — deployed at /opt/celestia-dlapi on the cloud VM.
+# Secrets live in ./.env (root-owned, chmod 600, never committed).
+#
+#   PUBLIC_BASE        e.g. https://<panel-host>/dl
+#   DLAPI_KEYS         comma-separated keys this service accepts
+#   DLAPI_SECRET       64-hex HMAC secret for stream tokens
+#   DAVIDCYRIL_APIKEY  upstream key (optional)
+#   APIX_KEY           upstream key (optional)
+#
+# Joined to the cloud stack's external network so Caddy can proxy /dl/*.
+services:
+  dlapi:
+    build: .
+    container_name: celestia-dlapi
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - PUBLIC_BASE=${PUBLIC_BASE}
+      - DLAPI_KEYS=${DLAPI_KEYS}
+      - DLAPI_SECRET=${DLAPI_SECRET}
+      - DAVIDCYRIL_APIKEY=${DAVIDCYRIL_APIKEY}
+      - APIX_KEY=${APIX_KEY}
+    networks: [control]
+
+networks:
+  control:
+    external: true
+    name: celestia-cloud_control

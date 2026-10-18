@@ -328,6 +328,7 @@ test('audio fallback goes to direct APIs when apix and yt-dlp fail', async () =>
     probe: async () => ({ size: 10, duration: 180 }),
   } };
   require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {
+    dlapiAudio: async () => { throw new Error('no download API configured'); },
     apixAudio: async () => { throw new Error('no Apix key configured'); },
     ytAudio: async () => ({ url: 'https://example.com/f.mp3', title: 'T' }),
     downloadBuffer: async () => Buffer.from('DIRECTMP3'),
@@ -388,6 +389,99 @@ test('apix audio fails fast with a clear message when no key is set', async () =
     await assert.rejects(() => dl.apixAudio('https://www.youtube.com/watch?v=x'), /no Apix key/);
   } finally {
     if (prev !== undefined) process.env.APIX_KEY = prev;
+  }
+});
+
+test('fleet download API resolves a same-host stream URL', async () => {
+  const axiosPath = require.resolve('axios');
+  const orig = require.cache[axiosPath]?.exports;
+  const prevBase = process.env.DLAPI_BASE;
+  const prevKey = process.env.DLAPI_KEY;
+  process.env.DLAPI_BASE = 'https://dl.example.com/dl';
+  process.env.DLAPI_KEY = 'test-dl-key';
+  const calls = [];
+  require.cache[axiosPath] = {
+    id: axiosPath, filename: axiosPath, loaded: true,
+    exports: {
+      get: async (url) => {
+        calls.push(url);
+        return { data: { success: true, title: 'T', downloadUrl: 'https://celestia-cloud.spaincentral.cloudapp.azure.com/dl/api/stream/tok123' } };
+      },
+    },
+  };
+  try {
+    const dl = freshDownloader();
+    const r = await dl.dlapiAudio('https://www.youtube.com/watch?v=x');
+    assert.equal(r.url, 'https://celestia-cloud.spaincentral.cloudapp.azure.com/dl/api/stream/tok123');
+    assert.equal(r.title, 'T');
+    assert.equal(calls.length, 1, 'single resolve call');
+    assert.match(calls[0], /dl\.example\.com\/dl\/api\/download\/youtube\/mp3/, 'fleet mp3 endpoint');
+    assert.match(calls[0], /key=test-dl-key/, 'fleet key attached');
+  } finally {
+    if (prevBase === undefined) delete process.env.DLAPI_BASE;
+    else process.env.DLAPI_BASE = prevBase;
+    if (prevKey === undefined) delete process.env.DLAPI_KEY;
+    else process.env.DLAPI_KEY = prevKey;
+    if (orig === undefined) delete require.cache[axiosPath];
+    else require.cache[axiosPath].exports = orig;
+  }
+});
+
+test('fleet download API fails fast with a clear message when not configured', async () => {
+  const prevBase = process.env.DLAPI_BASE;
+  const prevKey = process.env.DLAPI_KEY;
+  delete process.env.DLAPI_BASE;
+  delete process.env.DLAPI_KEY;
+  try {
+    const dl = freshDownloader();
+    await assert.rejects(() => dl.dlapiAudio('https://www.youtube.com/watch?v=x'), /no download API configured/);
+    await assert.rejects(() => dl.dlapiVideo('https://www.youtube.com/watch?v=x'), /no download API configured/);
+  } finally {
+    if (prevBase === undefined) delete process.env.DLAPI_BASE;
+    else process.env.DLAPI_BASE = prevBase;
+    if (prevKey === undefined) delete process.env.DLAPI_KEY;
+    else process.env.DLAPI_KEY = prevKey;
+  }
+});
+
+test('fallback prefers the fleet download API lane before apix', async () => {
+  const ytdlpPath = require.resolve('../download/ytdlp');
+  const ffmpegPath = require.resolve('../download/ffmpeg');
+  const apiPath = require.resolve('../utils/downloader');
+  const fallbackPath = require.resolve('../download/fallback');
+  const originals = new Map([ytdlpPath, ffmpegPath, apiPath, fallbackPath].map((p) => [p, require.cache[p]]));
+  let apixCalled = false;
+  require.cache[ytdlpPath] = { id: ytdlpPath, filename: ytdlpPath, loaded: true, exports: {
+    attempt: async () => { throw new Error('yt-dlp should not be reached'); },
+  } };
+  require.cache[ffmpegPath] = { id: ffmpegPath, filename: ffmpegPath, loaded: true, exports: {
+    streams: async () => [{ codec_type: 'audio' }],
+    probe: async () => ({ size: 10, duration: 180 }),
+  } };
+  require.cache[apiPath] = { id: apiPath, filename: apiPath, loaded: true, exports: {
+    dlapiAudio: async () => ({ url: 'https://dl.example.com/dl/api/stream/tok', title: 'T' }),
+    apixAudio: async () => { apixCalled = true; throw new Error('apix should not be tried'); },
+    ytAudio: async () => { throw new Error('api-direct should not be tried'); },
+    downloadBuffer: async () => Buffer.from('DLAPI'),
+  } };
+  const fs = require('node:fs');
+  const stat = fs.promises.stat;
+  const writeFile = fs.promises.writeFile;
+  fs.promises.stat = async (p) => String(p).endsWith('out.mp3') ? { size: 5 } : stat(p);
+  fs.promises.writeFile = async () => {};
+  delete require.cache[fallbackPath];
+  try {
+    const fallback = require('../download/fallback');
+    const result = await fallback.downloadWithFallback({
+      url: 'https://youtube.com/watch?v=x', title: 'Artist - Song', isAudio: true, workDir: '/tmp', maxBytes: 100,
+    });
+    assert.equal(result.strategy, 'dlapi');
+    assert.equal(result.engine, 'dlapi');
+    assert.equal(apixCalled, false, 'apix untouched when the fleet lane succeeds');
+  } finally {
+    fs.promises.stat = stat;
+    fs.promises.writeFile = writeFile;
+    for (const [p, cached] of originals) cached ? require.cache[p] = cached : delete require.cache[p];
   }
 });
 

@@ -302,6 +302,40 @@ async function apixVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
   }
 }
 
+// CELESTIA Download API (self-hosted on the owner's VM, reachable at
+// /dl): one fleet key, bytes proxied by our own host. Needs DLAPI_BASE +
+// DLAPI_KEY and is skipped entirely without them.
+async function dlapiMedia(kind, videoUrl, fallbackTitle, signal) {
+  const base = String(process.env.DLAPI_BASE || '').replace(/\/+$/, '');
+  const key = process.env.DLAPI_KEY || '';
+  if (!base || !key) throw new Error('no download API configured');
+  const r = await axios.get(
+    `${base}/api/download/youtube/${kind}?url=${encodeURIComponent(videoUrl)}&key=${encodeURIComponent(key)}`,
+    { timeout: API_TIMEOUT, signal }
+  );
+  const url = r.data?.downloadUrl;
+  if (r.data?.success && url) {
+    return { url: await validateDownloadUrl(url, signal), title: r.data?.title || fallbackTitle };
+  }
+  throw new Error(r.data?.error || 'no media link');
+}
+
+async function dlapiAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
+  try {
+    return await dlapiMedia('mp3', videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    throw new Error('Download API audio failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
+async function dlapiVideo(videoUrl, fallbackTitle = 'YouTube Video', signal) {
+  try {
+    return await dlapiMedia('mp4', videoUrl, fallbackTitle, signal);
+  } catch (e) {
+    throw new Error('Download API video failed (' + (e.response?.status || e.message) + ').');
+  }
+}
+
 async function ytAudio(videoUrl, fallbackTitle = 'YouTube Audio', signal) {
   const errs = [];
 
@@ -653,7 +687,7 @@ function cleanName(s, ext) {
 }
 
 module.exports = {
-  ytSearch, ytAudio, ytVideo, keithAudio, keithVideo, apixAudio, apixVideo,
+  ytSearch, ytAudio, ytVideo, keithAudio, keithVideo, apixAudio, apixVideo, dlapiAudio, dlapiVideo,
   bk9Social, publicSocial, localSocial, downloadSocial, downloadResolved, downloadBuffer, detectMediaType,
   downloadYoutubeAudio, downloadYoutubeVideo,
   firstMediaUrl, pickCleanUrl, collectMediaUrls, cleanName, isPublicIp, validateDownloadUrl, validateSocialPageUrl, validateYoutubePageUrl,

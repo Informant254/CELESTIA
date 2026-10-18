@@ -116,7 +116,32 @@ async function downloadWithFallback({ url, title, quality, isAudio, workDir, onP
     logger.fallback({ tag, from: 'dlproxy' });
   }
 
-  // Apix second: same-host proxied bytes survive the datacenter-IP
+  // CELESTIA Download API second (the fleet's own self-hosted service):
+  // single key, bytes proxied by our own VM. Skips fast when DLAPI_BASE /
+  // DLAPI_KEY are unset and everything below stays as failover.
+  try {
+    throwIfAborted(signal);
+    const api = require('../utils/downloader');
+    const r = isAudio
+      ? await api.dlapiAudio(url, title, signal)
+      : await api.dlapiVideo(url, title, signal);
+    throwIfAborted(signal);
+    const buf = await api.downloadBuffer(r.url, byteLimit, 120000, 5, signal);
+    if (!buf.length) throw new Error('Download API download was empty.');
+    const file = path.join(workDir, isAudio ? 'out.mp3' : 'out.mp4');
+    await fs.promises.writeFile(file, buf);
+    await validateFile(file, isAudio);
+    throwIfAborted(signal);
+    logger.download({ tag, strategy: 'dlapi', status: 'success' });
+    return { file, size: buf.length, engine: 'dlapi', strategy: 'dlapi' };
+  } catch (e) {
+    throwIfAborted(signal);
+    lastErr = e;
+    logger.download({ tag, strategy: 'dlapi', status: 'failed', reason: classify(e), detail: String(e.message || '').slice(0, 120) });
+    logger.fallback({ tag, from: 'dlapi' });
+  }
+
+  // Apix third: same-host proxied bytes survive the datacenter-IP
   // wall that kills raw googlevideo links. Needs an Apix key (chat:
   // .autochat setkey apix <key>) — throws fast without one and everything
   // below stays as failover.
