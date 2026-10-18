@@ -32,7 +32,8 @@ bot's `SESSION_ID`. Pairing itself does not launch another bot worker.
 
 ## Background music
 
-Tap **Play background music** for the original **Starlight** ambient loop.
-The browser generates it locally using Web Audio, so there is no external
-music provider or audio download. A volume slider and pause control are
-available. Playback pauses when you switch away to WhatsApp.
+Tap **Play background music** for the **Another Love** chorus, looping from a
+self-hosted clip (`public/chorus.mp3`, shipped inside the image — no external
+music provider). Where the browser allows it the loop starts automatically;
+otherwise it begins on the first tap, click or keypress. A volume slider and
+pause control are available. Playback pauses when you switch away to WhatsApp.
