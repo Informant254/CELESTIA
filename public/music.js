@@ -2,14 +2,21 @@
  * Playback uses public/chorus.mp3 — no external audio requests.
  * Browsers block audible autoplay until a gesture: we try anyway, then
  * start on the first tap/click/keypress (unless the user paused us).
+ * Volume runs through a Web Audio gain stage, so the slider works even in
+ * browsers that ignore HTMLMediaElement volume (most phones).
  */
 (() => {
   const toggle = document.getElementById('music-toggle');
   const volume = document.getElementById('music-volume');
   const status = document.getElementById('music-status');
+  const pct = document.getElementById('music-volpct');
   const audio = new Audio('./chorus.mp3');
   audio.loop = true;
   audio.preload = 'auto';
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  let context = null;
+  let gain = null;
+  let usingGain = false;
   let playing = false;
   let userPaused = false;
   let degraded = false;
@@ -17,8 +24,39 @@
 
   const gestureEvents = ['pointerdown', 'keydown', 'touchstart'];
 
+  function level() {
+    return Math.min(1, Math.max(0, Number(volume.value) / 100));
+  }
+
   function setVolume() {
-    audio.volume = Math.min(1, Math.max(0, Number(volume.value) / 100));
+    const v = level();
+    if (usingGain && gain) {
+      gain.gain.value = v;
+      audio.volume = 1;
+    } else {
+      audio.volume = v;
+    }
+    if (pct) pct.textContent = Math.round(v * 100) + '%';
+  }
+
+  function attachGain() {
+    if (usingGain || degraded || !AudioContext) return;
+    try {
+      context = new AudioContext();
+      const source = context.createMediaElementSource(audio);
+      gain = context.createGain();
+      source.connect(gain);
+      gain.connect(context.destination);
+      usingGain = true;
+      setVolume();
+    } catch {
+      usingGain = false;
+      gain = null;
+    }
+  }
+
+  function resumeContext() {
+    if (context && context.state === 'suspended') context.resume().catch(() => {});
   }
 
   function showState() {
@@ -30,8 +68,12 @@
       : 'Another Love · the chorus, on loop. Tap to play.';
   }
 
-  async function play() {
+  async function play(userGesture) {
     try {
+      if (userGesture) {
+        attachGain();
+        resumeContext();
+      }
       setVolume();
       await audio.play();
       playing = true;
@@ -53,7 +95,7 @@
     if (!armed) return;
     if (event && event.target && toggle.contains(event.target)) return;
     stopArming();
-    if (!userPaused && !degraded) play();
+    if (!userPaused && !degraded) play(true);
   };
   function stopArming() {
     armed = false;
@@ -88,11 +130,14 @@
       userPaused = true;
       pause();
     } else {
-      play();
+      play(true);
     }
   });
 
-  volume.addEventListener('input', setVolume);
+  volume.addEventListener('input', () => {
+    setVolume();
+    resumeContext();
+  });
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden && playing) pause();
@@ -105,7 +150,7 @@
   (async () => {
     showState();
     setVolume();
-    await play();
+    await play(false);
     if (!playing && !degraded && !userPaused) arm();
   })();
 })();

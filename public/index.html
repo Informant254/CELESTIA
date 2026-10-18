@@ -188,6 +188,7 @@
   .music-panel button[aria-pressed="true"] + .eq span { animation-play-state: running; opacity: 0.95; }
   .music-volume { display: flex; align-items: center; gap: 12px; margin-top: 12px; color: var(--muted); font-size: 11px; letter-spacing: 1px; }
   .music-volume input { flex: 1; min-width: 0; accent-color: var(--cyan); }
+  .music-volume span { min-width: 36px; text-align: right; color: var(--cyan); letter-spacing: 0; font-variant-numeric: tabular-nums; }
   .music-caption { font-size: 10px; color: var(--faint); margin-top: 9px; letter-spacing: 0.6px; }
 
   /* ── form ────────────────────────────────────────────────────── */
@@ -394,7 +395,7 @@
       <button id="music-toggle" type="button" aria-pressed="false" aria-label="Play background music">♫ Play background music</button>
       <div class="eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
     </div>
-    <label class="music-volume" for="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="5" value="20"></label>
+    <label class="music-volume" for="music-volume">Volume <input id="music-volume" type="range" min="0" max="100" step="5" value="70"> <span id="music-volpct">70%</span></label>
     <div class="music-caption" id="music-status" role="status" aria-live="polite">Another Love · the chorus, on loop. Tap to play.</div>
   </div>
 
