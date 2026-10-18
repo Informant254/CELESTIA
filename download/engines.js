@@ -12,7 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const https = require('https');
 const crypto = require('crypto');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 
 const BIN_DIR = path.join(__dirname, 'bin');
 const TMP_DIR = path.join(__dirname, '..', 'downloads', 'tmp');
@@ -65,6 +65,17 @@ function runOnce(bin, args, timeoutMs = 20000) {
       resolve((stdout || '').trim());
     });
   });
+}
+
+function resolveOnPath(bin) {
+  if (path.isAbsolute(bin)) return bin;
+  try {
+    const resolver = process.platform === 'win32' ? 'where.exe' : 'which';
+    return execFileSync(resolver, [bin], { encoding: 'utf8', windowsHide: true })
+      .split(/\r?\n/).map((line) => line.trim()).find(Boolean) || bin;
+  } catch {
+    return bin;
+  }
 }
 
 async function installYtDlp() {
@@ -121,6 +132,8 @@ let ffmpegCache = null;
 let ffmpegPromise = null;
 let ffprobeCache = null;
 let ffprobePromise = null;
+let ytDlpToolsCache = null;
+let ytDlpToolsPromise = null;
 
 async function resolveMediaBinary({ override, bundled, system, label }) {
   const candidates = [];
@@ -130,7 +143,7 @@ async function resolveMediaBinary({ override, bundled, system, label }) {
   for (const candidate of [...new Set(candidates)]) {
     try {
       await runOnce(candidate, ['-version'], 10000);
-      return candidate;
+      return resolveOnPath(candidate);
     } catch { /* try the next installed option */ }
   }
   throw new Error(`${label}_MISSING: install system ${system} or reinstall its static package with install scripts enabled.`);
@@ -172,6 +185,40 @@ function ensureFfprobePath() {
   return ffprobePromise;
 }
 
+async function ensureYtDlpTools() {
+  if (ytDlpToolsCache) return ytDlpToolsCache;
+  if (!ytDlpToolsPromise) {
+    ytDlpToolsPromise = Promise.all([ensureFfmpegPath(), ensureFfprobePath()])
+      .then(async ([ffmpeg, ffprobe]) => {
+        const ffmpegDir = path.dirname(ffmpeg);
+        const ffprobeDir = path.dirname(ffprobe);
+        if (ffmpegDir === ffprobeDir) return ffmpegDir;
+
+        const dir = path.join(BIN_DIR, 'media-tools');
+        await fs.promises.mkdir(dir, { recursive: true });
+        const ffmpegName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+        const ffprobeName = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe';
+        await Promise.all([
+          fs.promises.copyFile(ffmpeg, path.join(dir, ffmpegName)),
+          fs.promises.copyFile(ffprobe, path.join(dir, ffprobeName)),
+        ]);
+        if (process.platform !== 'win32') {
+          await Promise.all([
+            fs.promises.chmod(path.join(dir, ffmpegName), 0o755),
+            fs.promises.chmod(path.join(dir, ffprobeName), 0o755),
+          ]);
+        }
+        return dir;
+      })
+      .then((dir) => {
+        ytDlpToolsCache = dir;
+        return dir;
+      })
+      .finally(() => { ytDlpToolsPromise = null; });
+  }
+  return ytDlpToolsPromise;
+}
+
 let aria2cCache = null;
 async function aria2cPath() {
   if (aria2cCache !== null) return aria2cCache;
@@ -208,5 +255,6 @@ async function status() {
 module.exports = {
   ensureYtDlp, ytdlpPath,
   ensureFfmpegPath, ensureFfprobePath,
+  ensureYtDlpTools,
   aria2cPath, tmpDir, status, runOnce, expectedChecksum, sha256,
 };

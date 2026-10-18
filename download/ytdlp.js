@@ -9,7 +9,7 @@ const fs = require('fs');
 const net = require('net');
 const path = require('path');
 const cfg = require('./config');
-const { ensureYtDlp, ensureFfmpegPath, aria2cPath } = require('./engines');
+const { ensureYtDlp, ensureYtDlpTools, aria2cPath } = require('./engines');
 
 const PARTIAL_RE = /\.(part|temp|tmp|ytdl)$/i;
 
@@ -167,10 +167,10 @@ async function findOutput(workDir) {
 // One attempt. Throws on any failure. Never retries.
 async function attempt({ url, selector, extra = [], audio = false, workDir, onProgress, maxBytes, youtube = true, signal }) {
   const bin = await ensureYtDlp();
-  const ffmpeg = await ensureFfmpegPath();
+  const mediaTools = await ensureYtDlpTools();
   const aria = await aria2cPath().catch(() => null);
 
-  const args = baseArgs(workDir, ffmpeg, maxBytes, { youtube });
+  const args = baseArgs(workDir, mediaTools, maxBytes, { youtube });
   if (aria) args.push('--external-downloader', 'aria2c', '--external-downloader-args', 'aria2c:-x 4 -s 4 -k 2M');
   args.push(...extra);
   if (audio) {
