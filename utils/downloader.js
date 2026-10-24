@@ -664,7 +664,16 @@ async function downloadYoutube(videoUrl, title, isAudio, maxBytes, quality, owne
         tag: 'legacy',
         signal: controller.signal,
       });
-      const media = { ...result, title, buffer: fs.readFileSync(result.file) };
+      let file = result.file;
+      if (!isAudio) {
+        file = await require('../download/ffmpeg').normalizeForWhatsApp(file, workDir, controller.signal);
+        const size = await fallback.validateFile(file, false);
+        if (size > (maxBytes || cfg.MAX_VIDEO_BYTES)) {
+          throw new Error('Converted video exceeds the download size limit (FILE_TOO_LARGE).');
+        }
+      }
+      const media = { ...result, file, title, buffer: fs.readFileSync(file) };
+      media.size = media.buffer.length;
       return { value: consume ? await consume(media) : media };
     } finally {
       clearTimeout(timeoutHandle);

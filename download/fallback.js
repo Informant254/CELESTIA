@@ -60,7 +60,7 @@ async function validateFile(file, isAudio) {
     throw new Error('Validated: media inspection failed.');
   }
   const want = isAudio ? 'audio' : 'video';
-  if (!ss.some((s) => s.codec_type === want)) {
+  if (!ss.some((s) => s.codec_type === want && (isAudio || !s.disposition?.attached_pic))) {
     throw new Error(`Validated: no ${want} stream in file (FORMAT_ERROR).`);
   }
   logger.validate({ status: 'success', size: `${(size / 1048576).toFixed(1)}MB` });
