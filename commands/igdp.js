@@ -4,28 +4,43 @@ const MAX_DP_BYTES = 20 * 1024 * 1024;
 const IG_APP_ID = '936619743392459';
 const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
+function parseProfileLink(link, depth = 0) {
+  link = String(link || '').trim().split(/\s+/)[0];
+  let parsed;
+  try { parsed = new URL(link); } catch { throw new Error('That Instagram link looks malformed.'); }
+  const host = parsed.hostname.toLowerCase().replace(/^www\.|^m\./, '');
+  if (!(host === 'instagram.com' || host.endsWith('.instagram.com'))) {
+    throw new Error('That link is not an Instagram profile.');
+  }
+  let segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length === 0) {
+    const wrapped = parsed.searchParams.get('u');
+    if (wrapped && depth < 2) {
+      return parseProfileLink(wrapped.startsWith('http') ? wrapped : `https://${wrapped}`, depth + 1);
+    }
+    throw new Error('Send a profile username or link, not a post or reel link.');
+  }
+  let name = segments[0].replace(/^@/, '');
+  if (name === 'stories' && segments[1]) name = segments[1];
+  if (!name || ['p', 'reel', 'reels', 'explore', 'tv', 'accounts', 'directory', 's'].includes(name)) {
+    throw new Error('Send a profile username or link, not a post or reel link.');
+  }
+  if (!/^[A-Za-z0-9._]{1,30}$/.test(name)) {
+    throw new Error(`"${name}" is not a valid Instagram username.`);
+  }
+  return name;
+}
+
 function parseUsername(input) {
   const value = String(input || '').trim();
   if (!value) {
     throw new Error('Provide an Instagram username or profile link.\nExample: `.igdp @leomessi`');
   }
   if (/^https?:\/\//i.test(value)) {
-    let parsed;
-    try { parsed = new URL(value); } catch { throw new Error('That Instagram link looks malformed.'); }
-    const host = parsed.hostname.toLowerCase().replace(/^www\.|^m\./, '');
-    if (!(host === 'instagram.com' || host.endsWith('.instagram.com'))) {
-      throw new Error('That link is not an Instagram profile.');
-    }
-    const segments = parsed.pathname.split('/').filter(Boolean);
-    let name = segments[0];
-    if (name === 'stories' && segments[1]) name = segments[1];
-    if (!name || ['p', 'reel', 'reels', 'explore', 'tv', 'accounts', 'directory', 's'].includes(name)) {
-      throw new Error('Send a profile username or link, not a post or reel link.');
-    }
-    if (!/^[A-Za-z0-9._]{1,30}$/.test(name)) {
-      throw new Error(`"${name}" is not a valid Instagram username.`);
-    }
-    return name;
+    return parseProfileLink(value);
+  }
+  if (/^(?:www\.)?instagram\.com\//i.test(value)) {
+    return parseProfileLink(`https://${value}`);
   }
   const name = value.replace(/^@/, '');
   if (!/^[A-Za-z0-9._]{1,30}$/.test(name)) {

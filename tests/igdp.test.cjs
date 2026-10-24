@@ -28,6 +28,9 @@ test('parseUsername handles plain handles and instagram profile links', () => {
   assert.throws(() => parseUsername('https://www.instagram.com/reel/CODE/'), /not a post or reel link/);
   assert.throws(() => parseUsername('https://facebook.com/ceo/'), /not an Instagram profile/);
   assert.throws(() => parseUsername('bad name!'), /letters, numbers, dots/);
+  assert.equal(parseUsername('instagram.com/ceo'), 'ceo');
+  assert.equal(parseUsername('https://l.instagram.com/?u=https%3A%2F%2Fwww.instagram.com%2Fceo%2F%3Ffbclid%3Dzz&e=ATtok'), 'ceo');
+  assert.equal(parseUsername('https://www.instagram.com/@ceo/?hl=en'), 'ceo');
 });
 
 test('fetchProfilePicture prefers the keyless instagram api and falls back to the page og:image', async () => {
