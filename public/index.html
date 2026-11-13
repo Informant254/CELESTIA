@@ -414,12 +414,12 @@
   <div id="stage-code" style="display:none">
     <div class="stage-label">Your pairing code</div>
     <div class="code" id="code" onclick="copyCode()" role="status" aria-live="polite">— — — —</div>
-    <div class="tap-hint">Tap the code to copy · expires fast — enter it now</div>
+    <div class="tap-hint" id="code-copy-status" aria-live="polite">Tap the code to copy · use the newest code promptly</div>
     <div class="steps">
       <b>1</b>Open WhatsApp on your phone<br>
       <b>2</b>Settings → <b>Linked Devices</b> → Link a Device<br>
       <b>3</b>Tap <b>"Link with phone number instead"</b><br>
-      <b>4</b>Enter the code above
+      <b>4</b>Enter the newest code above on the WhatsApp account for the number you entered
     </div>
     <button onclick="checkStatus()">I've entered it — check</button>
     <div class="err" id="err2" role="alert"></div>
@@ -448,10 +448,22 @@
 const $ = id => document.getElementById(id);
 let pairingPhone = '';
 let requestToken = '';
+let pairingCode = '';
 let pollTimer;
 let pollBusy = false;
 let polling = false;
 let pollDeadline = 0;
+
+function stopPairing(message) {
+  polling = false;
+  clearTimeout(pollTimer);
+  pairingCode = '';
+  requestToken = '';
+  $('code').textContent = 'UNAVAILABLE';
+  $('code-copy-status').textContent = 'Press Start again for a fresh code';
+  $('waiting').textContent = 'This request is no longer active.';
+  $('err2').textContent = message;
+}
 
 async function requestCode() {
   const phone = $('phone').value.replace(/\D/g, '');
@@ -469,12 +481,15 @@ async function requestCode() {
     if (!r.ok) throw new Error(d.error || 'request failed');
     pairingPhone = phone;
     requestToken = d.requestToken;
-    $('code').textContent = d.code;
+    pairingCode = String(d.code || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+    if (pairingCode.length !== 8) throw new Error('No usable code was returned. Please try again.');
+    $('code').textContent = pairingCode;
     $('stage-input').style.display = 'none';
     $('stage-code').style.display = 'block';
     // auto-poll for link
     polling = true;
-    pollDeadline = Date.now() + 10 * 60 * 1000;
+    const remainingMs = typeof d.expiresInMs === 'number' && Number.isFinite(d.expiresInMs) ? Math.max(0, Math.min(d.expiresInMs, 10 * 60 * 1000)) : 10 * 60 * 1000;
+    pollDeadline = Date.now() + remainingMs;
     pollLink();
   } catch (e) {
     $('err').textContent = e.message;
@@ -492,8 +507,7 @@ async function checkStatus() {
 async function pollLink() {
   if (!polling || pollBusy) return;
   if (Date.now() >= pollDeadline) {
-    polling = false;
-    $('err2').textContent = 'Pairing expired. Press Start again to request a fresh code.';
+    stopPairing('Pairing expired. Press Start again to request a fresh code.');
     return;
   }
   pollBusy = true;
@@ -505,13 +519,13 @@ async function pollLink() {
     });
     const d = await r.json();
     if (!r.ok) {
-      polling = false;
-      $('err2').textContent = d.error || 'Pairing failed. Press Start again.';
+      stopPairing(d.error || 'Pairing failed. Press Start again.');
       return;
     }
     if (d.linked && d.sessionString) {
       polling = false;
       requestToken = '';
+      pairingCode = '';
       $('stage-code').style.display = 'none';
       $('session').textContent = d.sessionString;
       $('stage-done').style.display = 'block';
@@ -528,9 +542,13 @@ async function pollLink() {
 }
 
 async function copyCode() {
+  if (!pairingCode || !polling || Date.now() >= pollDeadline) {
+    if (polling) stopPairing('Pairing expired. Press Start again to request a fresh code.');
+    return;
+  }
   try {
-    await navigator.clipboard.writeText($('code').textContent);
-    flash($('code'), 'COPIED ✓');
+    await navigator.clipboard.writeText(pairingCode);
+    $('code-copy-status').textContent = 'Code copied — enter it in WhatsApp now';
   } catch {
     $('err2').textContent = 'Select the code and copy it manually.';
   }

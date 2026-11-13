@@ -1,83 +1,60 @@
 const { detectMediaType, downloadBuffer } = require('../utils/downloader');
+const { target, fetchStories } = require('../utils/instagramStories');
 const cfg = require('../download/config');
 const queue = require('../download/queue');
 
 module.exports = {
   name: 'igstory',
   aliases: ['instastory', 'igstories', 'igs'],
-  description: 'Download Instagram stories by username. Usage: .igstory <username>',
+  description: 'Download Instagram stories. Usage: .igstory <username, profile URL or story URL>',
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
-    const text = args.join(' ').trim();
-
-    if (!text) {
-      return sock.sendMessage(jid, { text: '📌 Provide an Instagram username.\nExample: .igstory username' }, { quoted: msg });
-    }
-
-    const username = text.replace(/^@/, '');
-
+    const reply = text => sock.sendMessage(jid, { text }, { quoted: msg });
+    let input;
+    try { input = target(args[0]); }
+    catch (error) { return reply(`📌 ${error.message}\nExample: .igstory https://www.instagram.com/username/`); }
+    const { username, storyId } = input;
+    let progress;
     try {
-      await sock.sendMessage(jid, { text: `⏳ Fetching stories for *@${username}*...` }, { quoted: msg });
-      await sock.sendMessage(jid, { react: { text: '📥', key: msg.key } });
-
-      const response = await fetch(
-        `https://api.bk9.dev/download/igs?username=${encodeURIComponent(username)}`,
-        { signal: AbortSignal.timeout(60000) }
-      );
-      if (!response.ok) throw new Error(`Story provider returned HTTP ${response.status}.`);
-      const data = await response.json();
-
-      if (!data.status || !data.BK9) {
-        try {
-          const profile = await fetch(
-            `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
-            { headers: { 'x-ig-app-id': '936619743392459' }, signal: AbortSignal.timeout(15000) }
-          );
-          const pdata = await profile.json();
-          const isPrivate = pdata?.data?.user?.is_private;
-          if (isPrivate === true) {
-            return sock.sendMessage(jid, { text: `🔒 *@${username}* has a private account. Stories can only be downloaded from public accounts.` }, { quoted: msg });
-          }
-        } catch {}
-        return sock.sendMessage(jid, { text: `📭 *@${username}* has no active stories right now.` }, { quoted: msg });
-      }
-
-      const stories = data.BK9?.stories;
-      if (!Array.isArray(stories) || stories.length === 0) {
-        return sock.sendMessage(jid, { text: `❌ No active stories found for *@${username}*.` }, { quoted: msg });
-      }
-
-      await sock.sendMessage(jid, { text: `📖 Found *${stories.length}* stor${stories.length === 1 ? 'y' : 'ies'} for *@${username}*. Sending...` }, { quoted: msg });
-
+      progress = await reply(`⏳ Fetching stories for *@${username}*...`);
       const owner = `${jid}:${msg.key.participant || jid}`;
       await queue.run(async () => {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(new Error('Overall request timeout exceeded.')), cfg.DOWNLOAD_TIMEOUT_MS);
-        if (timeout.unref) timeout.unref();
-        try {
-          for (let i = 0; i < stories.length; i++) {
-            const item = stories[i];
-            const url = item?.download_url || item?.url;
-            if (!url) continue;
-
-            const caption = i === 0 ? `📸 *@${username}* stories\n_via CELESTIA_` : undefined;
-            const buffer = await downloadBuffer(url, cfg.MAX_VIDEO_BYTES, 120000, 5, controller.signal);
-            const type = detectMediaType(buffer, url) || item.type;
-            if (type === 'video') {
-              await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption, gifPlayback: false }, { quoted: msg });
-            } else if (type === 'image') {
-              await sock.sendMessage(jid, { image: buffer, caption }, { quoted: msg });
-            } else {
-              throw new Error('Story provider returned unrecognized media.');
-            }
-          }
+        const signal = AbortSignal.timeout(Math.min(cfg.DOWNLOAD_TIMEOUT_MS, 5 * 60 * 1000));
+        const result = await fetchStories(username, signal);
+        const stories = storyId ? result.stories.filter(item => item.id === storyId) : result.stories;
+        if (!stories.length) {
+          const text = storyId
+            ? `📭 That story is not available to ${result.authenticated ? 'the configured Instagram session' : 'the public provider'}; it may have expired.`
+            : `📭 No active stories were returned for *@${username}* by ${result.authenticated ? 'the configured Instagram session' : 'the public provider'}.`;
+          await sock.sendMessage(jid, { text, edit: progress.key });
           return {};
-        } finally {
-          clearTimeout(timeout);
         }
+        const batch = stories.slice(0, 30);
+        await sock.sendMessage(jid, { text: `📖 Sending ${batch.length} stor${batch.length === 1 ? 'y' : 'ies'} for *@${username}*...`, edit: progress.key });
+        let sent = 0;
+        for (const item of batch) {
+          if (signal.aborted) throw signal.reason;
+          try {
+            const buffer = await downloadBuffer(item.url, cfg.MAX_VIDEO_BYTES, 60000, 5, signal);
+            const type = detectMediaType(buffer);
+            const caption = `📸 *@${username}* story\n_via CELESTIA_`;
+            if (type === 'video') await sock.sendMessage(jid, { video: buffer, mimetype: 'video/mp4', caption }, { quoted: msg });
+            else if (type === 'image') await sock.sendMessage(jid, { image: buffer, caption }, { quoted: msg });
+            else continue;
+            sent++;
+          } catch { if (signal.aborted) throw signal.reason; }
+        }
+        await sock.sendMessage(jid, {
+          text: sent ? `✅ Sent ${sent}/${batch.length} stories.${stories.length > batch.length ? ' Limited to 30 per request.' : ''}` : '❌ The stories were found, but their media could not be downloaded. Please try again later.',
+          edit: progress.key,
+        });
+        return {};
       }, owner);
-    } catch (err) {
-      await sock.sendMessage(jid, { text: '❌ Error fetching Instagram stories.' }, { quoted: msg });
+    } catch (error) {
+      const text = ['INSTAGRAM_LOGIN_REQUIRED', 'INSTAGRAM_BLOCKED', 'QUEUE_FULL'].includes(error.code)
+        ? error.message : 'The Instagram story request failed or timed out. Please try again later.';
+      if (progress?.key) await sock.sendMessage(jid, { text: `❌ ${text}`, edit: progress.key });
+      else await reply(`❌ ${text}`);
     }
   },
 };

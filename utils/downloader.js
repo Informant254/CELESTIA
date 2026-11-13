@@ -4,7 +4,7 @@
  *  SEARCH : siputzx  -> yt-search (npm fallback)
  *  AUDIO  : Keith (keyless) -> bk9 (keyless) -> davidcyril (optional key)
  *  VIDEO  : Keith (keyless) -> bk9 (keyless) -> davidcyril (optional key)
- *  SOCIAL : public resolver -> yt-dlp -> bk9 alternate extractors
+ *  SOCIAL : Instagram session (when configured), public resolver -> yt-dlp -> bk9
  *
  * Every function resolves to { url, title } or throws a human-readable Error.
  */
@@ -575,17 +575,27 @@ async function publicSocial(kind, pageUrl, signal) {
   throw new Error(`No dedicated public resolver for ${kind}.`);
 }
 
-async function localSocial(pageUrl, maxBytes, signal) {
+async function localSocial(pageUrl, maxBytes, signal, instagram = false) {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'celestia-social-'));
   try {
     const ytdlp = require('../download/ytdlp');
     const fallback = require('../download/fallback');
+    const extra = [];
+    if (instagram) {
+      const jar = require('./instagramMedia').cookieJar();
+      if (jar) {
+        const cookieFile = path.join(workDir, 'instagram-cookies.txt');
+        fs.writeFileSync(cookieFile, jar, { mode: 0o600 });
+        extra.push('--cookies', cookieFile);
+      }
+    }
     const result = await ytdlp.attempt({
       url: pageUrl,
       selector: 'bv*[height<=720]+ba/b[height<=720]/b',
       workDir,
       maxBytes,
       youtube: false,
+      extra,
       signal,
     });
     await fallback.validateFile(result.file, false);
@@ -595,6 +605,15 @@ async function localSocial(pageUrl, maxBytes, signal) {
   } finally {
     try { fs.rmSync(workDir, { recursive: true, force: true }); } catch { /* best-effort cleanup */ }
   }
+}
+
+async function instagramSessionMedia(pageUrl, maxBytes, signal) {
+  const result = await require('./instagramMedia').fetchMedia(pageUrl, signal);
+  const first = result.items[0];
+  const buffer = await downloadBuffer(first.url, maxBytes, 60000, 5, signal);
+  const type = detectMediaType(buffer);
+  if (!type || type !== first.type) throw new Error('Instagram returned a page or preview instead of the requested media.');
+  return { ...result, ...first, buffer, type, index: 1, total: result.items.length };
 }
 
 async function resolvedSocial(provider, resolver, maxBytes, signal) {
@@ -608,10 +627,13 @@ async function downloadSocial(kind, pageUrl, maxBytes = cfg.MAX_VIDEO_BYTES, own
   const safeUrl = validateSocialPageUrl(kind, pageUrl);
   const run = async (signal) => {
     const providers = [];
+    if (kind === 'instagram' && require('./instagramSession').readCookie()) {
+      providers.push(['instagram-session', () => instagramSessionMedia(safeUrl, maxBytes, signal)]);
+    }
     if (kind === 'tiktok' || kind === 'twitter') {
       providers.push(['public', () => resolvedSocial('public', () => publicSocial(kind, safeUrl, signal), maxBytes, signal)]);
     }
-    providers.push(['yt-dlp', () => localSocial(safeUrl, maxBytes, signal)]);
+    providers.push(['yt-dlp', () => localSocial(safeUrl, maxBytes, signal, kind === 'instagram')]);
     providers.push(['bk9', () => resolvedSocial('bk9', () => bk9Social(kind, safeUrl, signal), maxBytes, signal)]);
     const errors = [];
     for (const [name, provider] of providers) {
@@ -632,6 +654,17 @@ async function downloadSocial(kind, pageUrl, maxBytes = cfg.MAX_VIDEO_BYTES, own
     if (timeout.unref) timeout.unref();
     try {
       const result = await run(controller.signal);
+      if (consume && result.items?.length > 1) {
+        await consume(result);
+        for (let i = 1; i < result.items.length; i++) {
+          const item = result.items[i];
+          const buffer = await downloadBuffer(item.url, maxBytes, 60000, 5, controller.signal);
+          const type = detectMediaType(buffer);
+          if (!type || type !== item.type) throw new Error(`Instagram item ${i + 1} was not the requested image/video.`);
+          await consume({ ...result, ...item, type, buffer, index: i + 1 });
+        }
+        return { value: { provider: result.provider, sent: result.items.length } };
+      }
       return { value: consume ? await consume(result) : result };
     } finally {
       clearTimeout(timeout);

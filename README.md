@@ -133,9 +133,83 @@ Business mode is disabled by default, so existing CELESTIA deployments keep thei
 |----------|---------|
 | **Spam** | `.spam 10 hello` |
 | **AI** | `.ai hi` `.gpt` `.gemini` |
-| **Media** | `.tiktok` `.ig` `.yt` `.sticker` |
+| **Media** | `.tiktok` `.ig` `.igdp <profile-url>` `.yt` `.sticker` |
 | **Group** | `.antilink` `welcome` `promote` `kill` `kill2` |
 | **Utility** | `.ping` `.menu` `.alive` |
+
+#### Instagram profile pictures
+
+Use `.igdp https://www.instagram.com/username/` (or `.igdp @username`). The command
+tries Instagram's profile API, public profile embed, and page metadata, and sends
+the best available profile image. Some anonymous sources expose only a small photo.
+
+Instagram can rate-limit server IPs or return a login page even when a profile has
+a photo. If anonymous requests fail, set `INSTAGRAM_COOKIE` in the deployment's
+runtime secrets to the Cookie header from your own logged-in Instagram session
+(including `sessionid` and, when available, `csrftoken`), then redeploy. This is an
+Instagram credential, separate from the WhatsApp `SESSION_ID`; keep it out of chat
+and Git. Expired sessions or Instagram challenges may still require refreshing it.
+
+#### Instagram stories
+
+`.igstory @username`, `.igstory https://www.instagram.com/username/` and individual
+`https://www.instagram.com/stories/username/story-id/` links are supported. Stories
+use the saved `INSTAGRAM_COOKIE` first; Instagram only returns media visible to that
+session. A public provider is a fallback and does not receive the cookie. Provider
+errors are reported separately from successful responses containing no visible stories.
+
+Instagram post/reel commands (`.ig`, `.igdl`, `.insta`, `.igreel`, `.instagram`, and
+Instagram links passed to `.socialdl`) also try `INSTAGRAM_COOKIE` first. Mixed
+image/video albums are sent sequentially. The local yt-dlp fallback gets a temporary
+Instagram-only cookie jar that is deleted after the request. Instagram cookies are
+never sent to public downloader providers or media CDN requests. Each bot uses the
+Instagram session saved for that bot.
+
+The private control panel includes an **Instagram cookies** card. Select the bot,
+upload a Netscape export from instagram.com (maximum 64 KB), or paste a replacement
+Cookie header. **Save Instagram session** saves privately and tests the login;
+**Test Instagram access** checks the existing session without displaying it.
+The check verifies Instagram's authenticated viewer, rather than assuming that
+public profile access proves a valid login. Last-test results are tied to the
+saved session and include the test time.
+
+Panel updates are stored at `data/instagram-cookie.txt` and take effect on the
+next request, without a restart. This per-bot file takes precedence over
+`INSTAGRAM_COOKIE_FILE` and the legacy `INSTAGRAM_COOKIE` environment value.
+
+#### YouTube cookie refresh
+
+In a private chat with the bot, the owner can send a Netscape `cookies.txt` export,
+then reply to that document with `.ytcookies upload`. `.ytcookies status` shows
+expiry/readiness without exposing credentials. Replacement files take effect on the
+next download, with no restart, and live under persistent `data/youtube-cookies.txt`
+(override with `YOUTUBE_COOKIES_FILE`).
+
+For automatic replacement, configure `YOUTUBE_COOKIES_URL` as a private HTTPS endpoint
+serving a fresh export. The bot checks it when downloading, at most once per
+`YOUTUBE_COOKIES_REFRESH_SECONDS` (default 1800), or sooner for expired/rejected jars
+with a one-minute minimum cooldown. `.ytcookies refresh` requests a check manually.
+Invalid replacements leave the existing file untouched. A rejected session is retried
+only once, and only with different cookies. Cookie updates received by yt-dlp are
+saved if they remain valid and have not been superseded by a newer owner upload.
+
+This does **not** sign into Google or create a new session after expiry/revocation.
+The browser or trusted source must supply genuinely fresh cookies. Cookies also do
+not guarantee YouTube will accept a hosting-server IP. Keep cookie files and source
+URLs private; never commit them.
+
+For private multi-bot hosting, the cloud can mount an owner-scoped shared cookie
+directory with `YOUTUBE_COOKIES_SHARED=true`. Configure CELESTIA as the writer
+(`YOUTUBE_COOKIES_READ_ONLY=false`) and the other bots as readers
+(`YOUTUBE_COOKIES_READ_ONLY=true`). Uploading once to CELESTIA then updates all
+linked bots on their next download. Readers use isolated per-download copies and
+cannot replace the shared file. The shared jar remains outside bot images and
+survives container recreation.
+
+Current YouTube JavaScript challenges require Node 22 or newer. Older bot images
+can use a separate runtime via `YTDLP_NODE_PATH`; private shared fleets also detect
+a `node22` executable beside the shared cookie jar. This does not change the bot's
+own Node runtime or its native modules.
 
 `.menu` shows full heavenly list.
 

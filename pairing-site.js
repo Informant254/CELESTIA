@@ -6,7 +6,7 @@
  *
  * Serves a beautiful web page where anyone can:
  *   1. Enter their WhatsApp number
- *   2. Get an 8-digit pairing code
+ *   2. Get an 8-character pairing code
  *   3. Enter it in their WhatsApp
  *   4. Receive their SESSION_STRING (paste into deployment env)
  *
@@ -43,6 +43,12 @@ const silentLogger = {
 
 const activeSockets = new Map(); // phone -> session
 const pairingLocks = new Map();
+
+function pairingEvent(session, event, status) {
+  // Only an opaque request identifier and connection state; never log numbers,
+  // pairing codes, request tokens or exported WhatsApp credentials.
+  console.log(JSON.stringify({ service: 'pairing', event, request: path.basename(session.sessionDir), ...(status === undefined ? {} : { status }) }));
+}
 
 async function disposeSession(phone, session) {
   if (!session || session.disposed) return;
@@ -97,6 +103,7 @@ async function startPairingAttempt(phone, requestToken) {
     ready: false,
     code: null,
     linked: false,
+    restarts: 0,
     sessionDir,
     requestToken,
     expiresAt: Date.now() + SESSION_TTL_MS,
@@ -125,18 +132,24 @@ async function startPairingAttempt(phone, requestToken) {
       if (session.disposed) return;
       const { connection, lastDisconnect } = update;
 
-      if (connection === 'connecting' || connection === 'connected') {
+      if (connection === 'connecting' || connection === 'connected' || update.qr) {
         // request the code once per socket, after a short settle
         if (!codeAsked) {
           codeAsked = true;
+          const requestingSocket = sock;
           const codeTimer = setTimeout(async () => {
+            if (session.disposed || session.sock !== requestingSocket) return;
             try {
-              const code = await sock.requestPairingCode(phone);
+              const code = await requestingSocket.requestPairingCode(phone);
+              if (session.disposed || session.sock !== requestingSocket) return;
               session.code = code;
               session.ready = true;
+              session.expiresAt = Date.now() + SESSION_TTL_MS;
               clearTimeout(timer);
+              pairingEvent(session, 'code_ready');
               finishOk();
             } catch (e) {
+              if (session.disposed) return;
               clearTimeout(timer);
               finishErr('code request failed: ' + (e?.message || 'unknown'));
             }
@@ -154,6 +167,7 @@ async function startPairingAttempt(phone, requestToken) {
           if (!state.creds.registered || !savedCreds?.registered) throw new Error('credentials are not registered');
           session.sessionString = 'CELESTIA:~' + credsBuffer.toString('base64');
           session.linked = true;
+          pairingEvent(session, 'linked');
         } catch (e) {
           session.error = 'linked credentials could not be validated: ' + (e?.message || 'unknown');
         }
@@ -161,10 +175,17 @@ async function startPairingAttempt(phone, requestToken) {
 
       if (connection === 'close') {
         const status = lastDisconnect?.error?.output?.statusCode;
+        if (session.linked && session.sessionString) return;
+        pairingEvent(session, 'connection_closed', status);
         if (session.ready && status === 515) {
           // WhatsApp requires a fresh socket after accepting the code. Keep
           // the same auth state and export only after that socket opens.
           try {
+            if (session.restarts >= 2) {
+              session.error = 'WhatsApp could not complete the linked connection. Start again for a fresh code.';
+              return;
+            }
+            session.restarts++;
             await session.credsSaveChain;
             try { sock.ev.removeAllListeners(); } catch {}
             try { sock.end(undefined); } catch {}
@@ -178,8 +199,13 @@ async function startPairingAttempt(phone, requestToken) {
           }
           return;
         }
-        // if we already have a code, the flap doesn't matter â€” keep session
-        if (session.ready) return;
+        if (session.ready) {
+          // A code belongs to its socket. Keeping a dead request looking active
+          // makes visitors keep entering a code WhatsApp can no longer accept.
+          session.code = null;
+          session.error = 'WhatsApp closed this pairing request. This code is no longer usable. Press Start again and enter only the newest code.';
+          return;
+        }
         // 401/428 while un-registered is normal during pairing attempts â€”
         // treat as retryable, not fatal
         clearTimeout(timer);
@@ -258,7 +284,12 @@ app.post('/api/pair', async (req, res) => {
   try {
     const requestToken = crypto.randomBytes(32).toString('base64url');
     const session = await replacePairingSession(phone, requestToken);
-    res.json({ ok: true, code: session.code, requestToken });
+    if (session.error || !session.code) {
+      const message = session.error || 'Pairing closed before the code could be delivered. Please start again.';
+      await disposeSession(phone, session);
+      throw new Error(message);
+    }
+    res.json({ ok: true, code: session.code, requestToken, expiresAt: session.expiresAt, expiresInMs: Math.max(0, session.expiresAt - Date.now()) });
   } catch (e) {
     res.status(502).json({ error: e.message });
   }
@@ -269,7 +300,7 @@ app.post('/api/status', async (req, res) => {
   const session = activeSockets.get(phone);
   if (!session) return res.status(404).json({ error: 'no session â€” start again' });
   const requestToken = req.body?.requestToken || readCookie(req, 'pairing_request');
-  if (!tokenMatches(requestToken, session.requestToken)) return res.status(403).json({ error: 'invalid request token' });
+  if (!tokenMatches(requestToken, session.requestToken)) return res.status(403).json({ error: 'This request has been replaced or is not authorized. Use the newest code from this browser, or press Start again.' });
   if (Date.now() >= session.expiresAt) {
     await disposeSession(phone, session);
     return res.status(410).json({ error: 'session expired â€” start again' });
@@ -284,7 +315,7 @@ app.post('/api/status', async (req, res) => {
     await disposeSession(phone, session);
     return res.json({ ok: true, linked: true, sessionString });
   }
-  res.json({ ok: true, linked: false });
+  res.json({ ok: true, linked: false, expiresAt: session.expiresAt });
 });
 
 const expiryTimer = setInterval(() => {

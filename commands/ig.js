@@ -17,21 +17,22 @@ module.exports = {
       const searching = await sock.sendMessage(jid, { text: '⏳ Downloading Instagram...' }, { quoted: msg });
 
       const owner = `${jid}:${msg.key.participant || jid}`;
-      await downloadSocial('instagram', url, undefined, owner, async ({ buffer, type }) => {
+      await downloadSocial('instagram', url, undefined, owner, async ({ buffer, type, index = 1, total = 1 }) => {
+        const caption = total > 1 ? `📸 *Instagram ${index}/${total} · CELESTIA*` : '📸 *Downloaded by CELESTIA*';
         if (type === 'video') {
           await sock.sendMessage(
             jid,
-            { video: buffer, mimetype: 'video/mp4', fileName: cleanName('instagram', '.mp4'), caption: '📸 *Downloaded by CELESTIA*' },
+            { video: buffer, mimetype: 'video/mp4', fileName: cleanName(`instagram-${index}`, '.mp4'), caption },
             { quoted: msg }
           );
         } else {
           await sock.sendMessage(
             jid,
-            { image: buffer, caption: '📸 *Downloaded by CELESTIA*' },
+            { image: buffer, caption },
             { quoted: msg }
           );
         }
-        await sock.sendMessage(jid, { text: '✅ Done!', edit: searching.key });
+        await sock.sendMessage(jid, { text: index === total ? '✅ Done!' : `⏳ Sent ${index}/${total}...`, edit: searching.key });
       });
     } catch (e) {
       console.error('[IG ERROR]', e.message);

@@ -10,18 +10,29 @@ const net = require('net');
 const path = require('path');
 const cfg = require('./config');
 const { ensureYtDlp, ensureYtDlpTools, aria2cPath } = require('./engines');
+const cookies = require('./cookies');
 
 const PARTIAL_RE = /\.(part|temp|tmp|ytdl)$/i;
 
 // YouTube trusts a logged-in session far more than a datacenter IP.
-// If the owner drops their browser cookies at cookies/youtube.txt (or
-// YOUTUBE_COOKIES_FILE), every attempt authenticates as them and the
+// The owner can upload a persistent cookie jar with .ytcookies upload (legacy
+// cookies/youtube.txt and YOUTUBE_COOKIES_FILE also work). Attempts use it and the
 // "Sign in to confirm you're not a bot" wall usually falls.
 // NEVER commit that file — it's a live YouTube session, like SESSION_ID.
 function cookieFile() {
-  const file = String(process.env.YOUTUBE_COOKIES_FILE || '').trim();
-  try { if (file && fs.existsSync(file) && fs.statSync(file).size > 0) return file; } catch {}
-  return null;
+  return cookies.cookieFile();
+}
+
+function jsRuntime() {
+  const configured = String(process.env.YTDLP_NODE_PATH || '').trim();
+  if (configured && fs.existsSync(configured)) return `node:${configured}`;
+  // Shared private fleets can use a current Node runtime for YouTube challenges
+  // without changing the bot runtime (and breaking installed native modules).
+  if (process.env.YOUTUBE_COOKIES_SHARED === 'true' && process.env.YOUTUBE_COOKIES_FILE) {
+    const shared = path.join(path.dirname(process.env.YOUTUBE_COOKIES_FILE), 'node22');
+    if (fs.existsSync(shared)) return `node:${shared}`;
+  }
+  return 'node';
 }
 
 function youtubeProxy() {
@@ -63,13 +74,13 @@ function abortDir(workDir) {
   return n;
 }
 
-function baseArgs(workDir, ffmpeg, maxBytes, { youtube = true } = {}) {
+function baseArgs(workDir, ffmpeg, maxBytes, { youtube = true, cookiePath = undefined } = {}) {
   const a = [
     '--no-warnings',
     // YouTube now serves JS challenges on datacenter IPs — without a JS
-    // runtime every player request dies as EXTRACTOR_ERROR. Node is
-    // guaranteed present (the bot runs on it).
-    '--js-runtimes', 'node',
+    // runtime extraction can fail. Current challenges require Node >=22;
+    // jsRuntime can select a supported sidecar binary for older bot images.
+    '--js-runtimes', jsRuntime(),
     '--retries', '3',
     '--fragment-retries', '3',
     '--extractor-retries', '3',
@@ -88,8 +99,8 @@ function baseArgs(workDir, ffmpeg, maxBytes, { youtube = true } = {}) {
   ];
   if (maxBytes) a.push('--max-filesize', String(maxBytes));
   if (youtube) {
-    const cookies = cookieFile();
-    if (cookies) a.push('--cookies', cookies);
+    const file = cookiePath === undefined ? cookieFile() : cookiePath;
+    if (file) a.push('--cookies', file);
     const proxy = youtubeProxy();
     if (proxy) a.push('--proxy', proxy);
     const source = sourceAddress();
@@ -169,8 +180,10 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   const bin = await ensureYtDlp();
   const mediaTools = await ensureYtDlpTools();
   const aria = await aria2cPath().catch(() => null);
+  if (youtube) await cookies.prepare(signal);
+  let jar = youtube ? cookies.snapshot(workDir) : null;
 
-  const args = baseArgs(workDir, mediaTools, maxBytes, { youtube });
+  const args = baseArgs(workDir, mediaTools, maxBytes, { youtube, cookiePath: jar?.file || null });
   if (aria) args.push('--external-downloader', 'aria2c', '--external-downloader-args', 'aria2c:-x 4 -s 4 -k 2M');
   args.push(...extra);
   if (audio) {
@@ -180,7 +193,26 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   }
   args.push(url);
 
-  await runSpawn(bin, args, workDir, onProgress, cfg.YTDLP_OVERALL_TIMEOUT_MS, signal);
+  try {
+    await runSpawn(bin, args, workDir, onProgress, cfg.YTDLP_OVERALL_TIMEOUT_MS, signal);
+  } catch (error) {
+    if (!youtube || !cookies.authFailure(error) || signal?.aborted) throw error;
+    cookies.reject(jar?.hash);
+    await cookies.refresh({ signal, force: true });
+    const replacement = cookies.snapshot(workDir);
+    if (!replacement || replacement.hash === jar?.hash) throw error;
+    const index = args.indexOf('--cookies');
+    if (index >= 0) args[index + 1] = replacement.file;
+    else args.splice(args.length - 1, 0, '--cookies', replacement.file);
+    jar = replacement;
+    try {
+      await runSpawn(bin, args, workDir, onProgress, cfg.YTDLP_OVERALL_TIMEOUT_MS, signal);
+    } catch (retryError) {
+      if (cookies.authFailure(retryError)) cookies.reject(jar.hash);
+      throw retryError;
+    }
+  }
+  await cookies.saveUpdated(jar);
   const file = await findOutput(workDir);
   if (!file) {
     const e = new Error(maxBytes ? 'Aborted: file exceeds the configured size cap.' : 'yt-dlp finished but produced no file.');
@@ -192,4 +224,4 @@ async function attempt({ url, selector, extra = [], audio = false, workDir, onPr
   return { file, size };
 }
 
-module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile, youtubeProxy, sourceAddress };
+module.exports = { attempt, abortDir, findOutput, baseArgs, cookieFile, jsRuntime, youtubeProxy, sourceAddress };

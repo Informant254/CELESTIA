@@ -1,4 +1,5 @@
-const { downloadBuffer } = require('../utils/downloader');
+const { downloadBuffer, detectMediaType } = require('../utils/downloader');
+const { readCookie } = require('../utils/instagramSession');
 
 const MAX_DP_BYTES = 20 * 1024 * 1024;
 const IG_APP_ID = '936619743392459';
@@ -49,38 +50,100 @@ function parseUsername(input) {
   return name;
 }
 
-async function fetchProfilePicture(username, signal) {
+function pictureUrl(value) {
   try {
-    const r = await fetch(
-      `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
-      { headers: { 'x-ig-app-id': IG_APP_ID, accept: 'application/json', 'user-agent': BROWSER_UA }, signal }
-    );
-    if (r.ok) {
-      const data = await r.json().catch(() => null);
-      const user = data?.data?.user;
-      if (user?.profile_pic_url) {
-        return {
-          url: user.profile_pic_url_hd || user.profile_pic_url,
-          fullName: user.full_name || '',
-          private: Boolean(user.is_private),
-          provider: 'instagram',
-        };
-      }
-      if (!user) throw new Error(`@${username} was not found.`);
-    }
-  } catch (error) {
-    if (error.message?.includes('was not found') || signal?.aborted) throw error;
-  }
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.username || url.password) return null;
+    // Login pages also contain og:image, but it is Instagram's logo, not a DP.
+    if (url.hostname === 'static.cdninstagram.com' || url.pathname.includes('/rsrc.php/')) return null;
+    return url.toString();
+  } catch { return null; }
+}
 
-  const page = await fetch(`https://www.instagram.com/${encodeURIComponent(username)}/`, {
-    headers: { 'user-agent': BROWSER_UA },
-    signal,
-  });
-  if (!page.ok) throw new Error(`Could not reach Instagram for @${username} (HTTP ${page.status}).`);
-  const html = await page.text();
-  const hit = html.match(/property="og:image"[^>]*content="([^"]+)"/) || html.match(/content="([^"]+)"[^>]*property="og:image"/);
-  if (!hit) throw new Error(`No profile picture was available for @${username}.`);
-  return { url: hit[1].replace(/&amp;/g, '&'), fullName: '', private: false, provider: 'web' };
+function profileFromUser(user, username, provider) {
+  if (user?.username && user.username.toLowerCase() !== username.toLowerCase()) return null;
+  const url = pictureUrl(user?.profile_pic_url_hd) || pictureUrl(user?.profile_pic_url);
+  if (!url) return null;
+  return { url, fullName: user.full_name || '', private: Boolean(user.is_private), provider };
+}
+
+function embeddedProfile(html, username) {
+  // The public embed serializes its own profile separately from post owners.
+  // Decode both JSON layers; never execute the surrounding Instagram script.
+  for (const match of html.matchAll(/"contextJSON"\s*:\s*("(?:\\.|[^"\\])*")/g)) {
+    try {
+      const { context } = JSON.parse(JSON.parse(match[1]));
+      if (context?.username?.toLowerCase() !== username.toLowerCase()) continue;
+      const profile = profileFromUser(context, username, 'embed');
+      if (profile) return profile;
+    } catch { /* Other script data is not a usable profile. */ }
+  }
+  return null;
+}
+
+function pageProfile(html) {
+  for (const tag of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const attrs = {};
+    for (const attr of tag[0].matchAll(/([\w:-]+)\s*=\s*(["'])(.*?)\2/gs)) {
+      attrs[attr[1].toLowerCase()] = attr[3];
+    }
+    if ((attrs.property || attrs.name)?.toLowerCase() !== 'og:image') continue;
+    const value = (attrs.content || '').replace(/&#(x[\da-f]+|\d+);/gi, (entity, code) => {
+      const number = code[0].toLowerCase() === 'x' ? parseInt(code.slice(1), 16) : Number(code);
+      return number <= 0x10ffff ? String.fromCodePoint(number) : entity;
+    }).replace(/&amp;/g, '&');
+    const url = pictureUrl(value);
+    if (url) return { url, fullName: '', private: false, provider: 'web' };
+  }
+  return null;
+}
+
+async function fetchProfilePicture(username, signal) {
+  const encoded = encodeURIComponent(username);
+  const cookie = readCookie();
+  const csrf = cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1];
+  const sources = [
+    ['api', `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encoded}`],
+    ['embed', `https://www.instagram.com/${encoded}/embed/`],
+    ['web', `https://www.instagram.com/${encoded}/`],
+  ];
+  const failures = [];
+  for (const [source, url] of sources) {
+    if (signal?.aborted) throw signal.reason;
+    try {
+      const timeout = AbortSignal.timeout(12000);
+      const response = await fetch(url, {
+        headers: {
+          'user-agent': source === 'api' ? BROWSER_UA : 'Mozilla/5.0',
+          ...(source === 'api' ? { 'x-ig-app-id': IG_APP_ID, accept: 'application/json' } : {}),
+          ...(cookie ? { cookie } : {}),
+          ...(source === 'api' && csrf ? { 'x-csrftoken': csrf } : {}),
+        },
+        // Credentials are only sent to these fixed Instagram URLs, never to a redirect target.
+        redirect: 'manual',
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      if (response.url && /\/(accounts|challenge)\//i.test(new URL(response.url).pathname)) {
+        throw new Error('Instagram login/challenge redirect');
+      }
+      let profile;
+      if (source === 'api') {
+        const data = await response.json();
+        profile = profileFromUser(data?.data?.user, username, 'instagram');
+      } else {
+        const html = await response.text();
+        profile = embeddedProfile(html, username) || (source === 'web' ? pageProfile(html) : null);
+      }
+      if (profile) return profile;
+      throw new Error('Response did not expose the requested profile');
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      failures.push(`${source}: ${error.message}`);
+    }
+  }
+  console.error('[IGDP SOURCES]', failures.join('; '));
+  throw new Error(`Instagram did not allow this server to retrieve @${username}'s photo. This does not mean the profile has no picture. ${cookie ? 'The Instagram session may need refreshing, or Instagram is limiting requests.' : 'Save Instagram cookies in the private panel for authenticated access.'}`);
 }
 
 module.exports = {
@@ -104,8 +167,9 @@ module.exports = {
     try {
       const profile = await fetchProfilePicture(username, AbortSignal.timeout(45000));
       const buffer = await downloadBuffer(profile.url, MAX_DP_BYTES, 60000, 5);
+      if (detectMediaType(buffer) !== 'image') throw new Error('Instagram returned a page instead of an image. Please try again later.');
       const caption = [
-        `👤 *${profile.fullName || tag}*`,
+        `👤 *${tag}*${profile.fullName ? ` — ${profile.fullName}` : ''}`,
         profile.private ? '🔒 Private account — only the profile picture is downloadable.' : null,
         '_via CELESTIA_',
       ].filter(Boolean).join('\n');
@@ -117,5 +181,5 @@ module.exports = {
       await sock.sendMessage(jid, { text: '❌ Failed', edit: status.key }).catch(() => {});
     }
   },
-  __internals: { parseUsername, fetchProfilePicture },
+  __internals: { parseUsername, fetchProfilePicture, embeddedProfile },
 };
