@@ -333,12 +333,12 @@ healthApp.get('/', (req, res) => res.json({
 healthApp.get('/health', (req, res) => {
   const ok = runtimeState.settingsReady && runtimeState.connection === 'open';
   const state = runtimeState.settingsReady ? runtimeState.connection : 'initializing';
-  res.json({ ok, state, uptime: Math.floor(process.uptime()) });
+  res.json({ ok, state, uptime: Math.floor(process.uptime()), bot: config.botName });
 });
 healthApp.get('/ready', (req, res) => {
   const ok = runtimeState.settingsReady && runtimeState.connection === 'open';
   const state = runtimeState.settingsReady ? runtimeState.connection : 'initializing';
-  res.status(ok ? 200 : 503).json({ ok, state, uptime: Math.floor(process.uptime()) });
+  res.status(ok ? 200 : 503).json({ ok, state, uptime: Math.floor(process.uptime()), bot: config.botName });
 });
 // Message-pipeline counters since boot. Counts only — no JIDs, no content.
 healthApp.get('/stats', (req, res) => {
