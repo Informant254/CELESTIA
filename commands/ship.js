@@ -1,3 +1,4 @@
+const { resolvePhoneJid } = require('../utils/jidResolver');
 const BAR_LENGTH = 10;
 
 function scorePair(first, second) {
@@ -19,43 +20,47 @@ function barFor(score) {
   return '❤️'.repeat(filled) + '🖤'.repeat(BAR_LENGTH - filled);
 }
 
-function namesFrom(mentions, args) {
-  const names = [];
-  for (const mention of mentions) {
-    if (!/^\d+@/.test(mention)) continue;
-    const number = mention.split('@')[0].replace(/\D/g, '');
-    if (number.length < 7) continue;
-    names.push(`+${number}`);
+async function targets(sock, msg, args) {
+  const mentioned = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
+  const out = [];
+  for (const raw of mentioned.slice(0, 2)) {
+    if (out.length === 2) break;
+    let resolved;
+    try { resolved = await resolvePhoneJid(sock, msg, raw); } catch { resolved = null; }
+    const jid = String(resolved?.jid || '');
+    if (!resolved?.resolved || !jid.endsWith('@s.whatsapp.net')) continue;
+    out.push({ label: `@${jid.split('@')[0]}`, mentionJid: jid });
   }
-  if (names.length < 2) {
-    names.length = 0;
+  if (out.length < 2) {
+    out.length = 0;
     for (const arg of args) {
       const cleaned = String(arg || '').replace(/@/g, '').trim();
       if (!cleaned || !/^[\p{L}\p{N} _.'-]{1,24}$/u.test(cleaned)) continue;
-      names.push(cleaned);
-      if (names.length === 2) break;
+      out.push({ label: cleaned });
+      if (out.length === 2) break;
     }
   }
-  return names.slice(0, 2);
+  return out.slice(0, 2);
 }
 
 module.exports = {
   name: 'ship',
   aliases: ['compat', 'match'],
   description: 'Ship two people and get the compatibility score. Usage: .ship <@user1 @user2 | name1 name2>',
-  scorePair, barFor, verdictFor, namesFrom,
+  scorePair, barFor, verdictFor, targets,
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     const reply = text => sock.sendMessage(jid, { text }, { quoted: msg });
-    const mentions = msg.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    const names = namesFrom(mentions, args);
-    if (names.length !== 2) {
+    const pair = await targets(sock, msg, args);
+    if (pair.length !== 2) {
       return reply('📌 Ship *two people* by mentioning them or typing two names.\nExample: .ship @alice @bob');
     }
-    const score = scorePair(names[0], names[1]);
-    await reply(
-      `💘 *${names[0]} × ${names[1]}*\n\n`
-      + `${barFor(score)} *${score}%*\n\n${verdictFor(score)}\n\n_via CELESTIA_`,
-    );
+    const same = pair[0].mentionJid && pair[0].mentionJid === pair[1].mentionJid;
+    const verdict = same
+      ? '💞 *You cannot ship someone with themselves...* 100% (self-love counts)'
+      : `${barFor(scorePair(pair[0].label, pair[1].label))} *${scorePair(pair[0].label, pair[1].label)}%*\n\n${verdictFor(scorePair(pair[0].label, pair[1].label))}`;
+    const text = `💘 *${pair[0].label} × ${pair[1].label}*\n\n${verdict}\n\n_via CELESTIA_`;
+    const mentions = pair.map(item => item.mentionJid).filter(Boolean);
+    await sock.sendMessage(jid, mentions.length >= 2 ? { text, mentions } : { text }, { quoted: msg });
   },
 };

@@ -96,26 +96,55 @@ test('ship scores are deterministic, in range, and symmetric for any order', () 
   assert.match(ship.verdictFor(60), /spark/);
 });
 
-test('ship reads mentions first and falls back to two plain names', () => {
-  const ship = load('../commands/ship.js');
-  const joined = names => [...names].join(' | ');
-  assert.equal(joined(ship.namesFrom(['254700000000@s.whatsapp.net', '254711111111@s.whatsapp.net'], [])), '+254700000000 | +254711111111');
-  assert.equal(joined(ship.namesFrom([], ['Alice', '@Bob'])), 'Alice | Bob');
-  assert.equal(ship.namesFrom([], ['onlyone']).length, 1);
-  assert.equal(joined(ship.namesFrom([], ['name with; bad', 'Alice', 'Bob'])), 'Alice | Bob');
+test('ship resolves LID mentions to real phone numbers and never displays raw lids', async () => {
+  const ship = load('../commands/ship.js', {
+    '../utils/jidResolver': {
+      resolvePhoneJid: async (sock, msg, raw) => raw.endsWith('@lid')
+        ? { jid: '254700000000@s.whatsapp.net', resolved: true }
+        : { jid: raw, resolved: true },
+    },
+  });
+  const pair = await ship.targets({}, {
+    message: { extendedTextMessage: { contextInfo: { mentionedJid: ['267791999443191@lid', '267791999443192@lid'] } } },
+  }, []);
+  assert.equal(pair.length, 2);
+  assert.ok(pair[0].label.startsWith('@254'), `no raw lid digits expected: ${pair[0].label}`);
+  assert.equal(pair[0].mentionJid, '254700000000@s.whatsapp.net');
 });
 
-test('ship command replies with the meter for mentions and the usage hint otherwise', async () => {
+test('ship falls back to typed names and skips unresolvable lid mentions', async () => {
+  const ship = load('../commands/ship.js', {
+    '../utils/jidResolver': { resolvePhoneJid: async () => ({ jid: '267791999443191@lid', resolved: false }) },
+  });
+  const unresolved = await ship.targets({}, {
+    message: { extendedTextMessage: { contextInfo: { mentionedJid: ['267791999443191@lid', '267791999443192@lid'] } } },
+  }, ['Alice', 'Bob']);
+  assert.equal(unresolved.length, 2);
+  assert.equal(unresolved[0].label, 'Alice');
+  assert.equal(unresolved[1].mentionJid, undefined);
+});
+
+test('ship command replies with the meter, mention markup, and a self-ship special case', async () => {
   const sent = [];
-  const ship = load('../commands/ship.js', { '../utils/downloader': {} });
+  const ship = load('../commands/ship.js', {
+    '../utils/jidResolver': {
+      resolvePhoneJid: async (sock, msg, raw) => ({ jid: raw, resolved: true }),
+    },
+  });
   const sock = { sendMessage: async (jid, content) => { sent.push(content); return { key: 'k' }; } };
   await ship.execute(sock, { key: { remoteJid: 'chat' }, message: { extendedTextMessage: { contextInfo: { mentionedJid: ['254700000000@s.whatsapp.net', '254711111111@s.whatsapp.net'] } } } }, []);
   assert.equal(sent.length, 1);
-  assert.match(sent[0].text, /\+254700000000 × \+254711111111/);
+  assert.match(sent[0].text, /\+254700000000 × \+254711111111|@254700000000 × @254711111111/);
   assert.match(sent[0].text, /\d{2,3}%/);
+  assert.deepEqual([...sent[0].mentions], ['254700000000@s.whatsapp.net', '254711111111@s.whatsapp.net']);
 
   const sent2 = [];
   const sock2 = { sendMessage: async (jid, content) => { sent2.push(content); return { key: 'k' }; } };
-  await ship.execute(sock2, { key: { remoteJid: 'chat' } }, []);
-  assert.match(sent2.at(-1).text, /Ship \*two people\*/);
+  await ship.execute(sock2, { key: { remoteJid: 'chat' }, message: { extendedTextMessage: { contextInfo: { mentionedJid: ['254700000000@s.whatsapp.net', '254700000000@s.whatsapp.net'] } } } }, []);
+  assert.match(sent2.at(-1).text, /ship someone with themselves/);
+
+  const sent3 = [];
+  const sock3 = { sendMessage: async (jid, content) => { sent3.push(content); return { key: 'k' }; } };
+  await ship.execute(sock3, { key: { remoteJid: 'chat' } }, []);
+  assert.match(sent3.at(-1).text, /Ship \*two people\*/);
 });
