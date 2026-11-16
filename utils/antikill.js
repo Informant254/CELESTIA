@@ -134,7 +134,7 @@ async function handleEvent(sock, event) {
   const authorIsBot = author && participantMatches(typeof author === 'string' ? { id: author } : author, botIds);
 
   let restored = 0;
-  const restoredNames = [];
+  const restoredJids = [];
   for (let i = 0; i < removedJids.length; i++) {
     const victim = removedJids[i];
     const victimEvent = removed[i];
@@ -144,7 +144,7 @@ async function handleEvent(sock, event) {
       try {
         await sock.groupParticipantsUpdate(group, [victim], 'add');
         restored++;
-        restoredNames.push(victim.split('@')[0]);
+        restoredJids.push(victim);
       } catch { /* keep going */ }
       continue;
     }
@@ -153,7 +153,7 @@ async function handleEvent(sock, event) {
     try {
       await sock.groupParticipantsUpdate(group, [victim], 'add');
       restored++;
-      restoredNames.push(victim.split('@')[0]);
+      restoredJids.push(victim);
     } catch { /* keep going */ }
   }
 
@@ -175,13 +175,16 @@ async function handleEvent(sock, event) {
         await sock.sendMessage(group, { text: `🛡️ *ANTIKILL:* @${digits(authorJid)} removed for mass-kicking after ${n} strikes.`, mentions: [authorJid] });
       } catch { /* best effort */ }
       if (!alertCooling(group)) {
-        await alertOwner(sock, `🛡️ *ANTIKILL (${metadata.subject || group}):* neutralized @${digits(authorJid)} after ${n} hostile kicks. Restored ${restored}.`);
+        // Owner DMs cannot render group LID mentions — show the resolved phone.
+        const authorDisplay = require('./jidResolver').displayPhone(authorJid, metadata.participants) || 'a hostile member';
+        await alertOwner(sock, `🛡️ *ANTIKILL (${metadata.subject || group}):* neutralized @${authorDisplay} after ${n} hostile kicks. Restored ${restored}.`);
       }
     } else if (restored > 0) {
       try {
         await sock.sendMessage(group, {
-          text: `🛡️ *AntiKill restored ${restored} member(s).* Mass-removals trigger here.`,
-          mentions: restoredNames.map((d) => `${d}@s.whatsapp.net`),
+          text: `🛡️ *AntiKill restored ${restored} member(s):* ${restoredJids.map((memberJid) => '@' + digits(memberJid)).join(', ')}. Mass-removals trigger here.`,
+          // Original jids (PN or LID) so WhatsApp renders the real names.
+          mentions: restoredJids,
         });
       } catch { /* cosmetic */ }
     }

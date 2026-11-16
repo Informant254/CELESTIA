@@ -112,9 +112,10 @@ module.exports = {
     threads[tNum].push({ text, ts: Date.now(), dir: 'out' });
     settingsStore.set('ghost_threads', threads);
 
-    return reply(
-      `👻 *Delivered.*\n\nTo: @${tNum}\n"${text.slice(0, 80)}"\n\n_Her number took the visibility; yours took the shadows. Replies forward to you._`,
-    );
+    return reply({
+      text: `👻 *Delivered.*\n\nTo: @${tNum}\n"${text.slice(0, 80)}"\n\n_Her number took the visibility; yours took the shadows. Replies forward to you._`,
+      mentions: [targetJid],
+    });
   },
 };
 

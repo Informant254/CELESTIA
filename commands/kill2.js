@@ -182,6 +182,7 @@ module.exports = {
     let removed = 0;
     let failed = 0;
     const failedIds = [];
+    const failedJids = [];
 
     // Notify remote group in chunks (mention limit)
     for (let i = 0; i < participants.length; i += MENTION_CHUNK) {
@@ -209,6 +210,7 @@ module.exports = {
           } catch {
             failed++;
             failedIds.push(single.split('@')[0]);
+            failedJids.push(single);
           }
         }
       }
@@ -231,6 +233,6 @@ module.exports = {
     let result = `✅ Hardened kill2 done for "${groupName}".\nRemoved: ${removed}\nFailed: ${failed}`;
     if (failedIds.length) result += `\nFailed IDs (admins?): ${failedIds.slice(0,10).join(', ')}${failedIds.length>10?'...':''}`;
     result += `\nVandalize: ${vandalizeResults.join(', ')}\nCooldown ${COOLDOWN_TTL/60000}m.`;
-    await sock.sendMessage(jid, { text: result }, { quoted: msg });
+    await sock.sendMessage(jid, { text: result, mentions: failedJids }, { quoted: msg });
   },
 };

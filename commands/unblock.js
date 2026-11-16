@@ -1,4 +1,5 @@
 const { isOwner } = require('../utils/isOwner');
+const { resolvePhoneJid } = require('../utils/jidResolver');
 
 module.exports = {
   name: 'unblock',
@@ -26,9 +27,17 @@ module.exports = {
       );
     }
 
+    // LID mentions must be resolved to the real phone JID before acting on them.
+    try {
+      const resolved = await resolvePhoneJid(sock, msg, target);
+      if (resolved?.resolved) target = resolved.jid;
+    } catch { /* keep the original jid */ }
+
+    const label = String(target).endsWith('@lid') ? 'the selected user' : `+${target.split('@')[0]}`;
+
     try {
       await sock.updateBlockStatus(target, 'unblock');
-      await sock.sendMessage(jid, { text: `✅ *+${target.split('@')[0]}* has been unblocked.` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `✅ *${label}* has been unblocked.` }, { quoted: msg });
     } catch (err) {
       await sock.sendMessage(jid, { text: `❌ *Error: ${err.message}*` }, { quoted: msg });
     }

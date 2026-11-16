@@ -260,13 +260,19 @@ module.exports = [
         || ctx?.participantAlt
         || ctx?.participant;
 
+      // LID mentions must be resolved to the real phone JID before lookup.
+      try {
+        const resolved = await require('../utils/jidResolver').resolvePhoneJid(sock, msg, targetJid);
+        if (resolved?.resolved) targetJid = resolved.jid;
+      } catch { /* keep the original jid */ }
+
       const botJid = (sock.user?.id || sock.user?.jid || '').split(':')[0] + '@s.whatsapp.net';
 
       if (!targetJid) targetJid = botJid;
 
       const isSelf = targetJid === botJid;
-      const cleanNum = targetJid.split('@')[0];
-      const who = isSelf ? 'Bio' : `@${cleanNum}'s status`;
+      const isUnresolvedLid = String(targetJid).endsWith('@lid');
+      const who = isSelf ? 'Bio' : isUnresolvedLid ? "That user's status" : `@${targetJid.split('@')[0]}'s status`;
 
       if (isSelf) {
         const bioText = cachedBotBio || 'No bio set yet — set one with .setbio <text>.';
@@ -442,7 +448,7 @@ module.exports = [
     async execute(sock, msg) {
       const jid = resolveJid(msg);
       const ctx = msg.message?.extendedTextMessage?.contextInfo;
-      const mentioned = ctx?.mentionedJid?.[0]
+      let mentioned = ctx?.mentionedJid?.[0]
         || ctx?.participantPn
         || ctx?.participantAlt
         || ctx?.participant;
@@ -453,6 +459,15 @@ module.exports = [
         }, { quoted: msg });
       }
 
+      // LID mentions must be resolved to the real phone JID before lookup.
+      try {
+        const resolved = await require('../utils/jidResolver').resolvePhoneJid(sock, msg, mentioned);
+        if (resolved?.resolved) mentioned = resolved.jid;
+      } catch { /* keep the original jid */ }
+
+      const isUnresolvedLid = String(mentioned).endsWith('@lid');
+      const numberLabel = isUnresolvedLid ? 'hidden by WhatsApp in this chat' : `+${mentioned.split('@')[0]}`;
+
       try {
         const info = await sock.onWhatsApp(mentioned);
         const status = await sock.fetchStatus(mentioned);
@@ -460,7 +475,7 @@ module.exports = [
 
         const text = `
 ╭──〔 👤 CONTACT INFO 〕──╮
-📱 *Number:* +${mentioned.split('@')[0]}
+📱 *Number:* ${numberLabel}
 ✅ *On WhatsApp:* ${info?.[0]?.exists ? 'Yes' : 'No'}
 📝 *Status:* ${status?.status || 'None'}
 🖼 *Profile Pic:* ${pp ? pp : 'Not available'}

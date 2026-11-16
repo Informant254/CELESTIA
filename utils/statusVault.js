@@ -144,6 +144,8 @@ async function archiveStatus(sock, msg) {
     let entry = {
       id,
       poster: posterNum,
+      // Original jid (PN or LID) kept so mention rendering works everywhere.
+      posterJid: poster,
       ts,
       type: found.type,
       deleted: false,
@@ -219,7 +221,7 @@ async function sendArchived(sock, toJid, entry) {
     `When: ${new Date(entry.ts).toLocaleString()}` +
     (entry.deleted ? `\n⚠️ _deleted by poster — survived here_` : '') +
     (entry.type !== 'text' ? `\n${entry.type} • ${entry.sizeKb}KB` : '');
-  const mentions = [`${entry.poster}@s.whatsapp.net`];
+  const mentions = [entry.posterJid || `${entry.poster}@s.whatsapp.net`];
 
   if (entry.type === 'text') {
     await sock.sendMessage(toJid, { text: meta + '\n\n' + (entry.text || ''), mentions });

@@ -4,8 +4,19 @@ module.exports = {
   async execute(sock, msg, args) {
     const jid = msg.key.remoteJid;
     const senderJid = msg.key.participant || msg.key.remoteJid;
-    const id = senderJid.split('@')[0].split(':')[0];
-    const isLid = senderJid.endsWith('@lid');
+    let id = senderJid.split('@')[0].split(':')[0];
+    let isLid = senderJid.endsWith('@lid');
+    // Try to unhide the real number: group metadata carries PN for LID members.
+    if (isLid) {
+      try {
+        const { resolvePhoneJid } = require('../utils/jidResolver');
+        const resolved = await resolvePhoneJid(sock, msg, senderJid);
+        if (resolved?.resolved) {
+          id = resolved.jid.split('@')[0].split(':')[0];
+          isLid = false;
+        }
+      } catch { /* keep the privacy notice */ }
+    }
     const pushName = msg.pushName || 'Unknown';
 
     const text = isLid

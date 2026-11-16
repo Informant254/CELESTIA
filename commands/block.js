@@ -1,8 +1,9 @@
 const { jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
+const { resolvePhoneJid } = require('../utils/jidResolver');
 const config = require('../config/config');
 
-// Protected from being blocked: live owner from config — never stale
+// Protected from being blocked: live owner from config ?" never stale
 const OWNER_NUMBERS = [
   config.ownerNumber + '@s.whatsapp.net',
 ];
@@ -33,18 +34,27 @@ module.exports = {
       );
     }
 
+    // LID mentions must be resolved to the real phone JID before acting on them.
+    try {
+      const resolved = await resolvePhoneJid(sock, msg, target);
+      if (resolved?.resolved) target = resolved.jid;
+    } catch { /* keep the original jid */ }
+
+    const isUnresolvedLid = String(target).endsWith('@lid');
+    const label = isUnresolvedLid ? 'the selected user' : `+${target.split('@')[0]}`;
+
     const botJid = jidNormalizedUser(sock.user.id);
 
     if (OWNER_NUMBERS.includes(target)) {
-      return sock.sendMessage(jid, { text: '*I cannot block my Owner 😡*' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '*I cannot block my Owner 🚫*' }, { quoted: msg });
     }
     if (target === botJid) {
-      return sock.sendMessage(jid, { text: '*I cannot block myself 😡*' }, { quoted: msg });
+      return sock.sendMessage(jid, { text: '*I cannot block myself 🚫*' }, { quoted: msg });
     }
 
     try {
       await sock.updateBlockStatus(target, 'block');
-      await sock.sendMessage(jid, { text: `✅ *+${target.split('@')[0]}* has been blocked.` }, { quoted: msg });
+      await sock.sendMessage(jid, { text: `✅ *${label}* has been blocked.` }, { quoted: msg });
     } catch (err) {
       await sock.sendMessage(jid, { text: `❌ *Error: ${err.message}*` }, { quoted: msg });
     }

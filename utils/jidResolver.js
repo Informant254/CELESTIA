@@ -170,8 +170,25 @@ function displayLabel(targetJid, ownerNumber) {
   return 'them'; // mention array does the naming
 }
 
+/**
+ * Best-effort phone digits for DISPLAY. Returns the phone digits for PN jids,
+ * resolves LID jids against a group participants list (Baileys 7 carries
+ * phoneNumber there), and returns null for unresolvable LIDs so callers can
+ * show a neutral label instead of raw LID digits.
+ */
+function displayPhone(jid, participants = []) {
+  const raw = String(jid || '');
+  if (!raw) return null;
+  if (isPhoneJid(raw)) return digits(raw) || null;
+  if (!isLidJid(raw)) return digits(raw) || null;
+  const lidDigits = digits(raw);
+  const participant = (participants || []).find(entry => digits(entry?.id) === lidDigits || digits(entry?.lid) === lidDigits);
+  const phone = participantPhoneJid(participant);
+  return phone ? digits(phone) : null;
+}
+
 module.exports = {
   isPhoneJid, isLidJid, digits, contextInfo, asPhoneJid,
   participantPhoneJid, resolveGroupTargets,
-  resolvePhoneJid, phoneJidFromInput, displayLabel,
+  resolvePhoneJid, phoneJidFromInput, displayLabel, displayPhone,
 };

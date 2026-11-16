@@ -29,8 +29,16 @@ module.exports = {
 
     // ─── Reply mode: inspect the quoted message ───
     if (quoted) {
-      const num = (senderAlt || senderJid || '').split('@')[0].split(':')[0];
-      targetNumber = num;
+      let quotedJid = senderAlt || senderJid || '';
+      // A LID is not a phone number — resolve it through the group roster first.
+      if (String(quotedJid).endsWith('@lid')) {
+        try {
+          const { resolvePhoneJid } = require('../utils/jidResolver');
+          const resolved = await resolvePhoneJid(sock, msg, quotedJid);
+          if (resolved?.resolved) quotedJid = resolved.jid;
+        } catch { /* fall through to the raw jid */ }
+      }
+      targetNumber = String(quotedJid).split('@')[0].split(':')[0];
       senderLabel = ctx?.participant ? 'the replied-to sender' : 'the sender';
 
       // Did THEY share a location pin in that message?
