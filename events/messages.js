@@ -363,13 +363,15 @@ async function enforceModeration(sock, msg, commands) {
 
 // Baileys re-delivers notifies (reconnect replays, multi-device echoes).
 // Without this, every command can fire 2-3×. Bounded LRU-ish set.
+// Key on the message ID alone: WhatsApp's LID migration delivers the same
+// physical message under both the real JID and its @lid twin (different
+// remoteJid/participant), so including the JID lets duplicates slip through.
 const seenMsgIds = new Set();
 function alreadySeen(msg) {
   const id = msg?.key?.id;
   if (!id) return false;
-  const k = `${msg.key.remoteJid}:${id}`;
-  if (seenMsgIds.has(k)) return true;
-  seenMsgIds.add(k);
+  if (seenMsgIds.has(id)) return true;
+  seenMsgIds.add(id);
   if (seenMsgIds.size > 2000) {
     const oldest = seenMsgIds.values().next().value;
     seenMsgIds.delete(oldest);
