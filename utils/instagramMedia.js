@@ -1,5 +1,4 @@
-const { instagramRequest, mediaItems } = require('./instagramStories');
-const { readCookie } = require('./instagramSession');
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
 function postTarget(input) {
   let value = String(input || '').trim();
@@ -24,65 +23,79 @@ function shortcodeId(shortcode) {
   return id.toString();
 }
 
-function postItems(data) {
-  const native = data?.data?.xdt_api__v1__media__shortcode__web_info?.items?.[0] || data?.items?.[0];
-  const graph = data?.data?.shortcode_media || data?.data?.xdt_shortcode_media;
-  const root = native || graph;
-  if (!root) return [];
-  const nodes = root.carousel_media || root.edge_sidecar_to_children?.edges?.map(edge => edge.node) || [root];
-  return mediaItems(nodes).slice(0, 20);
+function unescapeMediaUrl(value) {
+  return String(value)
+    .replace(/\\u0026/gi, '&').replace(/\\u003A/gi, ':')
+    .replace(/\\\//g, '/').replace(/&amp;/g, '&').replace(/&quot;/g, '"');
+}
+
+function embedItems(html) {
+  const items = [];
+  const push = url => {
+    if (!url) return;
+    const decoded = unescapeMediaUrl(url);
+    if (/^https:\/\/(?!static\.cdninstagram\.com)/.test(decoded) && !items.some(item => item.url === decoded)) {
+      items.push({ url: decoded, type: /\.mp4(\?|$)/i.test(decoded) ? 'video' : 'image' });
+    }
+  };
+  const metas = html.matchAll(/property="og:(video|image)(?::secure_url)?"\s+content="([^"]+)"/g);
+  for (const match of metas) push(match[2]);
+  const videoJson = html.match(/"(?:video_url|playable_url)":"([^"]+)"/);
+  if (videoJson) push(videoJson[1]);
+  const embeddedImage = html.match(/class="EmbeddedMediaImage"\s+src="([^"]+)"/);
+  if (embeddedImage) push(embeddedImage[1]);
+  return items.slice(0, 1);
+}
+
+function bk9Items(data) {
+  const list = Array.isArray(data?.BK9) ? data.BK9
+    : Array.isArray(data?.BK9?.media) ? data.BK9.media
+    : Array.isArray(data?.media) ? data.media
+    : [];
+  const items = [];
+  for (const entry of list) {
+    const url = entry?.url || entry?.video_url || entry?.download_url || entry?.link;
+    if (typeof url !== 'string' || !url.startsWith('https://')) continue;
+    const type = /video|mp4/i.test(String(entry?.type || url)) ? 'video' : 'image';
+    if (!items.some(item => item.url === url)) items.push({ url, type });
+  }
+  return items;
 }
 
 async function fetchMedia(pageUrl, signal) {
-  const { shortcode } = postTarget(pageUrl);
-  if (!readCookie()) throw new Error('Instagram session is not configured.');
-  const body = new URLSearchParams({
-    doc_id: '27128499623469141',
-    variables: JSON.stringify({ shortcode, __relay_internal__pv__PolarisAIGMMediaWebLabelEnabledrelayprovider: false }),
-    server_timestamps: 'true',
-  }).toString();
-  const variables = encodeURIComponent(JSON.stringify({ shortcode }));
-  const sources = [
-    ['/graphql/query', false, { method: 'POST', body }],
-    [`/graphql/query/?query_hash=2b0673e0dc4580674a88d426fe00ea90&variables=${variables}`, false, {}],
-    [`/api/v1/media/${shortcodeId(shortcode)}/info/`, true, {}],
-  ];
-  let loginRequired = false;
-  for (const [path, mobile, options] of sources) {
+  const { shortcode, url } = postTarget(pageUrl);
+  const items = [];
+  try {
+    const embed = await fetch(`https://www.instagram.com/p/${shortcode}/embed/captioned/`, {
+      headers: { 'user-agent': BROWSER_UA, 'accept-language': 'en-US,en;q=0.9' },
+      redirect: 'manual',
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
+    });
+    if (embed.ok) {
+      const html = await embed.text();
+      items.push(...embedItems(html));
+    }
+  } catch (failure) {
     if (signal?.aborted) throw signal.reason;
+  }
+  if (!items.length) {
     try {
-      const response = await instagramRequest(path, signal, mobile, options);
-      const data = await response.json();
-      if (/login_required|challenge_required|checkpoint_required/.test(data?.message || '')) {
-        loginRequired = true;
-        continue;
-      }
-      const items = postItems(data);
-      if (items.length) return { items, provider: 'instagram-session' };
-    } catch (error) {
+      const response = await fetch(`https://api.bk9.dev/download/ig?url=${encodeURIComponent(url)}`, {
+        signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(12000)]) : AbortSignal.timeout(12000),
+        redirect: 'error',
+      });
+      if (response.ok) items.push(...bk9Items(await response.json()));
+    } catch (failure) {
       if (signal?.aborted) throw signal.reason;
-      loginRequired ||= error.code === 'INSTAGRAM_LOGIN_REQUIRED';
     }
   }
-  const message = loginRequired ? 'Instagram requires a fresh login session. Update Instagram cookies in the private panel.'
-    : 'Instagram did not provide downloadable media for this post with the saved session.';
-  throw Object.assign(new Error(message), { code: loginRequired ? 'INSTAGRAM_LOGIN_REQUIRED' : 'INSTAGRAM_BLOCKED' });
-}
-
-function cookieJar() {
-  const header = readCookie();
-  if (!header) return null;
-  const lines = ['# Netscape HTTP Cookie File'];
-  for (const field of header.split(';')) {
-    const index = field.indexOf('=');
-    if (index <= 0) continue;
-    const name = field.slice(0, index).trim();
-    const value = field.slice(index + 1).trim();
-    if (!/^[A-Za-z0-9_-]+$/.test(name) || !value || /[\x00-\x20\x7f]/.test(value)) continue;
-    lines.push(`.instagram.com\tTRUE\t/\tTRUE\t0\t${name}\t${value}`);
+  if (!items.length) {
+    throw Object.assign(
+      new Error('Instagram did not return public media for this post — it may be private, deleted, or age-flagged.'),
+      { code: 'INSTAGRAM_BLOCKED' },
+    );
   }
-  if (lines.length === 1) throw new Error('The saved Instagram cookie has no usable values.');
-  return lines.join('\n') + '\n';
+  return { items: items.slice(0, 20), provider: 'instagram-public' };
 }
 
-module.exports = { postTarget, fetchMedia, postItems, cookieJar, shortcodeId };
+module.exports = { postTarget, fetchMedia, embedItems, bk9Items, shortcodeId };

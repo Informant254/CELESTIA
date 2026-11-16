@@ -11,8 +11,7 @@ function load(relative, mocks = {}, fetchImpl, env = {}) {
   const native = createRequire(filename);
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
-    module, exports: module.exports, require: id => Object.hasOwn(mocks, id) ? mocks[id]
-      : id === './instagramSession' ? { readCookie: () => env.INSTAGRAM_COOKIE || '' } : native(id),
+    module, exports: module.exports, require: id => Object.hasOwn(mocks, id) ? mocks[id] : native(id),
     process: { env }, fetch: fetchImpl, Buffer, URL, URLSearchParams, AbortSignal,
     AbortController, setTimeout, clearTimeout,
   }, { filename });
@@ -33,57 +32,65 @@ test('Instagram post/reel URLs are parsed without accepting other sites or profi
   assert.throws(() => api.postTarget('https://www.instagram.com/stories/user/123/'), /igstory/);
 });
 
-test('posts, reels and mixed albums use the saved session on Instagram requests', async () => {
+test('posts and reels are resolved by the public embed page without any cookie header', async () => {
   let calls = 0;
-  const cookie = 'sessionid=fixture; csrftoken=csrf-fixture';
   const api = mediaApi(async (url, options) => {
     calls++;
     assert.equal(new URL(url).origin, 'https://www.instagram.com');
-    assert.equal(options.headers.cookie, cookie);
-    assert.equal(options.headers['x-csrftoken'], 'csrf-fixture');
+    assert.equal(options.headers?.cookie, undefined);
     assert.equal(options.redirect, 'manual');
-    assert.equal(options.method, 'POST');
-    const body = new URLSearchParams(options.body);
-    assert.equal(JSON.parse(body.get('variables')).shortcode, 'ABC123');
-    return { ok: true, headers: { get: () => null }, json: async () => ({ data: { xdt_api__v1__media__shortcode__web_info: { items: [{
-      carousel_media: [
-        { pk: '1', image_versions2: { candidates: [{ url: 'https://cdn/photo.jpg', width: 1080, height: 1080 }] } },
-        { pk: '2', media_type: 2, video_versions: [{ url: 'https://cdn/video.mp4', width: 720, height: 1280 }] },
-      ],
-    }] } } }) };
-  }, { INSTAGRAM_COOKIE: cookie });
+    return {
+      ok: true,
+      text: async () => '<meta property="og:video:secure_url" content="https://cdn-ig/video.mp4?_nc_ht=cdn&amp;_nc_ohc=x" />'
+        + '<meta property="og:image" content="https://cdn-ig/photo.jpg" />',
+    };
+  }, { INSTAGRAM_COOKIE: 'sessionid=should-never-be-used' });
   const result = await api.fetchMedia('https://www.instagram.com/p/ABC123/');
-  assert.equal(result.provider, 'instagram-session');
-  assert.equal(result.items.length, 2);
-  assert.equal(result.items[0].type, 'image');
-  assert.equal(result.items[1].type, 'video');
+  assert.equal(result.provider, 'instagram-public');
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].url, 'https://cdn-ig/video.mp4?_nc_ht=cdn&_nc_ohc=x');
+  assert.equal(result.items[0].type, 'video');
   assert.equal(calls, 1);
 });
 
-test('failed session endpoints remain scoped to Instagram and never echo the cookie', async () => {
-  const cookie = 'sessionid=secret-fixture; csrftoken=csrf-fixture';
-  const api = mediaApi(async (url, options) => {
-    assert.ok(['www.instagram.com', 'i.instagram.com'].includes(new URL(url).hostname));
-    assert.equal(options.headers.cookie, cookie);
-    return { ok: true, headers: { get: () => null }, json: async () => ({ status: 'fail', message: 'login_required' }) };
-  }, { INSTAGRAM_COOKIE: cookie });
+test('album pages fall back to the public resolver and receive no operator credentials', async () => {
+  const api = mediaApi(async (url) => {
+    if (String(url).startsWith('https://api.bk9.dev')) {
+      return { ok: true, json: async () => ({ status: true, BK9: [
+        { url: 'https://cdn-ig/album1.jpg', type: 'image' },
+        { url: 'https://cdn-ig/album2.mp4', type: 'video' },
+      ] }) };
+    }
+    return { ok: true, text: async () => '<html>login page, no media</html>' };
+  }, { INSTAGRAM_COOKIE: 'sessionid=private-fixture' });
+  const result = await api.fetchMedia('https://www.instagram.com/p/ABC123/');
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0].type, 'image');
+  assert.equal(result.items[1].type, 'video');
+});
+
+test('private or blocked posts produce a clear error, never a cookie hint', async () => {
+  const api = mediaApi(async () => ({ ok: true, text: async () => '<html>login page</html>' }));
   await assert.rejects(api.fetchMedia('https://instagram.com/p/ABC123/'), error => {
-    assert.equal(error.code, 'INSTAGRAM_LOGIN_REQUIRED');
-    assert.doesNotMatch(error.message, /secret-fixture|csrf-fixture/);
+    assert.equal(error.code, 'INSTAGRAM_BLOCKED');
+    assert.doesNotMatch(error.message, /cookie|session|panel/i);
     return true;
   });
 });
 
-test('Instagram cookie jars only apply to Instagram and reject control-character injection', () => {
-  const api = mediaApi(undefined, { INSTAGRAM_COOKIE: 'sessionid=fixture; csrftoken=csrf' });
-  const jar = api.cookieJar();
-  assert.match(jar, /\.instagram\.com\tTRUE\t\/\tTRUE\t0\tsessionid\tfixture/);
-  assert.doesNotMatch(jar, /youtube\.com|google\.com|bad\nline/);
-  const invalid = load('../utils/instagramSession.js', {}, undefined, { INSTAGRAM_COOKIE: 'sessionid=bad\nline', INSTAGRAM_COOKIE_FILE: '__missing-test-session__.txt' });
-  assert.equal(invalid.readCookie(), '');
+test('aborted requests stop immediately without reaching the public resolver', async () => {
+  const controller = new AbortController();
+  let calls = 0;
+  const api = mediaApi(async () => {
+    calls++;
+    controller.abort(new Error('cancelled'));
+    throw controller.signal.reason;
+  });
+  await assert.rejects(api.fetchMedia('https://www.instagram.com/p/ABC123/', controller.signal), /cancelled/);
+  assert.equal(calls, 1);
 });
 
-test('authenticated albums download and deliver sequentially without sending cookies to the CDN', async () => {
+test('albums download and deliver sequentially without ever sending cookies to the CDN', async () => {
   const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0, 0, 0, 0, 0]);
   const mp4 = Buffer.from('000000006674797000000000', 'hex');
   const calls = [];
@@ -97,7 +104,7 @@ test('authenticated albums download and deliver sequentially without sending coo
     } },
     'yt-search': {},
     '../download/queue': { run: async fn => { active = true; try { return await fn(); } finally { active = false; } } },
-    './instagramMedia': { fetchMedia: async () => ({ provider: 'instagram-session', items: [
+    './instagramMedia': { fetchMedia: async () => ({ provider: 'instagram-public', items: [
       { id: '1', url: 'https://8.8.8.8/photo.jpg', type: 'image' },
       { id: '2', url: 'https://8.8.8.8/video.mp4', type: 'video' },
     ] }) },
@@ -113,18 +120,15 @@ test('authenticated albums download and deliver sequentially without sending coo
   assert.equal(active, false);
 });
 
-test('Instagram yt-dlp fallback receives an isolated Instagram jar and always removes it', async () => {
+test('the Instagram yt-dlp fallback runs cookieless and cleans its work directory', async () => {
   for (const fail of [false, true]) {
     let directory;
-    let cookieFile;
     const downloader = load('../utils/downloader.js', {
       axios: {}, 'yt-search': {},
-      './instagramMedia': { cookieJar: () => '# Netscape HTTP Cookie File\n.instagram.com\tTRUE\t/\tTRUE\t0\tsessionid\tfixture\n' },
       '../download/ytdlp': { attempt: async options => {
         directory = options.workDir;
-        cookieFile = options.extra[options.extra.indexOf('--cookies') + 1];
         assert.equal(options.youtube, false);
-        assert.match(fs.readFileSync(cookieFile, 'utf8'), /\.instagram.com/);
+        assert.equal(options.extra, undefined, 'no cookie file is ever passed for Instagram');
         if (fail) throw new Error('Simulated engine failure');
         const file = path.join(directory, 'out.mp4');
         fs.writeFileSync(file, 'media');
@@ -132,9 +136,8 @@ test('Instagram yt-dlp fallback receives an isolated Instagram jar and always re
       } },
       '../download/fallback': { validateFile: async () => {} },
     });
-    const work = downloader.localSocial('https://www.instagram.com/reel/ABC123/', 1024, undefined, true);
+    const work = downloader.localSocial('https://www.instagram.com/reel/ABC123/', 1024, undefined);
     if (fail) await assert.rejects(work, /Simulated/); else assert.equal((await work).provider, 'yt-dlp');
-    assert.equal(fs.existsSync(cookieFile), false);
     assert.equal(fs.existsSync(directory), false);
   }
 });

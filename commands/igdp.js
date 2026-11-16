@@ -1,5 +1,4 @@
 const { downloadBuffer, detectMediaType } = require('../utils/downloader');
-const { readCookie } = require('../utils/instagramSession');
 
 const MAX_DP_BYTES = 20 * 1024 * 1024;
 const IG_APP_ID = '936619743392459';
@@ -100,8 +99,6 @@ function pageProfile(html) {
 
 async function fetchProfilePicture(username, signal) {
   const encoded = encodeURIComponent(username);
-  const cookie = readCookie();
-  const csrf = cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/)?.[1];
   const sources = [
     ['api', `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encoded}`],
     ['embed', `https://www.instagram.com/${encoded}/embed/`],
@@ -116,10 +113,8 @@ async function fetchProfilePicture(username, signal) {
         headers: {
           'user-agent': source === 'api' ? BROWSER_UA : 'Mozilla/5.0',
           ...(source === 'api' ? { 'x-ig-app-id': IG_APP_ID, accept: 'application/json' } : {}),
-          ...(cookie ? { cookie } : {}),
-          ...(source === 'api' && csrf ? { 'x-csrftoken': csrf } : {}),
         },
-        // Credentials are only sent to these fixed Instagram URLs, never to a redirect target.
+        // Requests are always keyless and stay on these fixed Instagram URLs.
         redirect: 'manual',
         signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       });
@@ -143,7 +138,7 @@ async function fetchProfilePicture(username, signal) {
     }
   }
   console.error('[IGDP SOURCES]', failures.join('; '));
-  throw new Error(`Instagram did not allow this server to retrieve @${username}'s photo. This does not mean the profile has no picture. ${cookie ? 'The Instagram session may need refreshing, or Instagram is limiting requests.' : 'Save Instagram cookies in the private panel for authenticated access.'}`);
+  throw new Error(`Instagram did not allow this server to retrieve @${username}'s photo. This does not mean the profile has no picture. Instagram may be limiting requests from this server.`);
 }
 
 module.exports = {

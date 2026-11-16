@@ -10,8 +10,7 @@ function load(relative, mocks = {}, fetchImpl, env = {}) {
   const native = createRequire(filename);
   const module = { exports: {} };
   vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
-    module, exports: module.exports, require: id => Object.hasOwn(mocks, id) ? mocks[id]
-      : id === './instagramSession' ? { readCookie: () => env.INSTAGRAM_COOKIE || '' } : native(id),
+    module, exports: module.exports, require: id => Object.hasOwn(mocks, id) ? mocks[id] : native(id),
     process: { env }, fetch: fetchImpl, Buffer, URL, AbortSignal,
   }, { filename });
   return module.exports;
@@ -34,36 +33,23 @@ test('stories accept handles, profile links and individual story links', () => {
   assert.throws(() => target('https://www.instagram.com/stories/highlights/invalid/'), /not valid/);
 });
 
-test('authenticated stories resolve profile ID and choose the best video/image rendition', async () => {
+test('stories are fetched keylessly and no credential headers ever reach the provider', async () => {
   const calls = [];
   const api = load('../utils/instagramStories.js', {}, async (url, options) => {
     calls.push(url);
-    assert.equal(options.headers.cookie, 'sessionid=fixture; csrftoken=csrf');
-    assert.equal(options.headers['x-csrftoken'], 'csrf');
-    assert.equal(options.redirect, 'manual');
-    if (url.endsWith('/riazzeii/')) return response('<script>{"page_id":"profilePage_98765"}</script>');
-    return response({ status: 'ok', reel: { items: [
-      { pk: '10', video_versions: [{ width: 320, height: 200, url: 'https://cdn/low.mp4' }, { width: 720, height: 1280, url: 'https://cdn/high.mp4' }] },
-      { pk: '11', image_versions2: { candidates: [{ width: 1080, height: 1920, url: 'https://cdn/image.jpg' }] } },
-    ] } });
-  }, { INSTAGRAM_COOKIE: 'sessionid=fixture; csrftoken=csrf' });
-  const result = await api.fetchStories('riazzeii');
-  assert.equal(result.authenticated, true);
-  assert.equal(result.stories[0].url, 'https://cdn/high.mp4');
-  assert.equal(result.stories[1].type, 'image');
-  assert.equal(calls.length, 2);
-});
-
-test('a rejected Instagram endpoint falls back without leaking cookies to the public provider', async () => {
-  const api = load('../utils/instagramStories.js', {}, async (url, options) => {
-    if (url.startsWith('https://www.instagram.com/')) return response({}, 429);
     assert.equal(options.headers, undefined);
     assert.equal(new URL(url).hostname, 'api.bk9.dev');
-    return response({ status: true, BK9: { stories: [{ id: '12', download_url: 'https://cdn/story.jpg', type: 'image' }] } });
-  }, { INSTAGRAM_COOKIE: 'sessionid=private-fixture' });
-  const result = await api.fetchStories('example');
+    return response({ status: true, BK9: { stories: [
+      { id: '10', video_url: 'https://cdn/high.mp4', type: 'video' },
+      { id: '11', download_url: 'https://cdn/image.jpg', type: 'image' },
+    ] } });
+  }, { INSTAGRAM_COOKIE: 'sessionid=should-never-be-used' });
+  const result = await api.fetchStories('riazzeii');
   assert.equal(result.provider, 'bk9');
-  assert.equal(result.stories.length, 1);
+  assert.equal(result.authenticated, false);
+  assert.equal(result.stories[0].url, 'https://cdn/high.mp4');
+  assert.equal(result.stories[1].type, 'image');
+  assert.equal(calls.length, 1);
 });
 
 test('GraphQL story media supports partial non-media errors and never substitutes a video thumbnail', () => {
@@ -81,8 +67,8 @@ test('GraphQL story media supports partial non-media errors and never substitute
   assert.equal(storyItems({ status: 'ok', errors: [{ message: 'denied' }], data: { reels_media: [] } }, '7'), null);
 });
 
-test('provider errors are never reported as no active stories', async () => {
-  const api = load('../utils/instagramStories.js', {}, async () => response({ status: false, message: 'upstream failure' }));
+test('provider outages fail loudly instead of pretending the account has no stories', async () => {
+  const api = load('../utils/instagramStories.js', {}, async () => response({}, 503));
   await assert.rejects(api.fetchStories('example'), error => {
     assert.equal(error.code, 'INSTAGRAM_BLOCKED');
     assert.doesNotMatch(error.message, /no active stories/i);
@@ -94,18 +80,13 @@ test('only an explicit successful empty result is treated as no visible stories'
   const api = load('../utils/instagramStories.js', {}, async () => response({ status: true, BK9: { stories: [] } }));
   const result = await api.fetchStories('example');
   assert.equal(result.stories.length, 0);
+  assert.equal(result.authenticated, false);
   const { storyItems } = api;
   assert.equal(storyItems({ status: 'fail', reel: null }, '1'), null);
   assert.equal(storyItems({ status: 'ok', reel: null }, '1').length, 0);
   assert.equal(storyItems({ status: 'ok', reels: {} }, '1').length, 0);
   assert.equal(storyItems({ status: 'ok', reels: { '1': { items: [{ pk: '2' }] } } }, '1')[0].pk, '2');
   assert.equal(storyItems({ status: 'ok', reels_media: [{ id: '1', items: [{ pk: '3' }] }] }, '1')[0].pk, '3');
-});
-
-test('expired Instagram sessions produce a session-specific error rather than no stories', async () => {
-  const api = load('../utils/instagramStories.js', {}, async (url) => url.includes('instagram.com')
-    ? response({}, 302, '/accounts/login/?next=profile') : response({}, 503), { INSTAGRAM_COOKIE: 'sessionid=expired-fixture' });
-  await assert.rejects(api.fetchStories('example'), error => error.code === 'INSTAGRAM_LOGIN_REQUIRED');
 });
 
 test('command filters an individual story and continues when one media item fails', async () => {

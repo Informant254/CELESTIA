@@ -9,8 +9,7 @@ function load(mocks, fetchImpl, env = {}) {
   const filename = path.resolve(__dirname, '../commands/igdp.js');
   const nativeRequire = createRequire(filename);
   const module = { exports: {} };
-  const requireMock = (id) => (Object.hasOwn(mocks, id) ? mocks[id] : id === '../utils/downloader' ? {}
-    : id === '../utils/instagramSession' ? { readCookie: () => env.INSTAGRAM_COOKIE || '' } : nativeRequire(id));
+  const requireMock = (id) => (Object.hasOwn(mocks, id) ? mocks[id] : id === '../utils/downloader' ? {} : nativeRequire(id));
   vm.runInNewContext(fs.readFileSync(filename, 'utf8'), {
     require: requireMock, module, exports: module.exports, process: { env }, console: { error() {} },
     URL, encodeURIComponent, Buffer, AbortSignal, fetch: fetchImpl,
@@ -137,20 +136,17 @@ test('aborted requests stop without trying other sources', async () => {
   assert.equal(calls, 1);
 });
 
-test('operator cookies authenticate only fixed Instagram requests and redirects are not followed', async () => {
-  const cookie = 'sessionid=fixture; csrftoken=csrf-fixture';
+test('profile requests stay keyless and never attach an Instagram cookie', async () => {
   const calls = [];
   const igdp = load({}, async (url, options) => {
     calls.push(url);
     assert.equal(new URL(url).origin, 'https://www.instagram.com');
-    assert.equal(options.headers.cookie, cookie);
+    assert.equal(options.headers?.cookie, undefined);
+    assert.equal(options.headers?.['x-csrftoken'], undefined);
     assert.equal(options.redirect, 'manual');
-    if (url.includes('web_profile_info')) {
-      assert.equal(options.headers['x-csrftoken'], 'csrf-fixture');
-      return { ok: false, status: 302, headers: { location: 'https://other.example/login' } };
-    }
+    if (url.includes('web_profile_info')) return { ok: false, status: 302, headers: { location: 'https://other.example/login' } };
     return { ok: true, url, text: async () => embedHtml({ username: 'ceo', profile_pic_url: 'https://cdn/p.jpg' }) };
-  }, { INSTAGRAM_COOKIE: cookie });
+  }, { INSTAGRAM_COOKIE: 'sessionid=should-never-be-used' });
   const result = await igdp.__internals.fetchProfilePicture('ceo', sentinel);
   assert.equal(result.provider, 'embed');
   assert.equal(calls.length, 2);

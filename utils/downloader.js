@@ -575,27 +575,17 @@ async function publicSocial(kind, pageUrl, signal) {
   throw new Error(`No dedicated public resolver for ${kind}.`);
 }
 
-async function localSocial(pageUrl, maxBytes, signal, instagram = false) {
+async function localSocial(pageUrl, maxBytes, signal) {
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'celestia-social-'));
   try {
     const ytdlp = require('../download/ytdlp');
     const fallback = require('../download/fallback');
-    const extra = [];
-    if (instagram) {
-      const jar = require('./instagramMedia').cookieJar();
-      if (jar) {
-        const cookieFile = path.join(workDir, 'instagram-cookies.txt');
-        fs.writeFileSync(cookieFile, jar, { mode: 0o600 });
-        extra.push('--cookies', cookieFile);
-      }
-    }
     const result = await ytdlp.attempt({
       url: pageUrl,
       selector: 'bv*[height<=720]+ba/b[height<=720]/b',
       workDir,
       maxBytes,
       youtube: false,
-      extra,
       signal,
     });
     await fallback.validateFile(result.file, false);
@@ -607,7 +597,7 @@ async function localSocial(pageUrl, maxBytes, signal, instagram = false) {
   }
 }
 
-async function instagramSessionMedia(pageUrl, maxBytes, signal) {
+async function instagramPublicMedia(pageUrl, maxBytes, signal) {
   const result = await require('./instagramMedia').fetchMedia(pageUrl, signal);
   const first = result.items[0];
   const buffer = await downloadBuffer(first.url, maxBytes, 60000, 5, signal);
@@ -627,13 +617,13 @@ async function downloadSocial(kind, pageUrl, maxBytes = cfg.MAX_VIDEO_BYTES, own
   const safeUrl = validateSocialPageUrl(kind, pageUrl);
   const run = async (signal) => {
     const providers = [];
-    if (kind === 'instagram' && require('./instagramSession').readCookie()) {
-      providers.push(['instagram-session', () => instagramSessionMedia(safeUrl, maxBytes, signal)]);
+    if (kind === 'instagram') {
+      providers.push(['instagram-public', () => instagramPublicMedia(safeUrl, maxBytes, signal)]);
     }
     if (kind === 'tiktok' || kind === 'twitter') {
       providers.push(['public', () => resolvedSocial('public', () => publicSocial(kind, safeUrl, signal), maxBytes, signal)]);
     }
-    providers.push(['yt-dlp', () => localSocial(safeUrl, maxBytes, signal, kind === 'instagram')]);
+    providers.push(['yt-dlp', () => localSocial(safeUrl, maxBytes, signal)]);
     providers.push(['bk9', () => resolvedSocial('bk9', () => bk9Social(kind, safeUrl, signal), maxBytes, signal)]);
     const errors = [];
     for (const [name, provider] of providers) {
