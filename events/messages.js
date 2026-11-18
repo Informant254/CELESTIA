@@ -233,6 +233,12 @@ async function enforceModeration(sock, msg, commands) {
     const { isSudo } = require('../utils/isSudo');
     if (!isSudo(msg)) jobs.push({ tag: 'antibot', mode: botMode, scope: 'bot', strictAdmin: false, struck: botWidget ? '🤖 Automated bot message removed' : '🤖 Suspected bot command removed' });
   }
+  // Anti-image: member photos only — stickers, videos, GIFs, documents and
+  // voice notes stay untouched. View-once photos unwrap through `inner`.
+  const imgMode = normMode(g('antiimage', 'off'), 'on');
+  if (imgMode !== 'off' && inner?.imageMessage) {
+    jobs.push({ tag: 'antiimage', mode: imgMode, scope: 'img', strictAdmin: imgMode === 'on', struck: '🖼️ Image deleted' });
+  }
   const tagMode = normMode(s('antitag', false), 'on');
   // Mass-tags hide in captions and ephemeral/view-once wrappers too — scan
   // every container that can carry a contextInfo, not just extended text.

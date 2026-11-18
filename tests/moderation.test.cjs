@@ -437,6 +437,70 @@ test('antigstatus hits channel invites but ignores plain links', async () => {
   assert.equal(h2.sent.length, 0);
 });
 
+const photo = () => ({ imageMessage: { caption: 'look', mimetype: 'image/jpeg' } });
+
+test('antiimage on deletes member photos in private mode before autochat', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antiimage: 'on' } } });
+  await h.send(photo());
+  assert.equal(h.sent.length, 1);
+  assert.ok(h.sent[0].delete);
+  assert.equal(h.aiCalls(), 0);
+});
+
+test('antiimage leaves text, stickers, videos and documents alone', async () => {
+  const h = loadMessagesHarness({ privacy: 'public', group: { [GROUP]: { antiimage: 'kick' } } });
+  await h.send({ conversation: 'hello' });
+  await h.send({ stickerMessage: { mimetype: 'image/webp' } });
+  await h.send({ videoMessage: { mimetype: 'video/mp4' } });
+  await h.send({ documentMessage: { fileName: 'a.pdf' } });
+  await h.send({ audioMessage: { mimetype: 'audio/ogg' } });
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.filter((c) => !c.react).length, 0);
+});
+
+test('antiimage catches view-once photos inside wrappers', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antiimage: 'kick' } } });
+  await h.send({ viewOnceMessage: { message: { imageMessage: { viewOnce: true } } } });
+  await h.send({ ephemeralMessage: { message: { imageMessage: { caption: 'x' } } } });
+  assert.equal(h.removed.length, 2);
+});
+
+test('antiimage warn strikes then kicks on third photo', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antiimage: 'warn' } } });
+  await h.send(photo()); await h.send(photo());
+  assert.equal(h.removed.length, 0);
+  assert.match(h.sent.at(-1).text, /warning 2\/3/);
+  await h.send(photo());
+  assert.equal(h.removed.length, 1);
+  assert.match(h.sent.at(-1).text, /removed after 3 warnings/);
+});
+
+test('antiimage kick removes immediately and exempts admins', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antiimage: 'kick' } } });
+  await h.send(photo());
+  assert.equal(h.removed.length, 1);
+  const h2 = loadMessagesHarness({ group: { [GROUP]: { antiimage: 'kick' } } });
+  await h2.send(photo(), ADMIN);
+  assert.equal(h2.removed.length, 0);
+  assert.equal(h2.sent.length, 0);
+});
+
+test('inbox antiimage kick blocks the photo sender immediately', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ group: { [DM]: { antiimage: 'kick' } } });
+  await h.sendDM(photo(), DM);
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+  assert.equal(h.removed.length, 0);
+  assert.match(h.sent.at(-1).text, /Image deleted/);
+});
+
+test('antiimage off never touches photos', async () => {
+  const h = loadMessagesHarness({ privacy: 'public' });
+  await h.send(photo());
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.length, 0);
+});
+
 test('inbox antilink on sends notice without delete or block', async () => {
   const DM = '999@s.whatsapp.net';
   const h = loadMessagesHarness({ group: { [DM]: { antilink: 'on' } } });

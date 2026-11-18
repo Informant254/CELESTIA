@@ -45,9 +45,10 @@ function requireBotAdmin(sock, metadata, jid, msg) {
 
 // Unified punishment-mode command: off = disabled · on = delete only ·
 // warn = delete + 3 strikes then kick · kick = delete + immediate kick.
-function makeModeCommand(name, settingKey, label, emoji, legacyTrue = 'on') {
+function makeModeCommand(name, settingKey, label, emoji, legacyTrue = 'on', aliases = []) {
   return {
     name,
+    aliases,
     description: `${label}. Usage: .${name} off|on|warn|kick`,
     async execute(sock, msg, args) {
       const jid = msg.key.remoteJid;
@@ -124,6 +125,7 @@ module.exports = [
 
   makeModeCommand('antigstatus', 'antigstatus', 'Channel-invite spam protection', '🛡️'),
   makeModeCommand('antispam', 'antispam', 'Flood protection (>6 messages / 10s)', '🚫'),
+  makeModeCommand('antiimage', 'antiimage', 'Anti-image protection (member photos)', '🖼️', 'on', ['noimage', 'noimages', 'antiimg']),
 
   {
     name: 'antiword',
@@ -180,6 +182,7 @@ module.exports = [
         const ui = require('../utils/ui');
         return sock.sendMessage(jid, { text: ui.renderCard('🛡️ INBOX SETTINGS', [
           ui.renderInfo('🔗', 'Antilink', gmode(inbox.antilink, 'on')),
+          ui.renderInfo('🖼️', 'Antiimage', gmode(inbox.antiimage, 'on')),
           ui.renderInfo('🚫', 'Antispam', gmode(inbox.antispam, 'on')),
           ui.renderInfo('🤬', 'Antiword', `${gmode(inbox.antiword, 'on')} (${words} words)`),
           ui.renderInfo('🛡️', 'Antigstatus', gmode(inbox.antigstatus, 'on')),
@@ -198,6 +201,7 @@ module.exports = [
       const ui = require('../utils/ui');
       const text = ui.renderCard('🛡️ GROUP SETTINGS', [
         ui.renderInfo('🔗', 'Antilink', mode(settings.antilink)),
+        ui.renderInfo('🖼️', 'Antiimage', mode(settings.antiimage)),
         ui.renderInfo('🚫', 'Antispam', mode(settings.antispam)),
         ui.renderInfo('🤬', 'Antiword', `${mode(settings.antiword)} (${wordCount} words)`),
         ui.renderInfo('🛡️', 'Antigm', mode(settings.antigm)),
