@@ -353,7 +353,13 @@ healthApp.get('/qr', async (req, res) => {
   const age = qr ? Math.round((Date.now() - globalThis.__lastQRAt) / 1000) : -1;
   const fresh = qr && age <= 50;
   const dataUrl = fresh ? await require('qrcode').toDataURL(qr, { width: 512, margin: 2 }).catch(() => null) : null;
-  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>CELESTIA — Live QR</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;margin:8px 0;">CELESTIA</h1>${dataUrl ? `<p style="color:#00e5ff;">● LIVE QR — ${age}s old — scan now</p><img src="${dataUrl}" width="340" height="340" style="border-radius:16px;border:2px solid #00e5ff;">` : `<p style="color:#ffcf6b;">Waiting for a fresh QR… (auto-refreshes every 10s)</p>`}<p style="color:#8ea6c8;font-size:13px;">WhatsApp → Linked Devices → Link a Device → scan this screen with your phone</p></body></html>`);
+  const connected = runtimeState.connection === 'open';
+  const statusBlock = connected
+    ? `<p style="color:#26d97f;font-size:18px;">✅ CELESTIA is connected and running</p><p style="color:#8ea6c8;font-size:13px;">No QR needed — this device is already linked.</p>`
+    : dataUrl
+      ? `<p style="color:#00e5ff;">● LIVE QR — ${age}s old — scan now</p><img src="${dataUrl}" width="340" height="340" style="border-radius:16px;border:2px solid #00e5ff;">`
+      : `<p style="color:#ffcf6b;">Connecting… a fresh QR appears here automatically (page refreshes every 10s)</p>`;
+  res.send(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="10"><title>CELESTIA — Live QR</title></head><body style="margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#030510;color:#cfeaff;font-family:sans-serif;text-align:center;padding:24px;"><div style="font-size:40px;">🐺</div><h1 style="letter-spacing:8px;margin:8px 0;">CELESTIA</h1>${statusBlock}<p style="color:#8ea6c8;font-size:13px;">WhatsApp → Linked Devices → Link a Device → scan this screen with your phone</p></body></html>`);
 });
 healthApp.get('/qr.png', async (req, res) => {
   if (!authorizeQr(req, res)) return;
