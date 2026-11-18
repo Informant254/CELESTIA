@@ -1,13 +1,19 @@
-const fs = require('fs');
+﻿const fs = require('fs');
 const path = require('path');
 
 const DATA_PATH = path.join(__dirname, '../data/settings.json');
-const USE_DB = !!process.env.DATABASE_URL;
+const ENV_DB = !!process.env.DATABASE_URL;
 
 let db = null;
-if (USE_DB) {
-    db = require('./db');
+if (ENV_DB) {
+    try {
+        db = require('./db');
+    } catch (err) {
+        console.error('[settingsStore] DATABASE_URL set but pg client unavailable — falling back to disk:', err.message);
+        db = null;
+    }
 }
+const DB_READY = ENV_DB && !!db;
 
 function loadFromDisk() {
     try {
@@ -27,7 +33,7 @@ function saveToDisk(currentState) {
     }
 }
 
-let state = USE_DB ? {} : loadFromDisk();
+let state = DB_READY ? {} : loadFromDisk();
 
 function repairUnsafePrefix() {
     const prefix = state.prefix;
@@ -37,9 +43,9 @@ function repairUnsafePrefix() {
     return true;
 }
 
-if (!USE_DB && repairUnsafePrefix()) saveToDisk(state);
+if (!DB_READY && repairUnsafePrefix()) saveToDisk(state);
 
-const ready = USE_DB
+const ready = DB_READY
     ? db.query(`
         CREATE TABLE IF NOT EXISTS bot_settings (
             key   TEXT NOT NULL PRIMARY KEY,
@@ -56,7 +62,7 @@ const ready = USE_DB
                   ['prefix', JSON.stringify('.')]
               );
           }
-          console.log('✅ settingsStore: loaded settings from PostgreSQL');
+          console.log('âœ… settingsStore: loaded settings from PostgreSQL');
       })
       .catch((err) => {
           console.error(
@@ -73,8 +79,8 @@ function get(key, fallback = undefined) {
 
 // Persistence is trailing-debounced: reads are always fresh from memory,
 // but a burst of sets (voice/dialect learning on every message) costs one
-// disk write instead of one per message (~450µs each at real state sizes).
-// flush() forces a synchronous write — called on graceful shutdown.
+// disk write instead of one per message (~450Âµs each at real state sizes).
+// flush() forces a synchronous write â€” called on graceful shutdown.
 let dirty = false;
 let saveTimer = null;
 
@@ -103,7 +109,7 @@ function flush() {
 function set(key, value) {
     state[key] = value;
 
-    if (USE_DB) {
+    if (DB_READY) {
         db.query(
             `INSERT INTO bot_settings (key, value)
              VALUES ($1, $2)

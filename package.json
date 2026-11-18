@@ -56,6 +56,7 @@
     "node-llama-cpp": "^3.21.1",
     "openai": "^6.33.0",
     "pdfkit": "^0.18.0",
+    "pg": "^8.23.1",
     "pino": "^8.21.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
