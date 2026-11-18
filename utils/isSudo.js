@@ -3,6 +3,19 @@ const path = require('path');
 const { isOwner } = require('./isOwner');
 
 const sudoPath = path.join(__dirname, '../config/sudoList.json');
+const DB_KEY = 'sudo_list';
+
+// The JSON file is a fast local cache; Postgres (via settingsStore) is the
+// durable home — Heroku dyno disks are wiped on every restart.
+function persistedList() {
+  try {
+    const { get } = require('./settingsStore');
+    const list = get(DB_KEY, null);
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
 
 // mtime-guarded cache: isSudo runs on every suspicious message, and hitting
 // disk + JSON.parse each time is pure waste. Last-good list survives a
@@ -16,16 +29,25 @@ function load() {
     cache = { mtime: st.mtimeMs, list: Array.isArray(parsed) ? parsed : [] };
     return cache.list;
   } catch {
+    const persisted = persistedList();
+    if (persisted.length) {
+      cache = { mtime: cache.mtime, list: persisted };
+      return cache.list;
+    }
     return cache.list;
   }
 }
 function save(list) {
-  fs.writeFileSync(sudoPath, JSON.stringify(list, null, 2));
   try {
+    fs.writeFileSync(sudoPath, JSON.stringify(list, null, 2));
     cache = { mtime: fs.statSync(sudoPath).mtimeMs, list };
   } catch {
     cache = { mtime: 0, list };
   }
+  try {
+    const { set } = require('./settingsStore');
+    set(DB_KEY, list);
+  } catch { /* in-memory list still applies this session */ }
 }
 
 function isSudo(msg) {

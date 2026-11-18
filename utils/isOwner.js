@@ -34,6 +34,15 @@ function knownOwnerLids() {
   return [...lids].filter(Boolean);
 }
 
+// Every digit form that identifies the owner (PN + learned LIDs).
+function ownerForms() {
+  const set = new Set();
+  const ownerPn = normalize(config.ownerNumber || '');
+  if (ownerPn) set.add(ownerPn);
+  for (const lid of knownOwnerLids()) set.add(lid);
+  return set;
+}
+
 function isOwner(msg) {
   if (!msg?.key) return false;
 
@@ -68,4 +77,4 @@ function isOwner(msg) {
   return isDev(msg);
 }
 
-module.exports = { isOwner };
+module.exports = { isOwner, ownerForms };

@@ -3,6 +3,9 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
+// Config snapshots OWNER_NUMBER at first require — set it before anything loads.
+process.env.OWNER_NUMBER = process.env.OWNER_NUMBER || '254700000099';
+
 const addsudo = require('../commands/addsudo');
 const { listSudo, isSudo } = require('../utils/isSudo');
 
@@ -100,5 +103,51 @@ test('no target shows usage, not a crash', async () => {
     await addsudo.execute(sock(sent), ownerMsg({}), []);
     assert.ok(sent.some((t) => t.includes('.addsudo @user')), 'usage shown, got: ' + sent.join('|'));
     assert.equal(listSudo().length, 0, 'nothing stored');
+  });
+});
+
+test('reply resolves LID to the real number and shows it in the reply', async () => {
+  await withCleanSudo(async () => {
+    const sent = [];
+    const s = sock(sent);
+    s.groupMetadata = async () => ({ participants: [{
+      id: '100000000000007@lid',
+      phoneNumber: '254700000007@s.whatsapp.net',
+    }] });
+    await addsudo.execute(s, ownerMsg({ participant: '100000000000007@lid' }), []);
+    const text = sent.join('|');
+    assert.match(text, /\+254700000007/, 'resolved PN shown: ' + text);
+    assert.ok(listSudo().includes('254700000007'));
+    assert.ok(listSudo().includes('100000000000007'), 'LID form kept for LID-addressed matching');
+  });
+});
+
+test('adding the owner as sudo is refused with a friendly message', async () => {
+  await withCleanSudo(async () => {
+    const sent = [];
+    const ownerNumber = require('../config/config').ownerNumber;
+    await addsudo.execute(sock(sent), ownerMsg({}), [ownerNumber]);
+    assert.ok(sent.some((t) => t.includes('already the owner')), 'owner guard fired: ' + sent.join('|'));
+    assert.equal(listSudo().length, 0, 'nothing stored');
+  });
+});
+
+test('re-adding an existing sudo says so instead of granting twice', async () => {
+  await withCleanSudo(async () => {
+    const first = [];
+    await addsudo.execute(sock(first), ownerMsg({}), ['254700000004']);
+    const second = [];
+    await addsudo.execute(sock(second), ownerMsg({}), ['254700000004']);
+    assert.match(second.join('|'), /already a sudo user/);
+  });
+});
+
+test('sudo list survives a wiped disk by restoring from the settings store', async () => {
+  await withCleanSudo(async () => {
+    const { addSudo } = require('../utils/isSudo');
+    addSudo('254700000123');
+    fs.unlinkSync(SUDO_FILE); // simulate a fresh dyno: no local file
+    const incoming = { key: { remoteJid: '120363999999999999@g.us', participant: '254700000123@s.whatsapp.net' } };
+    assert.equal(isSudo(incoming), true, 'list restored from settingsStore');
   });
 });
