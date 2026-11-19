@@ -403,6 +403,20 @@ function registerMessageHandler(sock, commands) {
   const statusStudio = require('../utils/mediaStudio');
   statusStudio.restoreStatusContacts(sock);
   sock.ev.on('contacts.upsert', (contacts) => statusStudio.noteStatusContacts(sock, contacts, { persist: true }));
+
+  // 🔐 History chunks often carry the full view-once payload for messages
+  // sent from the owner's own phone — snapshot them for reply-time reveals.
+  sock.ev.on('messaging-history.set', ({ messages }) => {
+    try {
+      const vault = require('../utils/viewonceVault');
+      for (const m of messages || []) {
+        if (m?.message && vault.findViewOnce(m.message)) {
+          vault.rememberOriginal(m.key?.id, m.message);
+          logger.info(`[vault] cached original view-once id=${m.key?.id} fromMe=${!!m.key?.fromMe} via history`);
+        }
+      }
+    } catch (e) { logger.error(`[vault] history cache: ${e.message}`); }
+  });
   sock.ev.on('settings.update', ({ setting, value }) => {
     if (setting === 'statusPrivacy') statusStudio.noteStatusPrivacy(sock, value);
   });
@@ -418,8 +432,10 @@ function registerMessageHandler(sock, commands) {
       for (const m of messages) {
         if (!m?.message) continue;
         const keys = Object.keys(m.message).join(',');
-        if (/viewOnce|deviceSent|ephemeral/i.test(keys)) {
-          logger.info(`[vault-scan] type=${type} id=${m.key?.id} fromMe=${!!m.key?.fromMe} chat=${String(m.key?.remoteJid || '').split('@')[1]} keys=${keys}`);
+        // Diagnostic: prove what actually reaches this device (fromMe syncs
+        // and view-once-shaped envelopes are rare enough to log).
+        if (m.key?.fromMe || /viewOnce|deviceSent|ephemeral/i.test(keys)) {
+          logger.info(`[upsert] type=${type} id=${m.key?.id} fromMe=${!!m.key?.fromMe} chat=${String(m.key?.remoteJid || '').split('@')[1]} keys=${keys || 'EMPTY'}`);
         }
         if (vault.findViewOnce(m.message)) {
           vault.rememberOriginal(m.key?.id, m.message);

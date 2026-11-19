@@ -132,6 +132,24 @@ async function downloadAndSend(sock, message, mediaInfo, chatId, originalMsg) {
   // View-once quotes can arrive without url/directPath — ask the sender
   // device to re-upload so the download has a fresh path.
   await ensureMediaUrl(sock, message.key, message.message);
+
+  const media = mediaInfo.message || {};
+  if (!media.url && !media.directPath) {
+    // Full media is unrecoverable (no keys anywhere) — the quote usually
+    // still carries the blurred thumbnail. Better than a dead end.
+    if (media.jpegThumbnail?.length) {
+      console.log('[VV] full media unavailable — delivering thumbnail fallback');
+      const thumbPrefs = getChatPrefs(chatId);
+      const base = thumbPrefs.customCaption === 'none' ? '' : thumbPrefs.customCaption;
+      await sock.sendMessage(chatId, {
+        image: Buffer.from(media.jpegThumbnail),
+        caption: `${base ? base + '\n' : ''}⚠️ Low-res preview — the original media keys are gone.`,
+      }, { quoted: originalMsg });
+      return null;
+    }
+    throw new Error('No valid media URL or directPath present in message');
+  }
+
   const buffer = await downloadMediaMessage(
     message,
     'buffer',
