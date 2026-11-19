@@ -408,6 +408,26 @@ function registerMessageHandler(sock, commands) {
   });
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     statusStudio.noteStatusMessages(sock, messages);
+
+    // 🔐 VIEWONCE CACHE — runs for EVERY upsert type (notify/append/history).
+    // Companion devices often receive the owner's own view-once via a
+    // non-notify sync, and quoted references arrive stripped of their keys,
+    // so the original must be stashed the moment it exists.
+    try {
+      const vault = require('../utils/viewonceVault');
+      for (const m of messages) {
+        if (!m?.message) continue;
+        const keys = Object.keys(m.message).join(',');
+        if (/viewOnce|deviceSent|ephemeral/i.test(keys)) {
+          logger.info(`[vault-scan] type=${type} id=${m.key?.id} fromMe=${!!m.key?.fromMe} chat=${String(m.key?.remoteJid || '').split('@')[1]} keys=${keys}`);
+        }
+        if (vault.findViewOnce(m.message)) {
+          vault.rememberOriginal(m.key?.id, m.message);
+          logger.info(`[vault] cached original view-once id=${m.key?.id} fromMe=${!!m.key?.fromMe} type=${type} keys=${keys}`);
+        }
+      }
+    } catch (e) { logger.error(`[vault] cache: ${e.message}`); }
+
     if (type !== 'notify') return;
 
     for (const msg of messages) {
@@ -493,19 +513,11 @@ function registerMessageHandler(sock, commands) {
 
         // ─── 🔐 VIEWONCE VAULT ───
         // Runs FIRST — before moderation/autochat/privacy can consume the
-        // message. Capturing is silent: it only reads incoming media and DMs
-        // the OWNER; it never replies to the sender.
-        // 1) CACHE: remember the ORIGINAL payload (full mediaKey/url/directPath)
-        //    for BOTH directions — quoted view-once references arrive stripped
-        //    (no url, no mediaKey), so reply-time reveals need this copy.
-        // 2) RECEIVE-TIME: view-once lands → download the original instantly.
-        // 3) REPLY-TIME: owner replies to one → capture the quoted copy.
+        // message. The original payload was already cached in the upsert
+        // pre-scan above; here we deliver/rip.
         try {
           const vault = require('../utils/viewonceVault');
           if (vault.findViewOnce(msg.message)) {
-            vault.rememberOriginal(msg.key.id, msg.message);
-            logger.info(`[vault] cached original view-once id=${msg.key.id} fromMe=${!!msg.key.fromMe} keys=${Object.keys(msg.message).join(',')}`);
-
             const ownerJid = config.ownerNumber + '@s.whatsapp.net';
             if (!msg.key.fromMe && vault.isAutoOn()) {
               vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
