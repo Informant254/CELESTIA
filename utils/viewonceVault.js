@@ -69,11 +69,17 @@ function acquireCaptureSlot() {
 function unwrapViewOnce(message) {
   if (!message) return null;
   let m = message;
-  if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message;
-  if (m.documentWithCaption?.message) m = m.documentWithCaption.message;
-  if (m.viewOnceMessage?.message) return m.viewOnceMessage.message;
-  if (m.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
-  if (m.viewOnceMessageV2Extension?.message) return m.viewOnceMessageV2Extension.message;
+  // Wrappers can nest (ephemeral → documentWithCaption → viewOnceV2…),
+  // so unwrap in a loop instead of a single pass.
+  for (let i = 0; i < 5; i++) {
+    if (m.ephemeralMessage?.message) { m = m.ephemeralMessage.message; continue; }
+    if (m.documentWithCaptionMessage?.message) { m = m.documentWithCaptionMessage.message; continue; }
+    if (m.documentWithCaption?.message) { m = m.documentWithCaption.message; continue; }
+    if (m.viewOnceMessage?.message) return m.viewOnceMessage.message;
+    if (m.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
+    if (m.viewOnceMessageV2Extension?.message) return m.viewOnceMessageV2Extension.message;
+    return null;
+  }
   return null;
 }
 
@@ -190,8 +196,10 @@ async function captureOriginal(sock, msg, ownerJid) {
 
     const senderJid = msg.key.participantPn || msg.key.participant || msg.key.remoteJidAlt || msg.key.remoteJid;
 
-    // download the ORIGINAL — has full mediaKey/directPath — straight to RAM
-    const buffer = await dlMedia(msg, 'buffer', {});
+    // download the ORIGINAL — has full mediaKey/directPath — straight to RAM.
+    // reuploadRequest retries media already consumed server-side (owner
+    // replies hours later), same as the .vv command path.
+    const buffer = await dlMedia(msg, 'buffer', {}, { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage });
     if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
       if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
       return null;
@@ -239,7 +247,7 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
       key: contextKeyInfo || { remoteJid: senderJid, id: 'vault' + Date.now() },
       message: rawQuotedMessage,
     };
-    const buffer = await dlMedia(fakeMsg, 'buffer', {});
+    const buffer = await dlMedia(fakeMsg, 'buffer', {}, { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage });
     if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
       if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
       return null;

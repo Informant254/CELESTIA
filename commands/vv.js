@@ -68,16 +68,28 @@ function setChatPrefs(chatId, prefs) {
   savePrefs(all);
 }
 
+function unwrapViewOnce(message) {
+  if (!message) return null;
+  let m = message;
+  // Wrappers nest (ephemeral → documentWithCaption → viewOnceV2…).
+  for (let i = 0; i < 5; i++) {
+    if (m.ephemeralMessage?.message) { m = m.ephemeralMessage.message; continue; }
+    if (m.documentWithCaptionMessage?.message) { m = m.documentWithCaptionMessage.message; continue; }
+    if (m.documentWithCaption?.message) { m = m.documentWithCaption.message; continue; }
+    if (m.viewOnceMessage?.message) return m.viewOnceMessage.message;
+    if (m.viewOnceMessageV2?.message) return m.viewOnceMessageV2.message;
+    if (m.viewOnceMessageV2Extension?.message) return m.viewOnceMessageV2Extension.message;
+    return null;
+  }
+  return null;
+}
+
 function isViewOnceMessage(message) {
   if (!message?.message) return false;
   if (message.message.imageMessage?.viewOnce) return true;
   if (message.message.videoMessage?.viewOnce) return true;
   if (message.message.audioMessage?.viewOnce) return true;
-  if (message.message.viewOnceMessageV2) return true;
-  if (message.message.viewOnceMessageV2Extension) return true;
-  if (message.message.viewOnceMessage) return true;
-  if (message.message.ephemeralMessage?.message?.viewOnceMessage) return true;
-  return false;
+  return !!unwrapViewOnce(message.message);
 }
 
 function extractViewOnceMedia(message) {
@@ -86,15 +98,11 @@ function extractViewOnceMedia(message) {
     if (message.message?.videoMessage?.viewOnce) return { type: 'video', message: message.message.videoMessage };
     if (message.message?.audioMessage?.viewOnce) return { type: 'audio', message: message.message.audioMessage };
 
-    let wrapped = null;
-    if (message.message?.viewOnceMessageV2?.message) wrapped = message.message.viewOnceMessageV2.message;
-    else if (message.message?.viewOnceMessageV2Extension?.message) wrapped = message.message.viewOnceMessageV2Extension.message;
-    else if (message.message?.viewOnceMessage?.message) wrapped = message.message.viewOnceMessage.message;
-    else if (message.message?.ephemeralMessage?.message?.viewOnceMessage?.message) wrapped = message.message.ephemeralMessage.message.viewOnceMessage.message;
-
+    const wrapped = unwrapViewOnce(message.message);
     if (wrapped?.imageMessage) return { type: 'image', message: wrapped.imageMessage };
     if (wrapped?.videoMessage) return { type: 'video', message: wrapped.videoMessage };
     if (wrapped?.audioMessage) return { type: 'audio', message: wrapped.audioMessage };
+    if (wrapped?.stickerMessage) return { type: 'sticker', message: wrapped.stickerMessage };
   } catch (error) {
     console.error('[VV] extract failed:', error.message);
   }
@@ -241,6 +249,9 @@ module.exports = {
     const quotedMessage = getQuotedMessage(contextInfo);
     if (!quotedMessage) return send('❌ Could not retrieve the quoted message.');
     if (!isViewOnceMessage(quotedMessage)) {
+      // Log the real shape — this is how we keep the unwrapper current with
+      // WhatsApp's new container messages.
+      console.log('[VV] quote is not view-once; keys=' + Object.keys(quotedMessage.message || {}).join(','));
       return send('❌ Not a view-once message. Reply to a view-once photo, video, or audio.');
     }
     const mediaInfo = extractViewOnceMedia(quotedMessage);
@@ -254,3 +265,6 @@ module.exports = {
     }
   },
 };
+
+// Exposed for the shape tests — the loader only reads name/aliases/execute.
+module.exports.__test = { unwrapViewOnce, isViewOnceMessage, extractViewOnceMedia };
