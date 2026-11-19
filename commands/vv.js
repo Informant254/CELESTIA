@@ -17,6 +17,7 @@
  */
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const settingsStore = require('../utils/settingsStore');
+const { ensureMediaUrl } = require('../utils/viewonceVault');
 const config = require('../config/config');
 
 const BOT = config.botName || 'CELESTIA';
@@ -126,6 +127,9 @@ const box = (title, lines) => ['> ╭─❏ *' + title + '* ❏', ...lines.map((
 
 async function downloadAndSend(sock, message, mediaInfo, chatId, originalMsg) {
   console.log(`[VV] fetching ${mediaInfo.type} into RAM...`);
+  // View-once quotes can arrive without url/directPath — ask the sender
+  // device to re-upload so the download has a fresh path.
+  await ensureMediaUrl(sock, message.key, message.message);
   const buffer = await downloadMediaMessage(
     message,
     'buffer',

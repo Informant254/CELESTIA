@@ -1,5 +1,6 @@
 const { downloadMediaMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { isOwner } = require('../utils/isOwner');
+const { ensureMediaUrl } = require('../utils/viewonceVault');
 
 function unwrapViewOnce(message) {
   if (!message) return null;
@@ -50,10 +51,12 @@ module.exports = {
     }
 
     try {
+      await ensureMediaUrl(sock, { remoteJid: ctx.remoteJid, id: ctx.stanzaId, participant: ctx.participant, fromMe: ctx.fromMe }, ctx.quotedMessage);
       const buffer = await downloadMediaMessage(
         { message: { [`${found.type}Message`]: found.message } },
         'buffer',
-        {}
+        {},
+        { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage }
       );
       const caption = found.message.caption
         ? `Retrieved by CELESTIA!\n${found.message.caption}`

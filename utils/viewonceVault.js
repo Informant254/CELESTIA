@@ -199,6 +199,7 @@ async function captureOriginal(sock, msg, ownerJid) {
     // download the ORIGINAL — has full mediaKey/directPath — straight to RAM.
     // reuploadRequest retries media already consumed server-side (owner
     // replies hours later), same as the .vv command path.
+    await ensureMediaUrl(sock, msg.key, msg.message);
     const buffer = await dlMedia(msg, 'buffer', {}, { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage });
     if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
       if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
@@ -247,6 +248,7 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
       key: contextKeyInfo || { remoteJid: senderJid, id: 'vault' + Date.now() },
       message: rawQuotedMessage,
     };
+    await ensureMediaUrl(sock, fakeMsg.key, rawQuotedMessage);
     const buffer = await dlMedia(fakeMsg, 'buffer', {}, { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage });
     if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
       if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
@@ -319,6 +321,23 @@ async function monitorReply(sock, msg, ownerJid) {
   }
 }
 
+// View-once quotes frequently arrive with mediaKey but WITHOUT url/directPath
+// (WhatsApp strips them). Baileys' updateMediaMessage asks the sender device
+// to re-upload, mutating the inner media object in place with a fresh path.
+async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
+  const found = findViewOnce(wrapperMessage);
+  if (!found?.message) return wrapperMessage;
+  if (found.message.url || found.message.directPath) return wrapperMessage;
+  if (typeof sock?.updateMediaMessage !== 'function') return wrapperMessage;
+  logger.info('[vault] view-once lacks directPath — requesting media reupload');
+  try {
+    await sock.updateMediaMessage({ key: keyInfo, message: wrapperMessage });
+  } catch (e) {
+    logger.warn(`[vault] media refresh failed: ${e.message}`);
+  }
+  return wrapperMessage;
+}
+
 async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
   const buffer = preloadedBuffer ||
     fs.readFileSync(path.join(VAULT_DIR, entry.file));
@@ -334,7 +353,7 @@ async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
 }
 
 module.exports = {
-  unwrapViewOnce, findViewOnce, classifyMedia,
+  unwrapViewOnce, findViewOnce, classifyMedia, ensureMediaUrl,
   captureToVault, captureOriginal, sendVaultEntry, monitorReply, setDownloader,
   getVault, getFromVault, clearVault, saveToVault,
   isAutoOn, setAuto,

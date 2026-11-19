@@ -41,3 +41,34 @@ test('vault findViewOnce agrees with the vv unwrapper on nested containers', () 
   assert.equal(vault.findViewOnce({ imageMessage: { viewOnce: true } })?.type, 'image');
   assert.equal(vault.findViewOnce({ imageMessage: {} }), null);
 });
+
+test('ensureMediaUrl requests a reupload when url/directPath are stripped', async () => {
+  const wrapper = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true, mediaKey: Buffer.from('k'), fileLength: 10 } } } };
+  let refreshed = false;
+  const sock = {
+    updateMediaMessage: async (m) => {
+      refreshed = true;
+      const inner = m.message.viewOnceMessageV2.message.imageMessage;
+      inner.directPath = '/v/t62.7118-24/fresh';
+      inner.url = 'https://mmg.whatsapp.net/v/t62.7118-24/fresh';
+      return m;
+    },
+  };
+  const out = await vault.ensureMediaUrl(sock, { remoteJid: 'chat@s.whatsapp.net', id: 'ABC123', participant: 'x@s.whatsapp.net' }, wrapper);
+  assert.equal(refreshed, true);
+  assert.equal(out.viewOnceMessageV2.message.imageMessage.directPath, '/v/t62.7118-24/fresh');
+});
+
+test('ensureMediaUrl is a no-op when url already exists or reupload fails', async () => {
+  const withUrl = { viewOnceMessageV2: { message: { imageMessage: { url: 'https://mmg.whatsapp.net/x', mediaKey: Buffer.from('k') } } } };
+  let calls = 0;
+  const sock = { updateMediaMessage: async () => { calls++; } };
+  await vault.ensureMediaUrl(sock, { remoteJid: 'c', id: '1' }, withUrl);
+  assert.equal(calls, 0, 'no reupload needed when url present');
+
+  const bare = { viewOnceMessageV2: { message: { imageMessage: { mediaKey: Buffer.from('k') } } } };
+  const failingSock = { updateMediaMessage: async () => { throw new Error('sender offline'); } };
+  const out = await vault.ensureMediaUrl(failingSock, { remoteJid: 'c', id: '2' }, bare);
+  assert.equal(out, bare, 'returns the original wrapper when refresh fails');
+  assert.equal(out.viewOnceMessageV2.message.imageMessage.url, undefined);
+});
