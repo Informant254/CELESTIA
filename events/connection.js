@@ -1,9 +1,11 @@
 ﻿const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { DisconnectReason, jidNormalizedUser } = require('@whiskeysockets/baileys');
 const config = require('../config/config');
 const logger = require('../utils/logger');
+const settingsStore = require('../utils/settingsStore');
 const { autoJoinGroupOnce } = require('../utils/autoJoin');
 
 /**
@@ -102,11 +104,28 @@ function registerConnectionHandler(sock, lifecycle, wasAlreadyRegistered) {
           const credsBuffer = fs.readFileSync(credsPath);
           const sessionId = `CELESTIA:~${credsBuffer.toString('base64')}`;
 
-          await sock.sendMessage(selfJid, {
-            text: `âœ… *CELESTIA linked successfully!* âœ¨\nðŸ’« The Most Beautiful Bot\n\nðŸ” *Session Backup* (CELESTIA format)\nSave this somewhere safe. Paste into SESSION_ID env to reconnect without re-pairing.\n\nâš ï¸ Treat like a password â€” anyone with it controls your WhatsApp.\n\n${sessionId}`,
-          });
+          // Heroku wipes the disk on every dyno boot and restoreSession()
+          // rebuilds creds.json, so "first pairing" fires on every restart.
+          // Dedupe per actual pairing: hash the device identity, not the
+          // whole creds file (prekeys rotate but identity stays).
+          let registrationKey = sessionId;
+          try {
+            const creds = JSON.parse(credsBuffer.toString());
+            const pub = creds.signedIdentityKey?.public;
+            registrationKey = `${creds.me?.id || ''}:${Buffer.isBuffer(pub) ? pub.toString('base64') : String(pub || '')}`;
+          } catch { /* fall back to whole-session hash */ }
+          const regHash = crypto.createHash('sha256').update(registrationKey).digest('hex');
 
-          logger.info('âœ… Session backup sent to your own WhatsApp number.');
+          if (settingsStore.get('session_backup_hash') === regHash) {
+            logger.info('[sessionBackup] Already sent for this pairing — skipping duplicate.');
+          } else {
+            await sock.sendMessage(selfJid, {
+              text: `âœ… *CELESTIA linked successfully!* â¨\nðŸ’« The Most Beautiful Bot\n\nðŸ” *Session Backup* (CELESTIA format)\nSave this somewhere safe. Paste into SESSION_ID env to reconnect without re-pairing.\n\nâš ï¸ Treat like a password â€” anyone with it controls your WhatsApp.\n\n${sessionId}`,
+            });
+            settingsStore.set('session_backup_hash', regHash);
+
+            logger.info('âœ… Session backup sent to your own WhatsApp number.');
+          }
         } else {
           logger.warn('[sessionBackup] creds.json not found yet â€” skipping session backup message.');
         }

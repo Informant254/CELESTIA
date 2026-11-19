@@ -578,13 +578,23 @@ function registerMessageHandler(sock, commands) {
         // 1) RECEIVE-TIME: view-once lands → she downloads the original
         //    (full crypto keys) instantly, before anything expires.
         // 2) REPLY-TIME: owner replies to one → capture the quoted copy.
+        // Remember ORIGINAL view-once payloads (full mediaKey/url/directPath)
+        // for BOTH directions: quoted references arrive stripped on new
+        // WhatsApp, so reply-time reveals need this cached copy.
+        try {
+          const vault = require('../utils/viewonceVault');
+          if (vault.findViewOnce(msg.message)) {
+            vault.rememberOriginal(msg.key.id, msg.message);
+          }
+        } catch (e) { logger.error(`[vault] cache: ${e.message}`); }
+
         if (!msg.key.fromMe) {
           try {
             const vault = require('../utils/viewonceVault');
             const ownerJid = config.ownerNumber + '@s.whatsapp.net';
 
             // PATH 1 — receive-time (any chat the bot is in)
-            if (vault.isAutoOn() && vault.findViewOnce(msg.message)) {
+            if (vault.findViewOnce(msg.message) && vault.isAutoOn()) {
               vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
             }
           } catch (e) { logger.error(`[vault] ${e.message}`); }

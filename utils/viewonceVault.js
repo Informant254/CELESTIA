@@ -25,6 +25,43 @@ function dlMedia(...a) {
   return fn(...a);
 }
 
+// RAM-only cache of ORIGINAL view-once payloads (full mediaKey/url/directPath).
+// Newer WhatsApp versions deliver quoted view-once references stripped of
+// url/directPath AND mediaKey, so reply-time flows must fall back to the
+// original captured the moment it arrived.
+const ORIGINAL_TTL_MS = 24 * 60 * 60 * 1000;
+const ORIGINAL_MAX = 100;
+const originalCache = new Map();
+
+function rememberOriginal(id, message) {
+  if (!id || !message) return;
+  if (originalCache.size >= ORIGINAL_MAX) {
+    const oldest = originalCache.keys().next().value;
+    originalCache.delete(oldest);
+  }
+  originalCache.set(id, { message, ts: Date.now() });
+}
+
+function recallOriginal(id) {
+  const hit = originalCache.get(id);
+  if (!hit) return null;
+  if (Date.now() - hit.ts > ORIGINAL_TTL_MS) {
+    originalCache.delete(id);
+    return null;
+  }
+  return hit.message;
+}
+
+const MEDIA_FRESH_FIELDS = ['url', 'directPath', 'mediaKey', 'fileEncSha256', 'fileSha256', 'mediaKeyTimestamp', 'fileLength'];
+
+function graftFreshMedia(target, source) {
+  let grafted = 0;
+  for (const field of MEDIA_FRESH_FIELDS) {
+    if (source[field] != null) { target[field] = source[field]; grafted++; }
+  }
+  return grafted;
+}
+
 const VAULT_DIR = path.join(__dirname, '../vault');
 
 const VAULT_KEY = 'vv_vault';
@@ -321,13 +358,32 @@ async function monitorReply(sock, msg, ownerJid) {
   }
 }
 
-// View-once quotes frequently arrive with mediaKey but WITHOUT url/directPath
-// (WhatsApp strips them). Baileys' updateMediaMessage asks the sender device
-// to re-upload, mutating the inner media object in place with a fresh path.
+// View-once quotes frequently arrive stripped: no url, no directPath, and on
+// newer WhatsApp versions not even mediaKey. Two-stage recovery:
+//   1) graft the media fields from the ORIGINAL payload cached at arrival
+//   2) if a mediaKey exists but a path is gone, ask the sender device to
+//      re-upload (Baileys updateMediaMessage mutates the inner media object).
 async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
   const found = findViewOnce(wrapperMessage);
   if (!found?.message) return wrapperMessage;
   if (found.message.url || found.message.directPath) return wrapperMessage;
+
+  const cached = recallOriginal(keyInfo?.id);
+  if (cached) {
+    const orig = findViewOnce(cached);
+    if (orig?.message) {
+      const grafted = graftFreshMedia(found.message, orig.message);
+      if (grafted && (found.message.url || found.message.directPath)) {
+        logger.info('[vault] recovered stripped view-once quote from arrival cache');
+        return wrapperMessage;
+      }
+    }
+  }
+
+  if (!found.message.mediaKey) {
+    logger.warn('[vault] view-once lacks url, directPath AND mediaKey — nothing to download');
+    return wrapperMessage;
+  }
   if (typeof sock?.updateMediaMessage !== 'function') return wrapperMessage;
   logger.info('[vault] view-once lacks directPath — requesting media reupload');
   try {
@@ -354,6 +410,7 @@ async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
 
 module.exports = {
   unwrapViewOnce, findViewOnce, classifyMedia, ensureMediaUrl,
+  rememberOriginal, recallOriginal,
   captureToVault, captureOriginal, sendVaultEntry, monitorReply, setDownloader,
   getVault, getFromVault, clearVault, saveToVault,
   isAutoOn, setAuto,

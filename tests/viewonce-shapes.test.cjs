@@ -72,3 +72,39 @@ test('ensureMediaUrl is a no-op when url already exists or reupload fails', asyn
   assert.equal(out, bare, 'returns the original wrapper when refresh fails');
   assert.equal(out.viewOnceMessageV2.message.imageMessage.url, undefined);
 });
+
+test('ensureMediaUrl recovers a fully stripped quote from the arrival cache', async () => {
+  const original = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true, mediaKey: Buffer.from('mk'), url: 'https://mmg.whatsapp.net/orig', directPath: '/v/orig', fileEncSha256: Buffer.from('h'), fileLength: 42 } } } };
+  vault.rememberOriginal('MSGID-1', original);
+  const stripped = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true } } } };
+  let reuploadCalls = 0;
+  const sock = { updateMediaMessage: async () => { reuploadCalls++; } };
+  const out = await vault.ensureMediaUrl(sock, { remoteJid: 'chat', id: 'MSGID-1' }, stripped);
+  const inner = out.viewOnceMessageV2.message.imageMessage;
+  assert.equal(inner.url, 'https://mmg.whatsapp.net/orig');
+  assert.equal(inner.directPath, '/v/orig');
+  assert.equal(inner.fileLength, 42);
+  assert.equal(reuploadCalls, 0, 'cache recovery must not trigger a reupload request');
+});
+
+test('ensureMediaUrl never sends a reupload without a mediaKey (the null crash)', async () => {
+  const stripped = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true } } } };
+  let reuploadCalls = 0;
+  const sock = { updateMediaMessage: async () => { reuploadCalls++; } };
+  const out = await vault.ensureMediaUrl(sock, { remoteJid: 'chat', id: 'NOT-CACHED' }, stripped);
+  assert.equal(reuploadCalls, 0);
+  assert.equal(out, stripped);
+});
+
+test('recallOriginal expires old entries', () => {
+  vault.rememberOriginal('OLD-ID', { conversation: 'x' });
+  const hit = vault.recallOriginal('OLD-ID');
+  assert.ok(hit);
+  const realNow = Date.now;
+  try {
+    Date.now = () => realNow() + 25 * 60 * 60 * 1000;
+    assert.equal(vault.recallOriginal('OLD-ID'), null);
+  } finally {
+    Date.now = realNow;
+  }
+});
