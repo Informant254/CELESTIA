@@ -239,6 +239,12 @@ async function enforceModeration(sock, msg, commands) {
   if (imgMode !== 'off' && inner?.imageMessage) {
     jobs.push({ tag: 'antiimage', mode: imgMode, scope: 'img', strictAdmin: imgMode === 'on', struck: '🖼️ Image deleted' });
   }
+  // Anti-video: member videos and GIFs — photos, stickers, documents and
+  // voice notes stay untouched. View-once videos unwrap through `inner`.
+  const vidMode = normMode(g('antivideo', 'off'), 'on');
+  if (vidMode !== 'off' && inner?.videoMessage) {
+    jobs.push({ tag: 'antivideo', mode: vidMode, scope: 'vid', strictAdmin: vidMode === 'on', struck: '🎥 Video deleted' });
+  }
   const tagMode = normMode(s('antitag', false), 'on');
   // Mass-tags hide in captions and ephemeral/view-once wrappers too — scan
   // every container that can carry a contextInfo, not just extended text.

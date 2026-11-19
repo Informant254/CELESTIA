@@ -501,6 +501,73 @@ test('antiimage off never touches photos', async () => {
   assert.equal(h.sent.length, 0);
 });
 
+const clip = () => ({ videoMessage: { mimetype: 'video/mp4', seconds: 12 } });
+
+test('antivideo on deletes member videos and GIFs in private mode', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antivideo: 'on' } } });
+  await h.send(clip());
+  assert.equal(h.sent.length, 1);
+  assert.ok(h.sent[0].delete);
+  assert.equal(h.aiCalls(), 0);
+  const h2 = loadMessagesHarness({ group: { [GROUP]: { antivideo: 'on' } } });
+  await h2.send({ videoMessage: { mimetype: 'video/mp4', gifPlayback: true } });
+  assert.ok(h2.sent[0].delete, 'GIFs are videos too');
+});
+
+test('antivideo leaves photos, stickers, documents and audio alone', async () => {
+  const h = loadMessagesHarness({ privacy: 'public', group: { [GROUP]: { antivideo: 'kick' } } });
+  await h.send(photo());
+  await h.send({ conversation: 'hello' });
+  await h.send({ stickerMessage: { mimetype: 'image/webp' } });
+  await h.send({ documentMessage: { fileName: 'a.mp4' } });
+  await h.send({ audioMessage: { mimetype: 'audio/ogg' } });
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.filter((c) => !c.react).length, 0);
+});
+
+test('antivideo catches view-once videos inside wrappers', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antivideo: 'kick' } } });
+  await h.send({ viewOnceMessage: { message: { videoMessage: { viewOnce: true } } } });
+  await h.send({ ephemeralMessage: { message: { videoMessage: { caption: 'x' } } } });
+  assert.equal(h.removed.length, 2);
+});
+
+test('antivideo warn strikes then kicks on third clip', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antivideo: 'warn' } } });
+  await h.send(clip()); await h.send(clip());
+  assert.equal(h.removed.length, 0);
+  assert.match(h.sent.at(-1).text, /warning 2\/3/);
+  await h.send(clip());
+  assert.equal(h.removed.length, 1);
+  assert.match(h.sent.at(-1).text, /removed after 3 warnings/);
+});
+
+test('antivideo kick exempts admins and can run beside antiimage', async () => {
+  const h = loadMessagesHarness({ group: { [GROUP]: { antivideo: 'kick' } } });
+  await h.send(clip(), ADMIN);
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.length, 0);
+  const h2 = loadMessagesHarness({ group: { [GROUP]: { antivideo: 'kick', antiimage: 'kick' } } });
+  await h2.send(clip());
+  await h2.send(photo());
+  assert.equal(h2.removed.length, 2, 'each medium is judged on its own');
+});
+
+test('inbox antivideo kick blocks the video sender immediately', async () => {
+  const DM = '999@s.whatsapp.net';
+  const h = loadMessagesHarness({ group: { [DM]: { antivideo: 'kick' } } });
+  await h.sendDM(clip(), DM);
+  assert.deepEqual(h.blocked, [{ jid: DM, action: 'block' }]);
+  assert.match(h.sent.at(-1).text, /Video deleted/);
+});
+
+test('antivideo off never touches videos', async () => {
+  const h = loadMessagesHarness({ privacy: 'public' });
+  await h.send(clip());
+  assert.equal(h.removed.length, 0);
+  assert.equal(h.sent.length, 0);
+});
+
 test('inbox antilink on sends notice without delete or block', async () => {
   const DM = '999@s.whatsapp.net';
   const h = loadMessagesHarness({ group: { [DM]: { antilink: 'on' } } });

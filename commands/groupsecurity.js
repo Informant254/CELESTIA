@@ -126,6 +126,7 @@ module.exports = [
   makeModeCommand('antigstatus', 'antigstatus', 'Channel-invite spam protection', '🛡️'),
   makeModeCommand('antispam', 'antispam', 'Flood protection (>6 messages / 10s)', '🚫'),
   makeModeCommand('antiimage', 'antiimage', 'Anti-image protection (member photos)', '🖼️', 'on', ['noimage', 'noimages', 'antiimg']),
+  makeModeCommand('antivideo', 'antivideo', 'Anti-video protection (member videos and GIFs)', '🎥', 'on', ['novideo', 'novideos', 'antivid']),
 
   {
     name: 'antiword',
@@ -183,6 +184,7 @@ module.exports = [
         return sock.sendMessage(jid, { text: ui.renderCard('🛡️ INBOX SETTINGS', [
           ui.renderInfo('🔗', 'Antilink', gmode(inbox.antilink, 'on')),
           ui.renderInfo('🖼️', 'Antiimage', gmode(inbox.antiimage, 'on')),
+          ui.renderInfo('🎥', 'Antivideo', gmode(inbox.antivideo, 'on')),
           ui.renderInfo('🚫', 'Antispam', gmode(inbox.antispam, 'on')),
           ui.renderInfo('🤬', 'Antiword', `${gmode(inbox.antiword, 'on')} (${words} words)`),
           ui.renderInfo('🛡️', 'Antigstatus', gmode(inbox.antigstatus, 'on')),
@@ -202,6 +204,7 @@ module.exports = [
       const text = ui.renderCard('🛡️ GROUP SETTINGS', [
         ui.renderInfo('🔗', 'Antilink', mode(settings.antilink)),
         ui.renderInfo('🖼️', 'Antiimage', mode(settings.antiimage)),
+        ui.renderInfo('🎥', 'Antivideo', mode(settings.antivideo)),
         ui.renderInfo('🚫', 'Antispam', mode(settings.antispam)),
         ui.renderInfo('🤬', 'Antiword', `${mode(settings.antiword)} (${wordCount} words)`),
         ui.renderInfo('🛡️', 'Antigm', mode(settings.antigm)),
