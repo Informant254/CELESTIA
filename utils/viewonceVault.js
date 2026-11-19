@@ -106,9 +106,11 @@ function acquireCaptureSlot() {
 function unwrapViewOnce(message) {
   if (!message) return null;
   let m = message;
-  // Wrappers can nest (ephemeral → documentWithCaption → viewOnceV2…),
-  // so unwrap in a loop instead of a single pass.
+  // Wrappers can nest (deviceSent → ephemeral → viewOnceV2…), so unwrap in
+  // a loop instead of a single pass.
   for (let i = 0; i < 5; i++) {
+    // Messages sent from the owner's own phone arrive deviceSent-wrapped.
+    if (m.deviceSentMessage?.message) { m = m.deviceSentMessage.message; continue; }
     if (m.ephemeralMessage?.message) { m = m.ephemeralMessage.message; continue; }
     if (m.documentWithCaptionMessage?.message) { m = m.documentWithCaptionMessage.message; continue; }
     if (m.documentWithCaption?.message) { m = m.documentWithCaption.message; continue; }
@@ -381,7 +383,7 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
   }
 
   if (!found.message.mediaKey) {
-    logger.warn('[vault] view-once lacks url, directPath AND mediaKey — nothing to download');
+    logger.warn(`[vault] view-once lacks url, directPath AND mediaKey — nothing to download (id=${keyInfo?.id})`);
     return wrapperMessage;
   }
   if (typeof sock?.updateMediaMessage !== 'function') return wrapperMessage;

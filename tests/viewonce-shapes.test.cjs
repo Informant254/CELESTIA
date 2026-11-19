@@ -108,3 +108,14 @@ test('recallOriginal expires old entries', () => {
     Date.now = realNow;
   }
 });
+
+test('view-once sent from the owner phone (deviceSentMessage) is cached and recoverable', async () => {
+  const deviceSent = { deviceSentMessage: { destinationJid: 'group@g.us', message: { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true, mediaKey: Buffer.from('mk2'), url: 'https://mmg.whatsapp.net/ds', directPath: '/v/ds' } } } } } };
+  assert.equal(isViewOnceMessage({ key: {}, message: deviceSent }), true, 'vv detects deviceSent-wrapped view-once');
+  assert.ok(vault.findViewOnce(deviceSent), 'vault finds deviceSent-wrapped view-once');
+  vault.rememberOriginal('SELF-1', deviceSent);
+  const strippedQuote = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true } } } };
+  const out = await vault.ensureMediaUrl({}, { remoteJid: 'g@g.us', id: 'SELF-1' }, strippedQuote);
+  assert.equal(out.viewOnceMessageV2.message.imageMessage.url, 'https://mmg.whatsapp.net/ds');
+  assert.equal(out.viewOnceMessageV2.message.imageMessage.directPath, '/v/ds');
+});

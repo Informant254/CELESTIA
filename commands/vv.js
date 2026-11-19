@@ -72,8 +72,10 @@ function setChatPrefs(chatId, prefs) {
 function unwrapViewOnce(message) {
   if (!message) return null;
   let m = message;
-  // Wrappers nest (ephemeral → documentWithCaption → viewOnceV2…).
+  // Wrappers nest (deviceSent → ephemeral → viewOnceV2…).
   for (let i = 0; i < 5; i++) {
+    // Messages sent from the owner's own phone arrive deviceSent-wrapped.
+    if (m.deviceSentMessage?.message) { m = m.deviceSentMessage.message; continue; }
     if (m.ephemeralMessage?.message) { m = m.ephemeralMessage.message; continue; }
     if (m.documentWithCaptionMessage?.message) { m = m.documentWithCaptionMessage.message; continue; }
     if (m.documentWithCaption?.message) { m = m.documentWithCaption.message; continue; }

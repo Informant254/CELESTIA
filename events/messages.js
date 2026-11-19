@@ -585,6 +585,7 @@ function registerMessageHandler(sock, commands) {
           const vault = require('../utils/viewonceVault');
           if (vault.findViewOnce(msg.message)) {
             vault.rememberOriginal(msg.key.id, msg.message);
+            logger.info(`[vault] cached original view-once id=${msg.key.id} fromMe=${!!msg.key.fromMe} keys=${Object.keys(msg.message).join(',')}`);
           }
         } catch (e) { logger.error(`[vault] cache: ${e.message}`); }
 
