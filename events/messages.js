@@ -491,6 +491,31 @@ function registerMessageHandler(sock, commands) {
           continue;
         }
 
+        // ─── 🔐 VIEWONCE VAULT ───
+        // Runs FIRST — before moderation/autochat/privacy can consume the
+        // message. Capturing is silent: it only reads incoming media and DMs
+        // the OWNER; it never replies to the sender.
+        // 1) CACHE: remember the ORIGINAL payload (full mediaKey/url/directPath)
+        //    for BOTH directions — quoted view-once references arrive stripped
+        //    (no url, no mediaKey), so reply-time reveals need this copy.
+        // 2) RECEIVE-TIME: view-once lands → download the original instantly.
+        // 3) REPLY-TIME: owner replies to one → capture the quoted copy.
+        try {
+          const vault = require('../utils/viewonceVault');
+          if (vault.findViewOnce(msg.message)) {
+            vault.rememberOriginal(msg.key.id, msg.message);
+            logger.info(`[vault] cached original view-once id=${msg.key.id} fromMe=${!!msg.key.fromMe} keys=${Object.keys(msg.message).join(',')}`);
+
+            const ownerJid = config.ownerNumber + '@s.whatsapp.net';
+            if (!msg.key.fromMe && vault.isAutoOn()) {
+              vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
+            }
+          }
+          // monitorReply enforces owner + autoOn itself; never let it block.
+          vault.monitorReply(sock, msg, config.ownerNumber + '@s.whatsapp.net')
+            .catch(e => logger.warn(`[vault] monitor failed: ${e.message}`));
+        } catch (e) { logger.error(`[vault] ${e.message}`); }
+
         // 📦 STICKER PACK IMPORT — while the owner has a collector open in
         // this chat, every sticker they send is saved without 60 replies.
         try {
@@ -571,45 +596,6 @@ function registerMessageHandler(sock, commands) {
         // Other passive handlers (antibot, welcome, reacts, etc.) must
         // never leak a reply to strangers in private mode.
         const _workTypeEarly = settingsStore.get('mode', config.WORK_TYPE);
-
-        // ─── 🔐 VIEWONCE VAULT — runs BEFORE the privacy gate ───
-        // Capturing is silent: it only reads incoming media and DMs the OWNER.
-        // It never replies to the sender, so it can't violate private mode.
-        // 1) RECEIVE-TIME: view-once lands → she downloads the original
-        //    (full crypto keys) instantly, before anything expires.
-        // 2) REPLY-TIME: owner replies to one → capture the quoted copy.
-        // Remember ORIGINAL view-once payloads (full mediaKey/url/directPath)
-        // for BOTH directions: quoted references arrive stripped on new
-        // WhatsApp, so reply-time reveals need this cached copy.
-        try {
-          const vault = require('../utils/viewonceVault');
-          if (vault.findViewOnce(msg.message)) {
-            vault.rememberOriginal(msg.key.id, msg.message);
-            logger.info(`[vault] cached original view-once id=${msg.key.id} fromMe=${!!msg.key.fromMe} keys=${Object.keys(msg.message).join(',')}`);
-          }
-        } catch (e) { logger.error(`[vault] cache: ${e.message}`); }
-
-        if (!msg.key.fromMe) {
-          try {
-            const vault = require('../utils/viewonceVault');
-            const ownerJid = config.ownerNumber + '@s.whatsapp.net';
-
-            // PATH 1 — receive-time (any chat the bot is in)
-            if (vault.findViewOnce(msg.message) && vault.isAutoOn()) {
-              vault.captureOriginal(sock, msg, ownerJid).catch(() => {});
-            }
-          } catch (e) { logger.error(`[vault] ${e.message}`); }
-        }
-
-        // PATH 2 — reply-time monitor. Runs for EVERY message INCLUDING fromMe:
-        // the owner's own replies arrive as fromMe, so gating on !fromMe blinds
-        // it exactly when it matters. monitorReply enforces owner + autoOn.
-        try {
-          const vault = require('../utils/viewonceVault');
-          const ownerJid = config.ownerNumber + '@s.whatsapp.net';
-          // Optional media retrieval must not hold command dispatch waiting on an upload.
-          vault.monitorReply(sock, msg, ownerJid).catch(e => logger.warn(`[vault] monitor failed: ${e.message}`));
-        } catch (e) { logger.error(`[vault] monitor: ${e.message}`); }
 
         if (_workTypeEarly === 'private' && !msg.key.fromMe) {
           const { isSudo } = require('../utils/isSudo');
