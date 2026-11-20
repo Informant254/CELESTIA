@@ -73,6 +73,23 @@ test('ensureMediaUrl is a no-op when url already exists or reupload fails', asyn
   assert.equal(out.viewOnceMessageV2.message.imageMessage.url, undefined);
 });
 
+test('ensureMediaUrl recovers via on-demand history sync when nothing is cached', async () => {
+  const original = { viewOnceMessageV2: { message: { videoMessage: { viewOnce: true, mediaKey: Buffer.from('mk3'), url: 'https://mmg.whatsapp.net/hist', directPath: '/v/hist' } } } };
+  const stripped = { viewOnceMessageV2: { message: { videoMessage: { viewOnce: true } } } };
+  let calls = 0;
+  const sock = {
+    fetchMessageHistory: async (count, key) => {
+      calls++;
+      vault.rememberOriginal(key.id, original);
+    },
+    updateMediaMessage: async () => { throw new Error('should not be called'); },
+  };
+  const out = await vault.ensureMediaUrl(sock, { remoteJid: 'chat', id: 'HIST-1', fromMe: true }, stripped);
+  assert.equal(calls, 1);
+  assert.equal(out.viewOnceMessageV2.message.videoMessage.url, 'https://mmg.whatsapp.net/hist');
+  assert.equal(out.viewOnceMessageV2.message.videoMessage.directPath, '/v/hist');
+});
+
 test('ensureMediaUrl recovers a fully stripped quote from the arrival cache', async () => {
   const original = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true, mediaKey: Buffer.from('mk'), url: 'https://mmg.whatsapp.net/orig', directPath: '/v/orig', fileEncSha256: Buffer.from('h'), fileLength: 42 } } } };
   vault.rememberOriginal('MSGID-1', original);

@@ -361,24 +361,48 @@ async function monitorReply(sock, msg, ownerJid) {
 }
 
 // View-once quotes frequently arrive stripped: no url, no directPath, and on
-// newer WhatsApp versions not even mediaKey. Two-stage recovery:
+// newer WhatsApp versions not even mediaKey. Recovery stages:
 //   1) graft the media fields from the ORIGINAL payload cached at arrival
-//   2) if a mediaKey exists but a path is gone, ask the sender device to
+//   2) ask the linked phone for recent history (companions often skip
+//      view-once payloads in real-time sync, but the phone can re-share them)
+//   3) if a mediaKey exists but a path is gone, ask the sender device to
 //      re-upload (Baileys updateMediaMessage mutates the inner media object).
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
   const found = findViewOnce(wrapperMessage);
   if (!found?.message) return wrapperMessage;
   if (found.message.url || found.message.directPath) return wrapperMessage;
 
-  const cached = recallOriginal(keyInfo?.id);
-  if (cached) {
+  const graftFromCache = () => {
+    const cached = recallOriginal(keyInfo?.id);
+    if (!cached) return false;
     const orig = findViewOnce(cached);
-    if (orig?.message) {
-      const grafted = graftFreshMedia(found.message, orig.message);
-      if (grafted && (found.message.url || found.message.directPath)) {
-        logger.info('[vault] recovered stripped view-once quote from arrival cache');
-        return wrapperMessage;
+    if (!orig?.message) return false;
+    const grafted = graftFreshMedia(found.message, orig.message);
+    return !!(grafted && (found.message.url || found.message.directPath));
+  };
+
+  if (graftFromCache()) {
+    logger.info('[vault] recovered stripped view-once quote from arrival cache');
+    return wrapperMessage;
+  }
+
+  // On-demand history sync: the phone holds the original payload with keys.
+  if (typeof sock?.fetchMessageHistory === 'function' && keyInfo?.id) {
+    try {
+      const ts = Math.floor(Date.now() / 1000);
+      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone`);
+      await sock.fetchMessageHistory(100, keyInfo, ts);
+      for (let i = 0; i < 8; i++) {
+        await sleep(500);
+        if (graftFromCache()) {
+          logger.info('[vault] recovered view-once from on-demand history sync');
+          return wrapperMessage;
+        }
       }
+    } catch (e) {
+      logger.warn(`[vault] history fetch failed: ${e.message}`);
     }
   }
 
