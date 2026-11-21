@@ -406,14 +406,25 @@ function registerMessageHandler(sock, commands) {
 
   // 🔐 History chunks often carry the full view-once payload for messages
   // sent from the owner's own phone — snapshot them for reply-time reveals.
-  sock.ev.on('messaging-history.set', ({ messages }) => {
+  sock.ev.on('messaging-history.set', ({ messages, peerDataRequestSessionId }) => {
     try {
       const vault = require('../utils/viewonceVault');
-      for (const m of messages || []) {
+      const list = messages || [];
+      let hits = 0;
+      for (const m of list) {
         if (m?.message && vault.findViewOnce(m.message)) {
+          hits++;
           vault.rememberOriginal(m.key?.id, m.message);
           logger.info(`[vault] cached original view-once id=${m.key?.id} chat=${m.key?.remoteJid} fromMe=${!!m.key?.fromMe} via history`);
+        } else if (m?.message) {
+          const keys = Object.keys(m.message);
+          if (/viewonce/i.test(keys.join(','))) {
+            logger.info(`[vault] history unparsed view-once shape id=${m.key?.id} keys=${keys.join(',')}`);
+          }
         }
+      }
+      if (peerDataRequestSessionId || hits) {
+        logger.info(`[vault] history chunk: ${list.length} msgs, viewonce=${hits} session=${peerDataRequestSessionId || '-'}`);
       }
     } catch (e) { logger.error(`[vault] history cache: ${e.message}`); }
   });
