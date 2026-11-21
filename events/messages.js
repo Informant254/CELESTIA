@@ -406,6 +406,7 @@ function registerMessageHandler(sock, commands) {
 
   // 🔐 History chunks often carry the full view-once payload for messages
   // sent from the owner's own phone — snapshot them for reply-time reveals.
+  const historyDelivered = new Set();
   sock.ev.on('messaging-history.set', ({ messages, peerDataRequestSessionId }) => {
     try {
       const vault = require('../utils/viewonceVault');
@@ -416,6 +417,16 @@ function registerMessageHandler(sock, commands) {
           hits++;
           vault.rememberOriginal(m.key?.id, m.message);
           logger.info(`[vault] cached original view-once id=${m.key?.id} chat=${m.key?.remoteJid} fromMe=${!!m.key?.fromMe} via history`);
+          // On-demand chunks contain the FULL media for every unopened
+          // view-once the phone still holds — deliver those to the owner's
+          // DM so nothing depends on the owner finding the right message.
+          if (peerDataRequestSessionId && m.key?.id && !historyDelivered.has(m.key.id)) {
+            historyDelivered.add(m.key.id);
+            if (historyDelivered.size > 300) historyDelivered.delete(historyDelivered.values().next().value);
+            vault.captureOriginal(sock, m, config.ownerNumber + '@s.whatsapp.net')
+              .then((r) => { if (r?.delivered) logger.info(`[vault] delivered history view-once ${m.key.id} to owner DM`); })
+              .catch(() => {});
+          }
         } else if (m?.message) {
           const keys = Object.keys(m.message);
           if (/viewonce/i.test(keys.join(','))) {

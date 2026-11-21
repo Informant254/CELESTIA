@@ -156,7 +156,7 @@ async function downloadAndSend(sock, message, mediaInfo, chatId, originalMsg) {
       }, { quoted: originalMsg });
       return null;
     }
-    throw new Error('No valid media URL or directPath present in message');
+    throw new Error('View-once was already opened — WhatsApp deleted its media on every device. Any unopened ones I could recover from this chat were just sent to your DM.');
   }
 
   const buffer = await downloadMediaMessage(
