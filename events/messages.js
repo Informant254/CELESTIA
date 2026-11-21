@@ -57,6 +57,19 @@ async function cachedGroupMetadata(sock, jid, ttlMs = 60000) {
   return data;
 }
 
+// Antidelete/antiedit owner alerts: an unresolvable LID must never be printed
+// as a phone number. In-group the mention renders the real name; in a DM with
+// no roster, fall back to a neutral label.
+function deleterLabel(senderJid, dest) {
+  if (!senderJid) return 'someone';
+  try {
+    const resolved = require('../utils/jidResolver').displayPhone(senderJid);
+    if (resolved) return `@${resolved}`;
+    if (dest === 'g') return `@${String(senderJid).split('@')[0]}`;
+  } catch { /* fall through to neutral */ }
+  return 'a member';
+}
+
 // ─── Unified group moderation (runs before privacy/autochat) ───
 // Every explicitly enabled punishment runs here so private mode and
 // autochat can never starve it. Shared semantics for ALL antis:
@@ -799,7 +812,7 @@ function registerMessageHandler(sock, commands) {
 
             if (cached) {
               try {
-                const senderTag = cached.senderJid ? `@${cached.senderJid.split('@')[0]}` : 'someone';
+                const senderTag = deleterLabel(cached.senderJid, dest);
                 const header = `🗑️ *Antidelete* — ${senderTag} deleted a message:`;
                 const locationLine = dest === 'p' ? `\n📍 *Chat:* ${msg.key.remoteJid}` : '';
 
@@ -841,7 +854,7 @@ function registerMessageHandler(sock, commands) {
 
             if (cached && newText) {
               try {
-                const senderTag = cached.senderJid ? `@${cached.senderJid.split('@')[0]}` : 'someone';
+                const senderTag = deleterLabel(cached.senderJid, dest);
                 const locationLine = dest === 'p' ? `\n📍 *Chat:* ${msg.key.remoteJid}` : '';
 
                 await sock.sendMessage(targetJid, {
@@ -904,6 +917,14 @@ function registerMessageHandler(sock, commands) {
           } catch (e) {
             logger.error(`[dlselect] ${e.message}`);
           }
+        }
+
+        // Banned users get no command surface at all — matched across every
+        // PN/LID form the envelope carries, not just the raw JID.
+        if (!msg.key.fromMe) {
+          try {
+            if (require('../utils/banList').isBannedMessage(msg)) continue;
+          } catch { /* ban check never breaks dispatch */ }
         }
 
         // No-prefix triggers (e.g. emoji-only commands like vv2)

@@ -131,8 +131,18 @@ async function archiveStatus(sock, msg) {
     const posterNum = String(poster).split('@')[0].split(':')[0];
     if (posterNum.length < 8) return null; // not a real contact
 
-    // don't archive our own posts
-    const { jidNormalizedUser } = require('@whiskeysockets/baileys');
+    // don't archive our own posts — own statuses may arrive LID-addressed,
+    // so compare every identity form (socket PN/LID, owner PN/LID), not just
+    // the phone-number digits.
+    if (msg.key?.fromMe) return null;
+    try {
+      const { getBotIdentifiers, participantMatches } = require('./isAdmin');
+      const selfIds = getBotIdentifiers(sock);
+      try {
+        for (const form of require('./isOwner').ownerForms()) selfIds.add(form);
+      } catch {}
+      if (participantMatches({ id: poster }, selfIds)) return null;
+    } catch { /* fall through to the digits check */ }
     const selfNum = String(sock.user?.id || '').split('@')[0].split(':')[0];
     if (posterNum === selfNum) return null;
 
@@ -215,9 +225,16 @@ function markDeletedIfExists(posterNum, aroundTs) {
 }
 
 async function sendArchived(sock, toJid, entry) {
+  // Status posters can be LID-addressed; never print raw LID digits.
+  let posterLabel = `@${entry.poster}`;
+  try {
+    const { displayPhone } = require('./jidResolver');
+    const resolved = displayPhone(entry.posterJid || `${entry.poster}@s.whatsapp.net`);
+    if (!resolved) posterLabel = 'a hidden contact';
+  } catch { /* keep digits fallback */ }
   const meta =
     `👻 *GHOST ARCHIVE*\n` +
-    `From: @${entry.poster}\n` +
+    `From: ${posterLabel}\n` +
     `When: ${new Date(entry.ts).toLocaleString()}` +
     (entry.deleted ? `\n⚠️ _deleted by poster — survived here_` : '') +
     (entry.type !== 'text' ? `\n${entry.type} • ${entry.sizeKb}KB` : '');

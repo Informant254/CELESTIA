@@ -8,7 +8,7 @@
  * Requires the bot to be group admin to remove; otherwise the owner is alerted.
  */
 const groupSettingsStore = require('./groupSettingsStore');
-const { isBotAdmin, isSenderAdmin, participantMatches, normalize } = require('./isAdmin');
+const { isBotAdmin, getBotIdentifiers, participantMatches, normalize } = require('./isAdmin');
 const logger = require('./logger');
 
 const DEFAULT_TARGETS = ['queen sofia'];
@@ -56,17 +56,23 @@ function displayNamesOf(msg) {
   return [msg?.pushName, msg?.verifiedBizName].filter(Boolean);
 }
 
-function ownerNumberDigits() {
+// Every identity that must never be kicked: owner PN, owner/bot LIDs, and
+// the live socket identity. PN and LID live in different numeric namespaces,
+// so cross-domain comparison must go through participantMatches.
+function protectedIdentifiers(sock) {
+  const ids = getBotIdentifiers(sock);
   try {
-    return String(require('../config/config').ownerNumber || '').replace(/\D/g, '');
-  } catch {
-    return '';
-  }
+    const { ownerForms } = require('./isOwner');
+    for (const form of ownerForms()) {
+      if (form) ids.add(normalize(form));
+    }
+  } catch { /* identity never breaks moderation */ }
+  return ids;
 }
 
-function isOwnerJid(jid) {
-  const digits = String(jid || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-  return !!digits && digits === ownerNumberDigits();
+function isProtected(sock, ...jids) {
+  const ids = protectedIdentifiers(sock);
+  return jids.filter(Boolean).some((jid) => participantMatches({ id: jid }, ids));
 }
 
 function cooldownKey(groupJid, jid) {
@@ -137,18 +143,18 @@ async function checkMessage(sock, msg) {
     const groupJid = msg?.key?.remoteJid;
     if (!groupJid || !String(groupJid).endsWith('@g.us')) return false;
     if (!isOn(groupJid)) return false;
+    // Our own owner-sent messages must never trigger a kick, even when the
+    // owner's display name happens to match a banned identity.
+    if (msg.key?.fromMe) return false;
     const participant = msg.key?.participant || msg.key?.participantAlt || msg.key?.remoteJidAlt;
     if (!participant) return false;
-    if (isOwnerJid(participant)) return false;
+    if (isProtected(sock, participant, msg.key?.participantAlt, msg.key?.participantPn, msg.key?.remoteJidAlt)) return false;
 
     const targets = targetsFor(groupJid);
     const names = displayNamesOf(msg);
     const hit = names.find((n) => matchesTarget(n, targets));
     if (!hit) return false;
     if (recentlyKicked(groupJid, participant)) return true;
-
-    const metadata = await sock.groupMetadata(groupJid).catch(() => null);
-    if (metadata && isSenderAdmin(metadata, participant)) return false;
 
     return await removeMember(sock, groupJid, participant, hit);
   } catch (e) {
@@ -180,7 +186,8 @@ async function handleEvent(sock, event) {
 }
 
 async function tryRemove(sock, groupJid, jid, participant, targets) {
-  if (!jid || isOwnerJid(jid)) return false;
+  if (!jid) return false;
+  if (isProtected(sock, jid, participant?.id, participant?.lid, participant?.pn, participant?.phoneNumber)) return false;
   if (recentlyKicked(groupJid, jid)) return true;
   const names = [participant?.name, participant?.notify, participant?.verifiedName].filter(Boolean);
   const hit = names.find((n) => matchesTarget(n, targets));

@@ -80,7 +80,8 @@ module.exports = {
     list.slice(-15).map(e => ({ e, n: all.indexOf(e) + 1 })).reverse().forEach(({ e, n }) => {
       const icon = { image: '🖼️', video: '🎬', audio: '🎙️', text: '📝', sticker: '✨' }[e.type] || '📎';
       const when = new Date(e.ts).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-      L.push(`${n}. ${icon} *${e.poster}* — ${when}${e.deleted ? ' ⚠️*deleted*' : ''}`);
+      const posterLabel = String(e.posterJid || '').endsWith('@lid') ? 'hidden contact' : e.poster;
+      L.push(`${n}. ${icon} *${posterLabel}* — ${when}${e.deleted ? ' ⚠️*deleted*' : ''}`);
       if (e.caption) L.push(`   _"${e.caption.slice(0, 35)}"_`);
       if (e.text) L.push(`   _"${e.text.slice(0, 45)}"_`);
       L.push(`   ⤷ \`.ghostarchive ${n}\``);

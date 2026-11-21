@@ -921,7 +921,7 @@ async function startBotOnce() {
           const store = require('./utils/settingsStore');
           const views = store.get('status_views', {});
           const prev = views[viewer] || { count: 0, first: Date.now(), last: 0 };
-          views[viewer] = { count: prev.count + 1, first: prev.first, last: Date.now() };
+          views[viewer] = { count: prev.count + 1, first: prev.first, last: Date.now(), jid: String(receipt.userJid) };
           store.set('status_views', views);
         }
       } catch { /* non-fatal */ }

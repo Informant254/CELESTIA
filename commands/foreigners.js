@@ -1,4 +1,5 @@
 const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
+const { participantPhoneJid } = require('../utils/jidResolver');
 
 const LOCAL_CODE = '254';
 
@@ -14,10 +15,15 @@ module.exports = {
 
     const metadata = await sock.groupMetadata(jid);
 
-    const foreigners = metadata.participants.filter(p => {
-      const number = (p.phoneNumber || p.id).split('@')[0];
-      return !number.startsWith(LOCAL_CODE);
-    });
+    // LID-addressed members carry no phone number. They must never be
+    // guessed as "foreign": an unresolvable LID is skipped, not punished.
+    const foreigners = [];
+    for (const p of metadata.participants) {
+      const phoneJid = participantPhoneJid(p);
+      if (!phoneJid) continue;
+      const number = phoneJid.split('@')[0];
+      if (!number.startsWith(LOCAL_CODE)) foreigners.push({ participant: p, number, mention: phoneJid });
+    }
 
     if (!foreigners.length) {
       return sock.sendMessage(jid, { text: '✅ Everyone in this group is on a Kenyan number.' }, { quoted: msg });
@@ -26,8 +32,8 @@ module.exports = {
     const isRemove = args[0] === '-x';
 
     if (!isRemove) {
-      const text = `🌍 *Non-Kenyan members (${foreigners.length}):*\n\n${foreigners.map(f => `• @${(f.phoneNumber || f.id).split('@')[0]}`).join('\n')}\n\n💡 Use *.foreigners -x* to remove all of them.`;
-      return sock.sendMessage(jid, { text, mentions: foreigners.map(f => f.phoneNumber || f.id) }, { quoted: msg });
+      const text = `🌍 *Non-Kenyan members (${foreigners.length}):*\n\n${foreigners.map(f => `• @${f.number}`).join('\n')}\n\n💡 Use *.foreigners -x* to remove all of them.`;
+      return sock.sendMessage(jid, { text, mentions: foreigners.map(f => f.mention) }, { quoted: msg });
     }
 
     // Removal path — admin/bot-admin checks required
@@ -45,7 +51,7 @@ module.exports = {
     let removed = 0;
     let failed = 0;
     const batchSize = 5;
-    const jids = foreigners.map(f => f.id);
+    const jids = foreigners.map(f => f.participant.id);
 
     for (let i = 0; i < jids.length; i += batchSize) {
       const batch = jids.slice(i, i + batchSize);

@@ -1,5 +1,5 @@
 const { isOwner } = require('../utils/isOwner');
-const { isBotAdmin } = require('../utils/isAdmin');
+const { isBotAdmin, isSenderAdmin } = require('../utils/isAdmin');
 
 module.exports = {
   name: 'oadmin',
@@ -25,8 +25,7 @@ module.exports = {
     try {
       const metadata = await sock.groupMetadata(jid);
       botIsAdmin = isBotAdmin(sock, metadata);
-      const me = metadata.participants.find(p => p.id.split('@')[0].split(':')[0] === sock.user.id.split('@')[0].split(':')[0]);
-      youAreAdmin = !!me?.admin;
+      youAreAdmin = isSenderAdmin(metadata, senderJid);
     } catch {}
 
     if (!botIsAdmin) {

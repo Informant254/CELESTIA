@@ -43,7 +43,9 @@ module.exports = {
     for (const [num, v] of entries) {
       const when = new Date(v.last).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
       const times = v.count > 1 ? ` • *${v.count}×*` : '';
-      L.push(`• @${num} — ${when}${times}`);
+      // A LID is not a phone number — never display raw LID digits.
+      const hidden = String(v.jid || '').endsWith('@lid') || String(num).length > 14;
+      L.push(`• ${hidden ? 'a hidden number' : `@${num}`} — ${when}${times}`);
     }
     L.push('', '_Times = last view. Multiple views marked._');
     return reply(L.join('\n'));
