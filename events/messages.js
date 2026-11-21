@@ -505,6 +505,12 @@ function registerMessageHandler(sock, commands) {
         try {
           require('../utils/mirror').noteContact(msg);
         } catch { /* learning never breaks chat */ }
+        // 🚫 ANTI-NAME — banned display names are removed the moment they speak.
+        if (_isGroupJid) {
+          try {
+            if (await require('../utils/antiname').checkMessage(sock, msg)) continue;
+          } catch { /* enforcement never breaks chat */ }
+        }
         if (!msg.key?.fromMe && !_isGroupJid && String(msg.key?.remoteJid || '') !== 'status@broadcast') {
           try {
             const mirror = require('../utils/mirror');

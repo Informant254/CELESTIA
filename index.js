@@ -769,6 +769,12 @@ async function startBotOnce() {
       } catch (error) {
         logger.error(`[groupCache] Failed to update metadata for ${event?.id}: ${error.message}`);
       }
+      // 🚫 ANTI-NAME — remove members using a banned display name (Queen Sofia).
+      try {
+        await require('./utils/antiname').handleEvent(sock, event);
+      } catch (error) {
+        logger.error(`[antiname] ${error.message}`);
+      }
       // 🛡️ ANTI-KILL — instant hostile-kick recovery (own try/catch, never blocks greeter).
       try {
         await require('./utils/antikill').handleEvent(sock, event);
