@@ -129,6 +129,12 @@ const box = (title, lines) => ['> ╭─❏ *' + title + '* ❏', ...lines.map((
 
 async function downloadAndSend(sock, message, mediaInfo, chatId, originalMsg) {
   console.log(`[VV] fetching ${mediaInfo.type} into RAM...`);
+  const probe = mediaInfo.message || {};
+  if (!probe.url && !probe.directPath) {
+    try {
+      await sock.sendMessage(chatId, { text: '⏳ Pulling the original from your phone…' }, { quoted: originalMsg });
+    } catch {}
+  }
   // View-once quotes can arrive without url/directPath — ask the sender
   // device to re-upload so the download has a fresh path.
   await ensureMediaUrl(sock, message.key, message.message);

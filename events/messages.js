@@ -412,7 +412,7 @@ function registerMessageHandler(sock, commands) {
       for (const m of messages || []) {
         if (m?.message && vault.findViewOnce(m.message)) {
           vault.rememberOriginal(m.key?.id, m.message);
-          logger.info(`[vault] cached original view-once id=${m.key?.id} fromMe=${!!m.key?.fromMe} via history`);
+          logger.info(`[vault] cached original view-once id=${m.key?.id} chat=${m.key?.remoteJid} fromMe=${!!m.key?.fromMe} via history`);
         }
       }
     } catch (e) { logger.error(`[vault] history cache: ${e.message}`); }

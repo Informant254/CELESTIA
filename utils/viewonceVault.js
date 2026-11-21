@@ -388,13 +388,32 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
     return wrapperMessage;
   }
 
-  // On-demand history sync: the phone holds the original payload with keys.
+  // 2a) Targeted resend: ask the phone to re-deliver THIS message. The copy
+  // arrives through the normal upsert/history channels and lands in the cache.
+  if (typeof sock?.requestPlaceholderResend === 'function' && keyInfo?.id) {
+    try {
+      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting placeholder resend`);
+      await sock.requestPlaceholderResend(keyInfo);
+      for (let i = 0; i < 10; i++) {
+        await sleep(600);
+        if (graftFromCache()) {
+          logger.info('[vault] recovered view-once via placeholder resend');
+          return wrapperMessage;
+        }
+      }
+    } catch (e) {
+      logger.warn(`[vault] placeholder resend failed: ${e.message}`);
+    }
+  }
+
+  // 2b) Chat history sync: the phone re-uploads recent messages for the chat,
+  // which usually includes the view-once original with its keys.
   if (typeof sock?.fetchMessageHistory === 'function' && keyInfo?.id) {
     try {
       const ts = Math.floor(Date.now() / 1000);
       logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone`);
       await sock.fetchMessageHistory(100, keyInfo, ts);
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 12; i++) {
         await sleep(500);
         if (graftFromCache()) {
           logger.info('[vault] recovered view-once from on-demand history sync');
