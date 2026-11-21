@@ -60,6 +60,9 @@ let pendingTargetId = null;
 function setPendingTarget(id) { pendingTargetId = id || null; }
 function getPendingTarget() { return pendingTargetId; }
 
+// Single-flight guard: one recovery per quoted message at a time.
+const inflight = new Map();
+
 function graftFreshMedia(target, source) {
   let grafted = 0;
   for (const field of MEDIA_FRESH_FIELDS) {
@@ -395,47 +398,62 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage, anchor) {
     return wrapperMessage;
   }
 
-  // 2a) Targeted resend: ask the phone to re-deliver THIS message. The copy
-  // arrives through the normal upsert/history channels and lands in the cache.
-  if (typeof sock?.requestPlaceholderResend === 'function' && keyInfo?.id) {
-    try {
-      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting placeholder resend`);
-      await sock.requestPlaceholderResend(keyInfo);
-      for (let i = 0; i < 10; i++) {
-        await sleep(600);
-        if (graftFromCache()) {
-          logger.info('[vault] recovered view-once via placeholder resend');
-          return wrapperMessage;
-        }
-      }
-    } catch (e) {
-      logger.warn(`[vault] placeholder resend failed: ${e.message}`);
-    }
+  // Several handlers (command + monitor) can race on the same quote. Run the
+  // network-heavy recovery ONCE per message — duplicate PDO requests get the
+  // phone to throttle and return empty history chunks.
+  const key = keyInfo?.id;
+  if (key && inflight.has(key)) {
+    try { await inflight.get(key); } catch {}
+    graftFromCache();
+    return wrapperMessage;
   }
+  const job = (async () => {
+    // 2a) Targeted resend: ask the phone to re-deliver THIS message. The copy
+    // arrives through the normal upsert/history channels and lands in the cache.
+    if (typeof sock?.requestPlaceholderResend === 'function' && keyInfo?.id) {
+      try {
+        logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting placeholder resend`);
+        await sock.requestPlaceholderResend(keyInfo);
+        for (let i = 0; i < 10; i++) {
+          await sleep(600);
+          if (graftFromCache()) {
+            logger.info('[vault] recovered view-once via placeholder resend');
+            return;
+          }
+        }
+      } catch (e) {
+        logger.warn(`[vault] placeholder resend failed: ${e.message}`);
+      }
+    }
 
-  // 2b) Chat history sync: the phone re-uploads messages OLDER than the
-  // reference key. Anchor on the reply itself (it sits after the view-once),
-  // never on the target — a boundary key is excluded from the upload.
-  if (typeof sock?.fetchMessageHistory === 'function' && keyInfo?.id) {
-    try {
-      const ref = anchor?.key?.id ? anchor.key : keyInfo;
-      const tsMs = Math.floor((anchor?.timestamp || Date.now() / 1000) * 1000);
-      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone (anchor=${ref.id} tsMs=${tsMs})`);
-      setPendingTarget(keyInfo.id);
-      await sock.fetchMessageHistory(200, ref, tsMs);
-      for (let i = 0; i < 12; i++) {
-        await sleep(500);
-        if (graftFromCache()) {
-          logger.info('[vault] recovered view-once from on-demand history sync');
-          return wrapperMessage;
+    // 2b) Chat history sync: the phone re-uploads messages OLDER than the
+    // reference key. Anchor on the reply itself (it sits after the view-once),
+    // never on the target — a boundary key is excluded from the upload.
+    if (typeof sock?.fetchMessageHistory === 'function' && keyInfo?.id) {
+      try {
+        const ref = anchor?.key?.id ? anchor.key : keyInfo;
+        const tsMs = Math.floor((anchor?.timestamp || Date.now() / 1000) * 1000);
+        logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone (anchor=${ref.id} tsMs=${tsMs})`);
+        setPendingTarget(keyInfo.id);
+        await sock.fetchMessageHistory(200, ref, tsMs);
+        for (let i = 0; i < 12; i++) {
+          await sleep(500);
+          if (graftFromCache()) {
+            logger.info('[vault] recovered view-once from on-demand history sync');
+            return;
+          }
         }
+      } catch (e) {
+        logger.warn(`[vault] history fetch failed: ${e.message}`);
+      } finally {
+        setPendingTarget(null);
       }
-    } catch (e) {
-      logger.warn(`[vault] history fetch failed: ${e.message}`);
-    } finally {
-      setPendingTarget(null);
     }
-  }
+  })().catch(() => {});
+  if (key) inflight.set(key, job);
+  try { await job; } finally { if (key) inflight.delete(key); }
+
+  if (graftFromCache()) return wrapperMessage;
 
   if (!found.message.mediaKey) {
     logger.warn(`[vault] view-once lacks url, directPath AND mediaKey — nothing to download (id=${keyInfo?.id})`);
