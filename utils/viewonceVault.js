@@ -265,7 +265,7 @@ async function captureOriginal(sock, msg, ownerJid) {
 // CAPTURE — reply-quoted (fallback, works when media still fresh)
 // ─────────────────────────────────────────
 
-async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid, ownerJid) {
+async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid, ownerJid, anchor) {
   let release;
   try {
     const found = findViewOnce(rawQuotedMessage);
@@ -287,7 +287,7 @@ async function captureToVault(sock, rawQuotedMessage, contextKeyInfo, senderJid,
       key: contextKeyInfo || { remoteJid: senderJid, id: 'vault' + Date.now() },
       message: rawQuotedMessage,
     };
-    await ensureMediaUrl(sock, fakeMsg.key, rawQuotedMessage);
+    await ensureMediaUrl(sock, fakeMsg.key, rawQuotedMessage, anchor);
     const buffer = await dlMedia(fakeMsg, 'buffer', {}, { logger: { level: 'silent' }, reuploadRequest: sock.updateMediaMessage });
     if (!buffer || !buffer.length || buffer.length > MAX_MEDIA_BYTES) {
       if (buffer?.length > MAX_MEDIA_BYTES) logger.error(`[vault] skipped oversized download (${buffer.length} bytes)`);
@@ -350,7 +350,8 @@ async function monitorReply(sock, msg, ownerJid) {
     const r = await captureToVault(
       sock, ctx.quotedMessage,
       { remoteJid: msg.key.remoteJid, id: ctx.stanzaId, participant: ctx.participant },
-      senderJid, ownerJid
+      senderJid, ownerJid,
+      { key: msg.key, timestamp: Number(msg.messageTimestamp) || Math.floor(Date.now() / 1000) }
     );
     if (r) logger.info('[vault] monitor: reply-rip delivered to inbox');
     return !!r;
@@ -369,7 +370,7 @@ async function monitorReply(sock, msg, ownerJid) {
 //      re-upload (Baileys updateMediaMessage mutates the inner media object).
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
+async function ensureMediaUrl(sock, keyInfo, wrapperMessage, anchor) {
   const found = findViewOnce(wrapperMessage);
   if (!found?.message) return wrapperMessage;
   if (found.message.url || found.message.directPath) return wrapperMessage;
@@ -406,13 +407,15 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage) {
     }
   }
 
-  // 2b) Chat history sync: the phone re-uploads recent messages for the chat,
-  // which usually includes the view-once original with its keys.
+  // 2b) Chat history sync: the phone re-uploads messages OLDER than the
+  // reference key. Anchor on the reply itself (it sits after the view-once),
+  // never on the target — a boundary key is excluded from the upload.
   if (typeof sock?.fetchMessageHistory === 'function' && keyInfo?.id) {
     try {
-      const ts = Math.floor(Date.now() / 1000);
-      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone`);
-      await sock.fetchMessageHistory(100, keyInfo, ts);
+      const ref = anchor?.key?.id ? anchor.key : keyInfo;
+      const ts = anchor?.timestamp || Math.floor(Date.now() / 1000);
+      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone (anchor=${ref.id})`);
+      await sock.fetchMessageHistory(100, ref, ts);
       for (let i = 0; i < 12; i++) {
         await sleep(500);
         if (graftFromCache()) {

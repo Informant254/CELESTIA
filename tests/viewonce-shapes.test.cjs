@@ -123,6 +123,27 @@ test('ensureMediaUrl falls back to history when placeholder resend is unavailabl
   assert.equal(out.viewOnceMessageV2.message.imageMessage.url, 'https://mmg.whatsapp.net/hist2');
 });
 
+test('ensureMediaUrl anchors history requests on the reply, not the target', async () => {
+  const original = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true, mediaKey: Buffer.from('mk6'), url: 'https://mmg.whatsapp.net/anchor', directPath: '/v/anchor' } } } };
+  const stripped = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true } } } };
+  let seenRef = null;
+  let seenTs = null;
+  const sock = {
+    fetchMessageHistory: async (count, ref, ts) => {
+      seenRef = ref.id;
+      seenTs = ts;
+      vault.rememberOriginal('TARGET-2', original);
+    },
+  };
+  const out = await vault.ensureMediaUrl(
+    sock, { remoteJid: 'chat', id: 'TARGET-2' }, stripped,
+    { key: { remoteJid: 'chat', id: 'REPLY-9', fromMe: true }, timestamp: 1234567 }
+  );
+  assert.equal(seenRef, 'REPLY-9', 'boundary key must be the reply so the target is inside the upload window');
+  assert.equal(seenTs, 1234567);
+  assert.equal(out.viewOnceMessageV2.message.imageMessage.url, 'https://mmg.whatsapp.net/anchor');
+});
+
 test('ensureMediaUrl recovers a fully stripped quote from the arrival cache', async () => {
   const original = { viewOnceMessageV2: { message: { imageMessage: { viewOnce: true, mediaKey: Buffer.from('mk'), url: 'https://mmg.whatsapp.net/orig', directPath: '/v/orig', fileEncSha256: Buffer.from('h'), fileLength: 42 } } } };
   vault.rememberOriginal('MSGID-1', original);

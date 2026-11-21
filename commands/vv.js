@@ -137,7 +137,10 @@ async function downloadAndSend(sock, message, mediaInfo, chatId, originalMsg) {
   }
   // View-once quotes can arrive without url/directPath — ask the sender
   // device to re-upload so the download has a fresh path.
-  await ensureMediaUrl(sock, message.key, message.message);
+  await ensureMediaUrl(sock, message.key, message.message, {
+    key: originalMsg?.key,
+    timestamp: Number(originalMsg?.messageTimestamp) || Math.floor(Date.now() / 1000),
+  });
 
   const media = mediaInfo.message || {};
   if (!media.url && !media.directPath) {

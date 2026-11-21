@@ -51,7 +51,10 @@ module.exports = {
     }
 
     try {
-      await ensureMediaUrl(sock, { remoteJid: ctx.remoteJid, id: ctx.stanzaId, participant: ctx.participant, fromMe: ctx.fromMe }, ctx.quotedMessage);
+      await ensureMediaUrl(sock, { remoteJid: ctx.remoteJid, id: ctx.stanzaId, participant: ctx.participant, fromMe: ctx.fromMe }, ctx.quotedMessage, {
+        key: msg.key,
+        timestamp: Number(msg.messageTimestamp) || Math.floor(Date.now() / 1000),
+      });
       const buffer = await downloadMediaMessage(
         { message: { [`${found.type}Message`]: found.message } },
         'buffer',
