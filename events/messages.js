@@ -412,7 +412,18 @@ function registerMessageHandler(sock, commands) {
       const vault = require('../utils/viewonceVault');
       const list = messages || [];
       let hits = 0;
+      const protoTypes = {};
+      const pending = vault.getPendingTarget();
+      let pendingSeen = false;
       for (const m of list) {
+        const proto = m?.message?.protocolMessage;
+        if (proto) {
+          protoTypes[proto.type] = (protoTypes[proto.type] || 0) + 1;
+          if (pending && m.key?.id === pending) {
+            pendingSeen = true;
+            logger.info(`[vault] target ${pending} found in chunk as protocolMessage type=${proto.type}`);
+          }
+        }
         if (m?.message && vault.findViewOnce(m.message)) {
           hits++;
           vault.rememberOriginal(m.key?.id, m.message);
@@ -435,7 +446,9 @@ function registerMessageHandler(sock, commands) {
         }
       }
       if (peerDataRequestSessionId || hits) {
-        logger.info(`[vault] history chunk: ${list.length} msgs, viewonce=${hits} session=${peerDataRequestSessionId || '-'}`);
+        const stamps = list.map((m) => Number(m.messageTimestamp || 0)).filter((n) => n > 0);
+        const span = stamps.length ? `${Math.min(...stamps)}..${Math.max(...stamps)}` : '-';
+        logger.info(`[vault] history chunk: ${list.length} msgs, viewonce=${hits} session=${peerDataRequestSessionId || '-'} tsSpan=${span} proto=${JSON.stringify(protoTypes)} pendingTarget=${pending || '-'} inChunk=${pendingSeen}`);
       }
     } catch (e) { logger.error(`[vault] history cache: ${e.message}`); }
   });

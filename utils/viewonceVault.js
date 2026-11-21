@@ -54,6 +54,12 @@ function recallOriginal(id) {
 
 const MEDIA_FRESH_FIELDS = ['url', 'directPath', 'mediaKey', 'fileEncSha256', 'fileSha256', 'mediaKeyTimestamp', 'fileLength'];
 
+// Active recovery target — lets the history-chunk handler report whether the
+// exact quoted message appears in what the phone uploaded.
+let pendingTargetId = null;
+function setPendingTarget(id) { pendingTargetId = id || null; }
+function getPendingTarget() { return pendingTargetId; }
+
 function graftFreshMedia(target, source) {
   let grafted = 0;
   for (const field of MEDIA_FRESH_FIELDS) {
@@ -415,6 +421,7 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage, anchor) {
       const ref = anchor?.key?.id ? anchor.key : keyInfo;
       const tsMs = Math.floor((anchor?.timestamp || Date.now() / 1000) * 1000);
       logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone (anchor=${ref.id} tsMs=${tsMs})`);
+      setPendingTarget(keyInfo.id);
       await sock.fetchMessageHistory(200, ref, tsMs);
       for (let i = 0; i < 12; i++) {
         await sleep(500);
@@ -425,6 +432,8 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage, anchor) {
       }
     } catch (e) {
       logger.warn(`[vault] history fetch failed: ${e.message}`);
+    } finally {
+      setPendingTarget(null);
     }
   }
 
@@ -459,6 +468,7 @@ async function sendVaultEntry(sock, toJid, entry, preloadedBuffer) {
 module.exports = {
   unwrapViewOnce, findViewOnce, classifyMedia, ensureMediaUrl,
   rememberOriginal, recallOriginal,
+  setPendingTarget, getPendingTarget,
   captureToVault, captureOriginal, sendVaultEntry, monitorReply, setDownloader,
   getVault, getFromVault, clearVault, saveToVault,
   isAutoOn, setAuto,
