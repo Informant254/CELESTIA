@@ -140,7 +140,7 @@ test('ensureMediaUrl anchors history requests on the reply, not the target', asy
     { key: { remoteJid: 'chat', id: 'REPLY-9', fromMe: true }, timestamp: 1234567 }
   );
   assert.equal(seenRef, 'REPLY-9', 'boundary key must be the reply so the target is inside the upload window');
-  assert.equal(seenTs, 1234567);
+  assert.equal(seenTs, 1234567000, 'PDO expects oldestMsgTimestampMs');
   assert.equal(out.viewOnceMessageV2.message.imageMessage.url, 'https://mmg.whatsapp.net/anchor');
 });
 

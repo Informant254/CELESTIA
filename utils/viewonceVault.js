@@ -413,9 +413,9 @@ async function ensureMediaUrl(sock, keyInfo, wrapperMessage, anchor) {
   if (typeof sock?.fetchMessageHistory === 'function' && keyInfo?.id) {
     try {
       const ref = anchor?.key?.id ? anchor.key : keyInfo;
-      const ts = anchor?.timestamp || Math.floor(Date.now() / 1000);
-      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone (anchor=${ref.id})`);
-      await sock.fetchMessageHistory(100, ref, ts);
+      const tsMs = Math.floor((anchor?.timestamp || Date.now() / 1000) * 1000);
+      logger.info(`[vault] stripped view-once ${keyInfo.id} — requesting history from phone (anchor=${ref.id} tsMs=${tsMs})`);
+      await sock.fetchMessageHistory(200, ref, tsMs);
       for (let i = 0; i < 12; i++) {
         await sleep(500);
         if (graftFromCache()) {
